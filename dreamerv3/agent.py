@@ -11,6 +11,7 @@ import numpy as np
 import optax
 
 from . import rssm
+from . import craftax_features as cf
 
 f32 = jnp.float32
 i32 = jnp.int32
@@ -35,7 +36,9 @@ class Agent(embodied.jax.Agent):
     self.act_space = act_space
     self.config = config
 
-    exclude = ('is_first', 'is_last', 'is_terminal', 'reward')
+    # 'ach' is the reward-cause LABEL (multi-hot of newly-unlocked
+    # achievements); it must not be fed to the encoder or reconstructed.
+    exclude = ('is_first', 'is_last', 'is_terminal', 'reward', 'ach')
     enc_space = {k: v for k, v in obs_space.items() if k not in exclude}
     dec_space = {k: v for k, v in obs_space.items() if k not in exclude}
     self.enc = {
@@ -57,6 +60,25 @@ class Agent(embodied.jax.Agent):
     self.rew = embodied.jax.MLPHead(scalar, **config.rewhead, name='rew')
     self.con = embodied.jax.MLPHead(binary, **config.conhead, name='con')
 
+    # --- Phase 1: compositional reward-cause head -----------------------------
+    # Predicts the factored feature vector phi of the achievement event at each
+    # step (binary per-feature), so common tiers teach the model unseen ones.
+    self._use_rewcause = bool(getattr(config, 'rewcause', False))
+    if self._use_rewcause:
+      phi_space = elements.Space(bool, (cf.PHI_DIM,), 0, 2)
+      self.rewcause = embodied.jax.MLPHead(
+          phi_space, **config.rewcausehead, name='rewcause')
+      self._phi_table = cf.build_phi_table()          # np [A, PHI_DIM]
+      self._weight_table = cf.build_weight_table()    # np [A]
+      hv = np.zeros(cf.NUM_ACHIEVEMENTS, np.float32)
+      for tok in str(config.rewcause_holdout).split(','):
+        tok = tok.strip()
+        if tok:
+          idx = int(tok) if tok.isdigit() else cf.ACHIEVEMENT_NAMES.index(tok)
+          hv[idx] = 1.0
+      self._holdout_vec = hv
+      self._rewcause_none_weight = float(config.rewcause_none_weight)
+
     d1, d2 = config.policy_dist_disc, config.policy_dist_cont
     outs = {k: d1 if v.discrete else d2 for k, v in act_space.items()}
     self.pol = embodied.jax.MLPHead(
@@ -73,6 +95,8 @@ class Agent(embodied.jax.Agent):
 
     self.modules = [
         self.dyn, self.enc, self.dec, self.rew, self.con, self.pol, self.val]
+    if self._use_rewcause:
+      self.modules.append(self.rewcause)
     self.opt = embodied.jax.Optimizer(
         self.modules, self._make_opt(**config.opt), summary_depth=1,
         name='opt')
@@ -80,10 +104,17 @@ class Agent(embodied.jax.Agent):
     scales = self.config.loss_scales.copy()
     rec = scales.pop('rec')
     scales.update({k: rec for k in dec_space})
+    if not self._use_rewcause:
+      scales.pop('rewcause', None)  # keep losses/scales keys in sync
     self.scales = scales
 
   @property
   def policy_keys(self):
+    # The reward-cause head is queried by the probe (mode='probe') through the
+    # policy path, so when enabled its params must be part of the policy param
+    # set (which the base agent syncs to the policy device).
+    if self._use_rewcause:
+      return '^(enc|dyn|dec|pol|rewcause)/'
     return '^(enc|dyn|dec|pol)/'
 
   @property
@@ -128,6 +159,18 @@ class Agent(embodied.jax.Agent):
     out['finite'] = elements.tree.flatdict(jax.tree.map(
         lambda x: jnp.isfinite(x).all(range(1, x.ndim)),
         dict(obs=obs, carry=carry, tokens=tokens, feat=feat, act=act)))
+    if self._use_rewcause and mode == 'probe':
+      # Probe only: expose the reward-cause head's per-feature P(phi_j = 1) so
+      # the holdout probe can score compositional extrapolation at held-out
+      # states. Gated on the dedicated 'probe' mode (not 'train'/'eval') because
+      # every other caller feeds policy outputs into a replay buffer that later
+      # asserts data.keys() == spaces.keys() (train.py and train_eval.py both do
+      # driver.on_step(replay.add)); the probe's driver never stores to replay.
+      # `mode` is a static arg to the compiled policy, so this is a clean
+      # compile-time branch. The head wraps a Binary output in an Agg that sums
+      # over phi, so read the raw per-feature logit rather than Agg.prob.
+      rc = self.rewcause(self.feat2tensor(feat), bdims=1)
+      out['rewcause_prob'] = jax.nn.sigmoid(rc.output.logit)
     carry = (enc_carry, dyn_carry, dec_carry, act)
     if self.config.replay_context:
       out.update(elements.tree.flatdict(dict(
@@ -171,6 +214,20 @@ class Agent(embodied.jax.Agent):
         dec_carry, repfeat, reset, training)
     inp = sg(self.feat2tensor(repfeat), skip=self.config.reward_grad)
     losses['rew'] = self.rew(inp, 2).loss(obs['reward'])
+    if self._use_rewcause:
+      ach = f32(obs['ach'])                              # (B, T, A)
+      phi = jnp.asarray(self._phi_table)                # (A, D)
+      wt = jnp.asarray(self._weight_table)              # (A,)
+      hv = jnp.asarray(self._holdout_vec)               # (A,)
+      # Target = union of unlocked achievements' feature rows.
+      target = jnp.clip(ach @ phi, 0.0, 1.0)            # (B, T, D)
+      any_ach = ach.sum(-1) > 0                          # (B, T)
+      w_ach = (ach * wt[None, None, :]).max(-1)          # (B, T)
+      weight = jnp.where(any_ach, w_ach, self._rewcause_none_weight)
+      # Held-out steps contribute zero loss (iron-holdout extrapolation test).
+      mask = 1.0 - jnp.clip((ach * hv[None, None, :]).sum(-1), 0.0, 1.0)
+      rc = self.rewcause(inp, 2).loss(sg(target))        # (B, T)
+      losses['rewcause'] = rc * sg(weight) * sg(mask)
     con = f32(~obs['is_terminal'])
     if self.config.contdisc:
       con *= 1 - 1 / self.config.horizon

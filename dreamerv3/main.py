@@ -92,6 +92,13 @@ def main(argv=None):
         bind(make_logger, config),
         args)
 
+  elif config.script == 'rewcause_probe':
+    embodied.run.rewcause_probe(
+        bind(make_agent, config),
+        bind(make_env, config),
+        args,
+        str(config.agent.rewcause_holdout))
+
   elif config.script == 'parallel':
     embodied.run.parallel.combined(
         bind(make_agent, config),
@@ -219,6 +226,7 @@ def make_env(config, index, **overrides):
       'gym': 'embodied.envs.from_gym:FromGym',
       'dm': 'embodied.envs.from_dmenv:FromDM',
       'crafter': 'embodied.envs.crafter:Crafter',
+      'craftax': 'embodied.envs.craftax:Craftax',
       'dmc': 'embodied.envs.dmc:DMC',
       'atari': 'embodied.envs.atari:Atari',
       'atari100k': 'embodied.envs.atari:Atari',
