@@ -13,6 +13,13 @@ for the compositional-reward / frontier-exploration plan:
      Craftax EnvState, which is what makes Go-Explore-style frontier return
      essentially free (Phase 4).
 
+dreamerv3's embodied.jax installs a global ``jax_transfer_guard='disallow'`` to
+catch stray host<->device transfers inside the agent. The env legitimately
+moves data across that boundary every step (build an RNG key, run the functional
+JAX env, pull the observation back to numpy), so every such region is wrapped in
+``jax.transfer_guard('allow')`` -- scoped, so the agent still gets guarded. This
+mirrors the reference crafter/gymnax adapters.
+
 Notes / verify on the GPU box:
   - Uses the NoAutoReset env variant so the adapter owns reset (like crafter.py).
   - `python -c "from craftax_features import validate_against_craftax as v; v()"`
@@ -38,21 +45,25 @@ class Craftax(embodied.Env):
     self._jax = jax
     self._env = make_craftax_env_from_name(
         'Craftax-Symbolic-v1', auto_reset=False)
-    self._params = self._env.default_params
-    self._max_timesteps = int(self._params.max_timesteps)
     self._num_ach = NUM_ACHIEVEMENTS
 
-    obs_space = self._env.observation_space(self._params)
-    self._obs_dim = int(np.prod(obs_space.shape))
-    self._num_actions = int(self._env.action_space(self._params).n)
+    # Everything here touches the host<->device boundary (params pytree, space
+    # bounds, RNG key), so it runs under an allow scope; see module docstring.
+    with jax.transfer_guard('allow'):
+      self._params = self._env.default_params
+      self._max_timesteps = int(self._params.max_timesteps)
+      obs_space = self._env.observation_space(self._params)
+      self._obs_dim = int(np.prod(obs_space.shape))
+      self._num_actions = int(self._env.action_space(self._params).n)
+      self._key = jax.random.PRNGKey(seed)
 
     # Jit the pure env transitions once; params captured as a closure constant.
+    # (Defining a jit does not transfer, so it stays outside the allow scope.)
     self._reset_fn = jax.jit(lambda key: self._env.reset(key, self._params))
     self._step_fn = jax.jit(
         lambda key, state, act: self._env.step(key, state, act, self._params))
     self._get_obs_fn = jax.jit(lambda state: self._env.get_obs(state))
 
-    self._key = jax.random.PRNGKey(seed)
     self._state = None
     self._prev_ach = np.zeros(self._num_ach, np.float32)
     self._done = True
@@ -87,43 +98,48 @@ class Craftax(embodied.Env):
   def step(self, action):
     if action['reset'] or self._done:
       return self._reset()
-    key, subkey = self._jax.random.split(self._key)
-    self._key = key
-    act = self._jax.numpy.asarray(int(action['action']), self._jax.numpy.int32)
-    obs, self._state, reward, done, info = self._step_fn(
-        subkey, self._state, act)
-    self._done = bool(done)
-    reward = float(reward)
+    with self._jax.transfer_guard('allow'):
+      key, subkey = self._jax.random.split(self._key)
+      self._key = key
+      act = self._jax.numpy.asarray(
+          int(action['action']), self._jax.numpy.int32)
+      obs, self._state, reward, done, info = self._step_fn(
+          subkey, self._state, act)
+      self._done = bool(done)
+      reward = float(reward)
+      obs = np.asarray(obs, np.float32)
+      # Craftax's is_game_over (hence `done`) fires on death, boss-defeat AND
+      # timeout, and its `discount` is 0 for all three. For correct value
+      # bootstrapping we mark only non-timeout endings as terminal -- a timeout
+      # is a truncation, not a true absorbing state (the intent the reference
+      # crafter.py encodes via `info['discount'] == 0`; Craftax does not expose
+      # timeout separately in `info`, so we derive it from the state timestep).
+      timeout = bool(np.asarray(self._state.timestep) >= self._max_timesteps)
     self._reward += reward
     self._length += 1
-    # Craftax's is_game_over (hence `done`) fires on death, boss-defeat AND
-    # timeout, and its `discount` is 0 for all three. For correct value
-    # bootstrapping we mark only non-timeout endings as terminal -- a timeout is
-    # a truncation, not a true absorbing state (this is the intent the reference
-    # crafter.py encodes via `info['discount'] == 0`; Craftax does not expose
-    # timeout separately in `info`, so we derive it from the state timestep).
-    timeout = bool(np.asarray(self._state.timestep) >= self._max_timesteps)
     return self._obs(
-        np.asarray(obs, np.float32), reward, self._state,
+        obs, reward, self._state,
         is_last=self._done,
         is_terminal=self._done and not timeout)
 
   def _reset(self):
-    key, subkey = self._jax.random.split(self._key)
-    self._key = key
-    obs, self._state = self._reset_fn(subkey)
+    with self._jax.transfer_guard('allow'):
+      key, subkey = self._jax.random.split(self._key)
+      self._key = key
+      obs, self._state = self._reset_fn(subkey)
+      obs = np.asarray(obs, np.float32)
     self._done = False
     self._episode += 1
     self._length = 0
     self._reward = 0.0
     self._prev_ach = np.zeros(self._num_ach, np.float32)
-    return self._obs(np.asarray(obs, np.float32), 0.0, self._state,
-                     is_first=True)
+    return self._obs(obs, 0.0, self._state, is_first=True)
 
   # --- achievement featurization ---------------------------------------------
   def _newly_unlocked(self, state):
     """Multi-hot of achievements that flipped False->True since last step."""
-    curr = np.asarray(state.achievements, np.float32).reshape(-1)
+    with self._jax.transfer_guard('allow'):
+      curr = np.asarray(state.achievements, np.float32).reshape(-1)
     assert curr.shape[0] == self._num_ach, (curr.shape, self._num_ach)
     new = (curr.astype(bool) & ~self._prev_ach.astype(bool)).astype(np.float32)
     self._prev_ach = curr
@@ -145,8 +161,9 @@ class Craftax(embodied.Env):
     )
     if self._logs:
       obs['log/reward'] = np.float32(reward)
-      obs['log/achievements'] = np.int32(
-          np.asarray(state.achievements).sum())
+      with self._jax.transfer_guard('allow'):
+        obs['log/achievements'] = np.int32(
+            np.asarray(state.achievements).sum())
     return obs
 
   # --- Phase 4: frontier checkpoint/restore ----------------------------------
@@ -167,13 +184,16 @@ class Craftax(embodied.Env):
     self._done = False
     self._length = 0
     self._reward = 0.0
-    obs = np.asarray(self._get_obs_fn(state), np.float32)
-    return dict(
+    with self._jax.transfer_guard('allow'):
+      obs = np.asarray(self._get_obs_fn(state), np.float32)
+      ach_sum = np.int32(np.asarray(state.achievements).sum())
+    result = dict(
         vector=obs,
         ach=np.zeros(self._num_ach, np.float32),
         reward=np.float32(0.0),
         is_first=True, is_last=False, is_terminal=False,
-        **({'log/reward': np.float32(0.0),
-            'log/achievements': np.int32(np.asarray(state.achievements).sum())}
-           if self._logs else {}),
     )
+    if self._logs:
+      result['log/reward'] = np.float32(0.0)
+      result['log/achievements'] = ach_sum
+    return result
