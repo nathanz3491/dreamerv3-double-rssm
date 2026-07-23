@@ -31,8 +31,8 @@ import numpy as np
 
 # How long to probe. Stop as soon as we have enough held-out target states, or
 # when the episode budget is exhausted (the agent may simply never reach it).
-PROBE_MAX_EPISODES = 300
-PROBE_MIN_STATES = 50
+PROBE_MAX_EPISODES = 150
+PROBE_MIN_STATES = 30
 STEPS_PER_CHUNK = 100
 
 
@@ -63,22 +63,35 @@ def rewcause_probe(make_agent, make_env, args, holdout):
 
   agent = make_agent()
 
+  # elements stores a checkpoint as <dir>/<timestamp>/ (marked by a 'done' file)
+  # plus a 'latest' pointer file in <dir>. Accept either the exact checkpoint dir
+  # or its parent (resolve 'latest'), so --run.from_checkpoint <logdir>/ckpt works.
+  import pathlib
+  ckpt = pathlib.Path(args.from_checkpoint)
+  if not (ckpt / 'done').exists() and (ckpt / 'latest').exists():
+    ckpt = ckpt / (ckpt / 'latest').read_text().strip()
   cp = elements.Checkpoint()
   cp.agent = agent
-  cp.load(args.from_checkpoint, keys=['agent'])
+  cp.load(str(ckpt), keys=['agent'])
 
   collected = []
   episodes = [0]
+  returns = []
+  ep_ret = {}
+  ach_counts = np.zeros(cf.NUM_ACHIEVEMENTS, np.int64)  # unlock events per achievement
 
   def collect(tran, worker):
-    # `ach` is the multi-hot of achievements newly unlocked this step; when the
-    # held-out target fires, grab the head's per-feature prediction for it.
-    if 'rewcause_prob' not in tran:
-      return
-    if float(tran['ach'][target_idx]) > 0.5:
+    # `ach` is the multi-hot of achievements newly unlocked this step. Tally all
+    # of them (achievement-reach profile), accumulate episode return, and when
+    # the held-out target fires grab the head's per-feature prediction to score.
+    ach = np.asarray(tran['ach'], np.float32)
+    ach_counts[:] += (ach > 0.5)
+    ep_ret[worker] = ep_ret.get(worker, 0.0) + float(tran['reward'])
+    if 'rewcause_prob' in tran and float(ach[target_idx]) > 0.5:
       collected.append(np.asarray(tran['rewcause_prob'], np.float32))
     if bool(tran['is_last']):
       episodes[0] += 1
+      returns.append(ep_ret.pop(worker, 0.0))
 
   fns = [bind(make_env, i) for i in range(args.envs)]
   driver = embodied.Driver(fns, parallel=(not args.debug))
@@ -92,14 +105,25 @@ def rewcause_probe(make_agent, make_env, args, holdout):
   try:
     while episodes[0] < PROBE_MAX_EPISODES and len(collected) < PROBE_MIN_STATES:
       driver(policy, steps=STEPS_PER_CHUNK)
+      print(f'probe progress: episodes={episodes[0]}/{PROBE_MAX_EPISODES} '
+            f'{target_name}_states={len(collected)}', flush=True)
   finally:
     driver.close()
 
   n = len(collected)
+  reached = sorted(
+      ((cf.ACHIEVEMENT_NAMES[i], int(ach_counts[i]))
+       for i in range(cf.NUM_ACHIEVEMENTS) if ach_counts[i] > 0),
+      key=lambda kv: -kv[1])
+  profile = '\n'.join(f'    {name:24s} {cnt}' for name, cnt in reached) or '    (none)'
+  mean_ret = float(np.mean(returns)) if returns else float('nan')
   header = (
       f'\n=== reward-cause probe: {target_name} ===\n'
       f'held-out states collected : {n}\n'
-      f'episodes run              : {episodes[0]}\n')
+      f'episodes run              : {episodes[0]}\n'
+      f'mean return               : {mean_ret:.2f}\n'
+      f'achievement reach ({len(reached)}/{cf.NUM_ACHIEVEMENTS} unique, '
+      f'unlock events over {episodes[0]} eval eps):\n{profile}\n')
   if n == 0:
     report = header + (
         'RESULT: inconclusive -- the eval policy never unlocked '
