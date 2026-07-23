@@ -2,19 +2,13 @@
 
 ## Yesterday (state before this session)
 
-Phases 0 & 1 of the compositional **reward-cause head** for DreamerV3 (design/rationale in [`REWCAUSE_INTEGRATION.md`](REWCAUSE_INTEGRATION.md)) were in place (`c9a07f1`), and commit `70a89b8` had just fixed a JAX transfer-guard violation in `embodied/envs/craftax.py` (scoped `jax.transfer_guard('allow')` around the env's legitimate host↔device crossings — no behavioral change, just unblocks running under the agent's guard).
+Phases 0 & 1 of the compositional **reward-cause head** for DreamerV3 (design/rationale in [`REWCAUSE_INTEGRATION.md`](REWCAUSE_INTEGRATION.md)) are in place (`c9a07f1`), the JAX transfer-guard violation in `embodied/envs/craftax.py` is fixed (`70a89b8`), and `embodied/run/rewcause_probe.py` has been reworked and committed (`7f6d285`): checkpoint-dir resolution now handles a `latest` pointer, `collect()` reports a full achievement-reach profile plus mean episode return (not just the held-out target), progress logs live per driver chunk, and the probe budget was lowered (`PROBE_MAX_EPISODES` 300→150, `PROBE_MIN_STATES` 50→30) for a faster read given the iron-tier reachability caveat.
 
-Planned next steps: confirm the achievement schema on the GPU box, smoke-test `--configs craftax size50m` (expected to be what surfaced the guard violation), then run the actual iron-pickaxe holdout probe.
+Planned next steps: on the GPU box, confirm the achievement schema, smoke-test `--configs craftax size50m`, then run the actual iron-pickaxe holdout probe.
 
 ## Today
 
-No new development session ran today. However, `embodied/run/rewcause_probe.py` had been reworked after yesterday's HANDOFF commit but was left uncommitted — that work is captured and committed now:
-
-- **Checkpoint loading**: `rewcause_probe` now accepts either an exact checkpoint dir or its parent, resolving a `latest` pointer file if the given path isn't itself a completed (`done`-marked) checkpoint — so `--run.from_checkpoint <logdir>/ckpt` works without having to know the exact timestamped subdirectory.
-- **Achievement-reach profile**: `collect()` now tallies unlock events for *every* achievement (not just the held-out target) and accumulates per-episode return, so the probe's final report includes a full reach profile (counts per achievement) and mean episode return — direct visibility into whether the eval policy is getting anywhere near the iron tier, addressing the reachability caveat flagged yesterday.
-- **Live progress logging**: prints `episodes=X/Y states=Z` after each driver chunk instead of running silently until completion.
-- **Lowered probe budget**: `PROBE_MAX_EPISODES` 300→150, `PROBE_MIN_STATES` 50→30 — presumably to get a faster read given the reachability concern, at the cost of a noisier estimate if few iron states are collected.
-- Change remains uncommitted in the working tree as of this HANDOFF; committing it now along with this file.
+No development session ran today (2026-07-24). Working tree is clean and matches yesterday's `HANDOFF.md` commit (`7f6d285`) — no new commits, no uncommitted changes.
 
 ## Tomorrow
 
