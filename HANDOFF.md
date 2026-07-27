@@ -8,7 +8,7 @@ Planned next steps: on the GPU box, confirm the achievement schema, smoke-test `
 
 ## Today
 
-No development session ran on 2026-07-25, 2026-07-26, or today (2026-07-27). Working tree is clean and matches the `b199a87` commit — no new commits, no uncommitted changes, and no file modifications anywhere in `mcAI/` (including `craftax/`, still pinned at `c3c2e0d`) since 2026-07-25 05:01.
+No development session ran on 2026-07-25 through 2026-07-27, or today (2026-07-28). Working tree is clean and matches the `dcb22f5` commit — no new commits, no uncommitted changes, and no file modifications anywhere in `mcAI/` (including `craftax/`, still pinned at `c3c2e0d`) since 2026-07-27 05:01.
 
 ## Tomorrow
 
