@@ -4,11 +4,11 @@
 
 Phases 0 & 1 of the compositional **reward-cause head** for DreamerV3 (design/rationale in [`REWCAUSE_INTEGRATION.md`](REWCAUSE_INTEGRATION.md)) are in place (`c9a07f1`), the JAX transfer-guard violation in `embodied/envs/craftax.py` is fixed (`70a89b8`), and `embodied/run/rewcause_probe.py` has been reworked and committed (`7f6d285`): checkpoint-dir resolution now handles a `latest` pointer, `collect()` reports a full achievement-reach profile plus mean episode return (not just the held-out target), progress logs live per driver chunk, and the probe budget was lowered (`PROBE_MAX_EPISODES` 300→150, `PROBE_MIN_STATES` 50→30) for a faster read given the iron-tier reachability caveat.
 
-No development session ran on 2026-07-24 through 2026-07-28 (five consecutive idle days); working tree stayed clean at `b104891`, matching the code state described above. Planned next steps carried forward unchanged: on the GPU box, confirm the achievement schema, smoke-test `--configs craftax size50m`, then run the actual iron-pickaxe holdout probe.
+No development session ran on 2026-07-24 through 2026-07-29 (six consecutive idle days); working tree stayed clean at `417222d`, matching the code state described above. Planned next steps carried forward unchanged: on the GPU box, confirm the achievement schema, smoke-test `--configs craftax size50m`, then run the actual iron-pickaxe holdout probe.
 
 ## Today
 
-No development session ran today (2026-07-29). Working tree is clean and matches the `b104891` commit — no new commits, no uncommitted changes, and no file modifications anywhere in `mcAI/` (including `craftax/`, still pinned at `c3c2e0d`) since 2026-07-28 05:01.
+No development session ran today (2026-07-30). Working tree is clean and matches the `417222d` commit — no new commits, no uncommitted changes, and no file modifications anywhere in `mcAI/` (including `craftax/`, still pinned at `c3c2e0d`) since 2026-07-29 05:02.
 
 ## Tomorrow
 
