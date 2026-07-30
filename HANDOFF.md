@@ -19,3 +19,5 @@ No development session ran today (2026-07-30). Working tree is clean and matches
   - **PASS** → head recovers verb/tool/material/tier for iron states it never trained on → proceed to Phases 2-4.
   - **FAIL** → φ feature space doesn't extrapolate linearly → revisit `craftax_features.py` before building further.
   - Watch the reachability caveat: the earlier vanilla-PPO run only reached the wood tier by ~1.1M steps, so a fresh agent may rarely/never unlock iron. With `PROBE_MIN_STATES` now lowered to 30, an `inconclusive (0 states)` result should still be read as "collect more/longer runs," not FAIL — use the new reach profile to judge whether the agent is even close.
+
+No development session ran on 2026-07-31 (seventh consecutive idle day). Working tree stayed clean at `a54c722`; no files changed anywhere under `mcAI/` (including `craftax/`, still pinned at `c3c2e0d`) since the 2026-07-30 05:02 update. Planned next steps above carry forward unchanged.
