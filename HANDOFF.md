@@ -21,3 +21,5 @@ No development session ran today (2026-07-30). Working tree is clean and matches
   - Watch the reachability caveat: the earlier vanilla-PPO run only reached the wood tier by ~1.1M steps, so a fresh agent may rarely/never unlock iron. With `PROBE_MIN_STATES` now lowered to 30, an `inconclusive (0 states)` result should still be read as "collect more/longer runs," not FAIL — use the new reach profile to judge whether the agent is even close.
 
 No development session ran on 2026-07-31 (seventh consecutive idle day). Working tree stayed clean at `a54c722`; no files changed anywhere under `mcAI/` (including `craftax/`, still pinned at `c3c2e0d`) since the 2026-07-30 05:02 update. Planned next steps above carry forward unchanged.
+
+No development session ran on 2026-08-01. Working tree stayed clean at `6e3bd4a`; no files changed anywhere under `mcAI/` since the 2026-07-31 05:01 update, and `craftax/` remains pinned at `c3c2e0d`. The idle streak now spans every day from 2026-07-24 through today. Planned next steps above carry forward unchanged.
