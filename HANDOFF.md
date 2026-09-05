@@ -72,9 +72,13 @@ No development session ran in this `dreamerv3` repo on 2026-08-25; working tree 
 
 No development session ran. Working tree is clean, still matching `f770262` (2026-08-25) — no code changes, only this HANDOFF update. `craftax/` remains pinned at `c3c2e0d`. This run of the parent workspace's scheduled task explicitly checked this subrepo (closing the gap noted above) and will keep doing so going forward. Housekeeping: `README.md` (the upstream DreamerV3 reimplementation README) and `REWCAUSE_INTEGRATION.md` are unchanged and still accurate for the current code state; no `AGENTS.md` needed — no multi-agent roles exist in this codebase.
 
+## Today (2026-09-06)
+
+No development session ran in this `dreamerv3` repo on 2026-09-05 or 2026-09-06; working tree stays clean at `3084fde`. (The parent workspace *did* have a real session on 2026-09-05 evening — it settled the teaching-agents channel architecture in `../DECISIONS.md` and `../proposal-teaching-agents.md`, planning-only, no code here — see `../HANDOFF.md` for details.) `craftax/` remains pinned at `c3c2e0d`. Note for later: the parent proposal's D5 architecture change (`feat2tensor → concat([deter, stoch, goal_embed])`) will touch this codebase and void existing checkpoints once implemented — worth sequencing after, not during, the iron-pickaxe probe below.
+
 ## Tomorrow
 
 - Carry forward the unchanged plan from above: on the GPU box, confirm the achievement schema, smoke-test `--configs craftax size50m`, then run the actual iron-pickaxe holdout probe with the reworked `rewcause_probe.py` and read the achievement-reach profile / mean-return output (PASS/FAIL criteria as described above).
 - Watch the reachability caveat noted above: prior vanilla-PPO only reached the wood tier by ~1.1M steps, so an `inconclusive (0 states)` probe result means "collect more/longer runs," not FAIL.
-- Decide whether/when to push the 32 unpushed local commits to `origin/main`.
+- Decide whether/when to push the 33 unpushed local commits to `origin/main`.
 - Keep this file updated on every future run of the parent workspace's scheduled task, not just when this subrepo itself changes — that's what let the 11-day gap happen.
