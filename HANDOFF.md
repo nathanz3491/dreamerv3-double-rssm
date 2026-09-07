@@ -76,9 +76,14 @@ No development session ran. Working tree is clean, still matching `f770262` (202
 
 No development session ran in this `dreamerv3` repo on 2026-09-05 or 2026-09-06; working tree stays clean at `3084fde`. (The parent workspace *did* have a real session on 2026-09-05 evening — it settled the teaching-agents channel architecture in `../DECISIONS.md` and `../proposal-teaching-agents.md`, planning-only, no code here — see `../HANDOFF.md` for details.) `craftax/` remains pinned at `c3c2e0d`. Note for later: the parent proposal's D5 architecture change (`feat2tensor → concat([deter, stoch, goal_embed])`) will touch this codebase and void existing checkpoints once implemented — worth sequencing after, not during, the iron-pickaxe probe below.
 
+## Today (2026-09-07)
+
+No development session ran in this `dreamerv3` repo on 2026-09-06 or 2026-09-07; working tree stays clean at `f42d38e`. The parent workspace *did* have a real session on 2026-09-06 midday — it started the map-model project (P1, the plateau itself) as its own effort: `../design-map-model.md` (a second, slower world model holding a coarse level map), `../plan-map-model-training.md` (six gated stages), and Stage 0 tooling under `../tools/` (`dump_trajectories.py`, `death_diagnostic.py`, `death_math.py`) — all planning/tooling in the parent workspace, no code changes here yet. See `../HANDOFF.md` for the full account. `craftax/` remains pinned at `c3c2e0d`. Note for later: per `../design-map-model.md` §11.5, the map model and this repo's own pending D5 goal-channel change (`feat2tensor → concat([deter, stoch, goal_embed])`) both extend the same `feat2tensor` concatenation and need to be planned together, not built independently — on top of the existing sequencing note that D5 should land after, not during, the iron-pickaxe probe below.
+
 ## Tomorrow
 
 - Carry forward the unchanged plan from above: on the GPU box, confirm the achievement schema, smoke-test `--configs craftax size50m`, then run the actual iron-pickaxe holdout probe with the reworked `rewcause_probe.py` and read the achievement-reach profile / mean-return output (PASS/FAIL criteria as described above).
 - Watch the reachability caveat noted above: prior vanilla-PPO only reached the wood tier by ~1.1M steps, so an `inconclusive (0 states)` probe result means "collect more/longer runs," not FAIL.
-- Decide whether/when to push the 33 unpushed local commits to `origin/main`.
+- Decide whether/when to push the 34 unpushed local commits to `origin/main`.
 - Keep this file updated on every future run of the parent workspace's scheduled task, not just when this subrepo itself changes — that's what let the 11-day gap happen.
+- Once the map model reaches Stage 3+ in the parent plan, this repo's `agent.py`/`configs.yaml`/`rssm.py` are the files that will actually change — see `../plan-map-model-training.md` §9 for the touch list.
