@@ -84,6 +84,10 @@ No development session ran in this `dreamerv3` repo on 2026-09-06 or 2026-09-07;
 
 No development session ran in this `dreamerv3` repo on 2026-09-07 or 2026-09-08; working tree stays clean at `61e3897`. The parent workspace also had no session on 2026-09-07 (confirmed idle — see `../HANDOFF.md`) or 2026-09-08. `craftax/` remains pinned at `c3c2e0d`. Nothing new to note beyond continued idleness; all prior sequencing notes (D5/map-model `feat2tensor` overlap, iron-pickaxe probe sequencing) carry forward unchanged.
 
+## Today (2026-09-09)
+
+No development session ran in this `dreamerv3` repo on 2026-09-08 or 2026-09-09; working tree stays clean at `3433682`. The parent workspace also had no session on 2026-09-08 or 2026-09-09 (confirmed idle — see `../HANDOFF.md`). `craftax/` remains pinned at `c3c2e0d`. Nothing new to note beyond continued idleness; all prior sequencing notes (D5/map-model `feat2tensor` overlap, iron-pickaxe probe sequencing) carry forward unchanged.
+
 ## Tomorrow
 
 - Carry forward the unchanged plan from above: on the GPU box, confirm the achievement schema, smoke-test `--configs craftax size50m`, then run the actual iron-pickaxe holdout probe with the reworked `rewcause_probe.py` and read the achievement-reach profile / mean-return output (PASS/FAIL criteria as described above).
