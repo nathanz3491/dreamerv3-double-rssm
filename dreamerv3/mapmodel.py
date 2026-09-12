@@ -65,7 +65,9 @@ class MapModel(nj.Module):
 
   # --- recurrence -----------------------------------------------------------
   def _gru(self, deter, x):
-    x = jnp.concatenate([deter, x], -1)
+    # nets.Linear asserts its input is COMPUTE_DTYPE (bf16); unlike MLPHead we
+    # build layers by hand, so casting is our job.
+    x = nn.cast(jnp.concatenate([nn.cast(deter), nn.cast(x)], -1))
     for i in range(self.layers):
       x = self.sub(f'hid{i}', nn.Linear, self.hidden, **self.kw)(x)
       x = nn.act(self.act)(self.sub(f'hid{i}norm', nn.Norm, self.norm)(x))
@@ -95,7 +97,7 @@ class MapModel(nj.Module):
   # --- decoding -------------------------------------------------------------
   def decode(self, deter2):
     """(..., deter) -> map logits (..., C, C, P) and position logits (..., C*C)."""
-    x = deter2
+    x = nn.cast(deter2)
     for i in range(self.layers):
       x = self.sub(f'dec{i}', nn.Linear, self.hidden, **self.kw)(x)
       x = nn.act(self.act)(self.sub(f'dec{i}norm', nn.Norm, self.norm)(x))
@@ -114,6 +116,7 @@ class MapModel(nj.Module):
     in the history get recalled, cells without get generated from the prior.
     """
     mlogit, plogit = self.decode(deter2)
+    mlogit, plogit = f32(mlogit), f32(plogit)   # reduce in f32, not bf16
     tgt = f32(map_target)
     bce = jnp.maximum(mlogit, 0) - mlogit * tgt + jnp.log1p(jnp.exp(-jnp.abs(mlogit)))
     map_loss = bce.sum((-1, -2, -3))
@@ -135,7 +138,7 @@ def aggregate(feat1, moves, tick):
   feat = einops.reduce(feat1[:, :T2 * tick], 'b (t k) f -> b t f', 'mean', k=tick)
   move = einops.reduce(moves[:, :T2 * tick], 'b (t k) d -> b t d', 'sum', k=tick)
   steps = jnp.full((B, T2, 1), tick, f32)
-  return jnp.concatenate([feat, f32(move), steps], -1)
+  return nn.cast(jnp.concatenate([f32(feat), f32(move), steps], -1))
 
 
 def last_of_window(x, tick):
