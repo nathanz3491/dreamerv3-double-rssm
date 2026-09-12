@@ -10,6 +10,7 @@ import ninjax as nj
 import numpy as np
 import optax
 
+from . import mapmodel as mapmod
 from . import rssm
 from . import craftax_features as cf
 
@@ -38,7 +39,10 @@ class Agent(embodied.jax.Agent):
 
     # 'ach' is the reward-cause LABEL (multi-hot of newly-unlocked
     # achievements); it must not be fed to the encoder or reconstructed.
-    exclude = ('is_first', 'is_last', 'is_terminal', 'reward', 'ach')
+    # 'map12'/'mappos'/'mapseen' are privileged RSSM-2 TARGETS -- like 'ach'
+    # they are supervision only and must never reach the encoder or decoder.
+    exclude = ('is_first', 'is_last', 'is_terminal', 'reward', 'ach',
+               'map12', 'mappos', 'mapseen')
     enc_space = {k: v for k, v in obs_space.items() if k not in exclude}
     dec_space = {k: v for k, v in obs_space.items() if k not in exclude}
     self.enc = {
@@ -54,6 +58,36 @@ class Agent(embodied.jax.Agent):
     self.feat2tensor = lambda x: jnp.concatenate([
         nn.cast(x['deter']),
         nn.cast(x['stoch'].reshape((*x['stoch'].shape[:-2], -1)))], -1)
+
+    # --- map model (RSSM-2) ---------------------------------------------------
+    # A second, slower world model holding a coarse map of the level. Off by
+    # default: with mapmodel.enabled False this file behaves exactly as before.
+    self._use_map = bool(config.mapmodel.enabled) and 'map12' in obs_space
+    if self._use_map:
+      mm = config.mapmodel
+      self._map_tick = int(mm.tick)
+      self._map_crop = int(mm.crop)
+      self._map_coarse = int(mm.coarse)
+      # Stage 4 (design SS6b.4) connects mapfeat to pol/val; that also needs the
+      # acting path in policy() to carry and decode the map. Refuse now rather
+      # than silently training with a feature the actor never sees at act time.
+      assert not bool(mm.to_actor), (
+          'mapmodel.to_actor is Stage 4 and not implemented yet; '
+          'Stage 3 trains RSSM-2 with the actor untouched.')
+      self.mapmodel = mapmod.MapModel(
+          deter=int(mm.deter), hidden=int(mm.hidden), layers=int(mm.layers),
+          coarse=int(mm.coarse), planes=int(mm.planes), name='mapmodel')
+
+    def actor2tensor(x, mapfeat=None):
+      # Actor-only path. mapfeat deliberately does NOT go through feat2tensor:
+      # that tensor also feeds 'rew' and 'con', and letting the map into the
+      # world model would make a map error corrupt imagined reward -- and so
+      # every plan built on it.
+      base = self.feat2tensor(x)
+      if mapfeat is None:
+        return base
+      return jnp.concatenate([base, nn.cast(mapfeat)], -1)
+    self.actor2tensor = actor2tensor
 
     scalar = elements.Space(np.float32, ())
     binary = elements.Space(bool, (), 0, 2)
@@ -106,6 +140,9 @@ class Agent(embodied.jax.Agent):
     scales.update({k: rec for k in dec_space})
     if not self._use_rewcause:
       scales.pop('rewcause', None)  # keep losses/scales keys in sync
+    if not self._use_map:
+      scales.pop('map', None)       # ditto -- agent asserts the keys match
+      scales.pop('mappos', None)
     self.scales = scales
 
   @property
@@ -202,6 +239,7 @@ class Agent(embodied.jax.Agent):
     B, T = reset.shape
     losses = {}
     metrics = {}
+    map_carry = self.mapmodel.initial(B) if self._use_map else None
 
     # World model
     enc_carry, enc_entries, tokens = self.enc(
@@ -237,6 +275,26 @@ class Agent(embodied.jax.Agent):
       assert value.dtype == space.dtype, (key, space, value.dtype)
       target = f32(value) / 255 if isimage(space) else value
       losses[key] = recon.loss(sg(target))
+
+    if self._use_map:
+      tick = self._map_tick
+      # sg on the way IN: the map loss must never reach RSSM-1, or we recreate
+      # the very gradient competition the two-model split exists to prevent.
+      feat1 = sg(self.feat2tensor(repfeat))
+      moves = mapmod.action_deltas(prevact['action'])
+      ticks = mapmod.aggregate(feat1, moves, tick)
+      treset = mapmod.last_of_window(reset, tick)
+      map_carry, _, deter2 = self.mapmodel.observe(map_carry, ticks, treset)
+      mtgt = mapmod.last_of_window(obs['map12'], tick)
+      ptgt = mapmod.last_of_window(obs['mappos'], tick)
+      mloss, ploss = self.mapmodel.loss(deter2, sg(mtgt), sg(ptgt))
+      # Broadcast (B, T2) back to (B, T) so the shape assert below holds;
+      # divide by tick so repeating does not inflate the loss magnitude.
+      losses['map'] = mapmod.repeat_ticks(mloss, tick, T) / tick
+      losses['mappos'] = mapmod.repeat_ticks(ploss, tick, T) / tick
+      metrics['map/bce'] = mloss.mean()
+      metrics['map/posacc'] = (
+          self.mapmodel.decode(deter2)[1].argmax(-1) == ptgt).mean()
 
     B, T = reset.shape
     shapes = {k: v.shape for k, v in losses.items()}
