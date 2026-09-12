@@ -131,6 +131,8 @@ class Agent(embodied.jax.Agent):
         self.dyn, self.enc, self.dec, self.rew, self.con, self.pol, self.val]
     if self._use_rewcause:
       self.modules.append(self.rewcause)
+    if self._use_map:
+      self.modules.append(self.mapmodel)
     self.opt = embodied.jax.Optimizer(
         self.modules, self._make_opt(**config.opt), summary_depth=1,
         name='opt')
@@ -292,7 +294,10 @@ class Agent(embodied.jax.Agent):
       # divide by tick so repeating does not inflate the loss magnitude.
       losses['map'] = mapmod.repeat_ticks(mloss, tick, T) / tick
       losses['mappos'] = mapmod.repeat_ticks(ploss, tick, T) / tick
-      metrics['map/bce'] = mloss.mean()
+      metrics['map/bce'] = mloss.mean()                 # per tick, over all cells
+      metrics['map/bce_cell'] = mloss.mean() / (
+          self._map_coarse ** 2 * int(self.config.mapmodel.planes))
+      metrics['map/posce'] = ploss.mean()                # chance = ln(144) = 4.97
       metrics['map/posacc'] = (
           self.mapmodel.decode(deter2)[1].argmax(-1) == ptgt).mean()
 
