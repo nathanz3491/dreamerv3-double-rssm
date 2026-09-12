@@ -4,6 +4,9 @@ Wraps a single (non-batched) Craftax env behind embodied.Env, mirroring the
 repo's own crafter.py. Two additions beyond a plain wrapper, both load-bearing
 for the compositional-reward / frontier-exploration plan:
 
+  0. Optionally emits the map-model TARGETS ``obs['map12'|'mappos'|'mapseen']``
+     when ``mapmodel=True`` -- privileged supervision for RSSM-2, excluded from
+     the encoder/decoder exactly like ``ach``. See ``design-map-model.md``.
   1. Emits ``obs['ach']`` -- a float32 multi-hot of achievements newly unlocked
      *this step* (length = NUM_ACHIEVEMENTS). This is the training target for the
      reward-cause head (Phase 1) and the trigger signal for frontier saving
@@ -36,7 +39,8 @@ import numpy as np
 
 class Craftax(embodied.Env):
 
-  def __init__(self, task='symbolic', size=None, seed=0, logs=False):
+  def __init__(self, task='symbolic', size=None, seed=0, logs=False,
+               mapmodel=False):
     assert task in ('symbolic',), task  # pixels: add 'Craftax-Pixels-v1' below
     import jax
     from craftax.craftax_env import make_craftax_env_from_name
@@ -46,6 +50,13 @@ class Craftax(embodied.Env):
     self._env = make_craftax_env_from_name(
         'Craftax-Symbolic-v1', auto_reset=False)
     self._num_ach = NUM_ACHIEVEMENTS
+
+    self._mapmodel = bool(mapmodel)
+    if self._mapmodel:
+      from dreamerv3 import craftax_map
+      self._M = craftax_map
+    self._seen = None
+    self._prev_level = None
 
     # Everything here touches the host<->device boundary (params pytree, space
     # bounds, RNG key), so it runs under an allow scope; see module docstring.
@@ -83,6 +94,13 @@ class Craftax(embodied.Env):
         'is_last': elements.Space(bool),
         'is_terminal': elements.Space(bool),
     }
+    if self._mapmodel:
+      C, P = self._M.COARSE, self._M.N_PLANES
+      # Privileged TARGETS, never inputs -- agent.py excludes them from
+      # enc/dec alongside 'ach'.
+      spaces['map12'] = elements.Space(np.float32, (C, C, P), 0.0, 1.0)
+      spaces['mappos'] = elements.Space(np.int32, (), 0, self._M.N_CELLS)
+      spaces['mapseen'] = elements.Space(np.float32, (C, C), 0.0, 1.0)
     if self._logs:
       spaces['log/reward'] = elements.Space(np.float32)
       spaces['log/achievements'] = elements.Space(np.int32)
@@ -159,12 +177,34 @@ class Craftax(embodied.Env):
         is_last=is_last,
         is_terminal=is_terminal,
     )
+    if self._mapmodel:
+      obs.update(self._map_targets(state, is_first))
     if self._logs:
       obs['log/reward'] = np.float32(reward)
       with self._jax.transfer_guard('allow'):
         obs['log/achievements'] = np.int32(
             np.asarray(state.achievements).sum())
     return obs
+
+  # --- map-model targets (privileged; training supervision only) -------------
+  def _map_targets(self, state, is_first):
+    """Coarse map, coarse position and cumulative visitation for RSSM-2.
+
+    The visitation mask is per-episode AND per-level: Craftax has 9 levels,
+    each its own 48x48 map, and v1 models only the level the agent is on
+    (design SS7.1), so descending a ladder resets the mask.
+    """
+    with self._jax.transfer_guard('allow'):
+      level = int(state.player_level)
+      if is_first or level != self._prev_level:
+        self._seen = None
+      self._prev_level = level
+      self._seen = self._M.update_seen(self._seen, state)
+      return dict(
+          map12=self._M.coarse_map(state, self._seen),
+          mappos=self._M.coarse_pos(state),
+          mapseen=self._seen.astype(np.float32),
+      )
 
   # --- Phase 4: frontier checkpoint/restore ----------------------------------
   def save_state(self):
