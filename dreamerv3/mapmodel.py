@@ -22,6 +22,7 @@ map on the way out (so policy gradients never reach RSSM-2).
 import einops
 import jax
 import jax.numpy as jnp
+import numpy as np
 import ninjax as nj
 from jax import numpy as jnp  # noqa: F811  (kept explicit for readability)
 
@@ -176,8 +177,9 @@ def crop_egocentric(map12, cells, size=9):
 
 
 # Movement actions -> (dy, dx). Craftax Action: LEFT=1 RIGHT=2 UP=3 DOWN=4.
-_DELTAS = jnp.array(
-    [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0]], jnp.int32)
+# numpy, not jnp: a module-level jnp.array lands on device at import time and
+# then trips the transfer guard when traced as a constant (cf. 70a89b8).
+_DELTAS = np.array([[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0]], np.int32)
 
 
 def action_deltas(actions):
@@ -187,4 +189,4 @@ def action_deltas(actions):
   through imagination, where the map is frozen but the crop must still slide.
   """
   idx = jnp.clip(actions.astype(jnp.int32), 0, 4)
-  return _DELTAS[idx]
+  return jnp.asarray(_DELTAS)[idx]
