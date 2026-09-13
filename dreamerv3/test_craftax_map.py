@@ -32,15 +32,52 @@ def test_single_water_tile_lights_exactly_one_cell():
   blocks[10, 10] = 3                                  # BlockType.WATER
   m = M.coarse_map(_state(blocks))
   water = m[:, :, M.P_WATER]
-  assert water.sum() == 1.0, water.sum()
-  assert water[10 // M.CELL, 10 // M.CELL] == 1.0     # -> cell (2, 2)
+  assert water[10 // M.CELL, 10 // M.CELL] > 0.0      # -> cell (2, 2)
+  assert (water > 0).sum() == 1, 'must not leak into neighbours'
 
 
-def test_presence_pooling_is_any_not_mean():
-  """One tile in a 4x4 cell must light the whole cell -- max, not average."""
+def test_mean_planes_carry_fill_not_just_presence():
+  """stone/water/sand/plant are pooled by fraction: 1 tile != a full cell.
+
+  This is the dynamic range the design buys by not using max everywhere -- a
+  scattered pebble field and a solid mountain must not read identically.
+  """
+  one = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
+  one[0, 0] = 4                                       # STONE, 1 of 16 tiles
+  full = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
+  full[0:M.CELL, 0:M.CELL] = 4                        # STONE, 16 of 16
+
+  sparse = M.coarse_map(_state(one))[0, 0, M.P_STONE]
+  dense = M.coarse_map(_state(full))[0, 0, M.P_STONE]
+  assert sparse == 1.0 / (M.CELL * M.CELL), sparse
+  assert dense == 1.0
+  assert sparse < dense, 'mean pooling must distinguish these'
+
+
+def test_max_planes_saturate_on_a_single_tile():
+  """tree/ore/lava/table are sparse, so one tile lights the whole cell.
+
+  Pooled by mean a tree cell would read ~0.1 -- indistinguishable from empty
+  once the decoder is noisy. Presence keeps the signal at full scale.
+  """
   blocks = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
-  blocks[0, 0] = 4                                    # STONE
-  assert M.coarse_map(_state(blocks))[0, 0, M.P_STONE] == 1.0
+  blocks[0, 0] = 5                                    # TREE
+  blocks[4, 0] = 8                                    # COAL
+  m = M.coarse_map(_state(blocks))
+  assert m[0, 0, M.P_TREE] == 1.0
+  assert m[1, 0, M.P_COAL] == 1.0
+
+
+def test_ores_do_not_share_a_plane():
+  """Coal (8% of cells), iron (6%) and diamond (0.3%) are found and used at
+  different tiers -- collapsing them loses exactly the distinction the actor
+  needs when deciding where to dig."""
+  blocks = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
+  blocks[0, 0] = 9                                    # IRON
+  m = M.coarse_map(_state(blocks))
+  assert m[0, 0, M.P_IRON] == 1.0
+  assert m[0, 0, M.P_COAL] == 0.0
+  assert m[0, 0, M.P_DIAMOND] == 0.0
 
 
 def test_coarse_pos_matches_tile_position():

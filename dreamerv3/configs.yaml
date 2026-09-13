@@ -30,7 +30,7 @@ defaults:
     atari: {size: [96, 96], repeat: 4, sticky: True, gray: True, actions: all, lives: unused, noops: 30, autostart: False, pooling: 2, aggregate: max, resize: pillow, clip_reward: False}
     procgen: {size: [96, 96], resize: pillow}
     crafter: {size: [64, 64], logs: False}
-    craftax: {logs: False, use_seed: True, mapmodel: False}
+    craftax: {logs: False, use_seed: True, mapmodel: False, seen_decay: 0.99}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}
@@ -103,13 +103,14 @@ defaults:
     # enabled: False reproduces stock behaviour byte-for-byte.
     mapmodel:
       enabled: False
-      to_actor: False   # Stage 4: feed mapfeat to pol/val (not implemented yet)
+      to_actor: False    # Stage 4: feed the coarse map to pol/val
+      imag_shift: True   # Stage 5: slide the crop through imagination
       tick: 8           # env steps per RSSM-2 tick; must divide batch_length
       deter: 1024
       hidden: 512
       layers: 2
       coarse: 12        # 12x12 grid over a 48x48 level
-      planes: 13
+      planes: 16
       crop: 9           # egocentric window, in coarse cells
     rewcause: False           # enable only for Craftax runs (needs obs['ach'])
     rewcause_none_weight: 0.1

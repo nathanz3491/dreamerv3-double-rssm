@@ -10,6 +10,7 @@ import ninjax as nj
 import numpy as np
 import optax
 
+from . import craftax_map as cmap
 from . import mapmodel as mapmod
 from . import rssm
 from . import craftax_features as cf
@@ -68,12 +69,13 @@ class Agent(embodied.jax.Agent):
       self._map_tick = int(mm.tick)
       self._map_crop = int(mm.crop)
       self._map_coarse = int(mm.coarse)
-      # Stage 4 (design SS6b.4) connects mapfeat to pol/val; that also needs the
-      # acting path in policy() to carry and decode the map. Refuse now rather
-      # than silently training with a feature the actor never sees at act time.
-      assert not bool(mm.to_actor), (
-          'mapmodel.to_actor is Stage 4 and not implemented yet; '
-          'Stage 3 trains RSSM-2 with the actor untouched.')
+      self._map_to_actor = bool(mm.to_actor)
+      self._map_imag_shift = bool(mm.imag_shift)
+      # 48x48 level over a 12x12 grid -> 4 tiles per cell. Needed to turn
+      # imagined tile-sized steps into cell-sized ones when sliding the crop.
+      self._map_cell_tiles = int(cmap.MAP_SIZE // mm.coarse)
+      r = config.dyn[config.dyn.typ]
+      self._feat1_dim = int(r.deter) + int(r.stoch) * int(r.classes)
       self.mapmodel = mapmod.MapModel(
           deter=int(mm.deter), hidden=int(mm.hidden), layers=int(mm.layers),
           coarse=int(mm.coarse), planes=int(mm.planes), name='mapmodel')
@@ -86,8 +88,33 @@ class Agent(embodied.jax.Agent):
       base = self.feat2tensor(x)
       if mapfeat is None:
         return base
-      return jnp.concatenate([base, nn.cast(mapfeat)], -1)
+      mapfeat = nn.cast(mapfeat)
+      if mapfeat.ndim == base.ndim - 1:       # one crop shared across the axis
+        mapfeat = jnp.repeat(mapfeat[:, None], base.shape[-2], -2)
+      return jnp.concatenate([base, mapfeat], -1)
     self.actor2tensor = actor2tensor
+
+    def mapfeat(deter2, cells=None):
+      """(N, D2), (N, S) -> (N, S, crop*crop*planes) actor-side map feature.
+
+      ``cells`` are the coarse cells to centre each crop on; pass None to use
+      RSSM-2's own predicted position. Also returns that prediction, which the
+      imagination path needs as the origin to dead-reckon from.
+
+      sg on the way OUT, mirroring the sg on feat1 going in: policy gradients
+      must never reach RSSM-2, or the map stops being a description of the world
+      and becomes whatever raises return this batch. The crop itself is pure
+      indexing, so there is no parameter between them to train -- only the
+      scalar gate, which is deliberately outside the sg.
+      """
+      mlogit, plogit = self.mapmodel.decode(deter2)
+      prob = jax.nn.sigmoid(f32(mlogit))                 # (N, C, C, P)
+      pred = sg(jnp.argmax(f32(plogit), -1))             # (N,)
+      cells = pred[:, None] if cells is None else cells
+      crop = mapmod.crop_egocentric(prob, cells, self._map_crop)
+      flat = crop.reshape((*crop.shape[:2], -1))         # (N, S, F)
+      return nn.cast(sg(flat) * self.mapmodel.gate()), pred
+    self.mapfeat = mapfeat
 
     scalar = elements.Space(np.float32, ())
     binary = elements.Space(bool, (), 0, 2)
@@ -152,9 +179,14 @@ class Agent(embodied.jax.Agent):
     # The reward-cause head is queried by the probe (mode='probe') through the
     # policy path, so when enabled its params must be part of the policy param
     # set (which the base agent syncs to the policy device).
+    keys = ['enc', 'dyn', 'dec', 'pol']
     if self._use_rewcause:
-      return '^(enc|dyn|dec|pol|rewcause)/'
-    return '^(enc|dyn|dec|pol)/'
+      keys.append('rewcause')
+    if self._use_map and self._map_to_actor:
+      # The acting path decodes the map itself, so RSSM-2's weights have to
+      # ship to the policy device alongside the actor's.
+      keys.append('mapmodel')
+    return '^(' + '|'.join(keys) + ')/'
 
   @property
   def ext_space(self):
@@ -162,10 +194,16 @@ class Agent(embodied.jax.Agent):
     spaces['consec'] = elements.Space(np.int32)
     spaces['stepid'] = elements.Space(np.uint8, 20)
     if self.config.replay_context:
-      spaces.update(elements.tree.flatdict(dict(
+      entries = dict(
           enc=self.enc.entry_space,
           dyn=self.dyn.entry_space,
-          dec=self.dec.entry_space)))
+          dec=self.dec.entry_space)
+      if self._use_map:
+        # Without this RSSM-2 restarts from zeros every batch and never sees
+        # more than batch_length/tick = 8 ticks -- far too few for a map that
+        # accumulates over hundreds of steps.
+        entries['map'] = self.mapmodel.entry_space
+      spaces.update(elements.tree.flatdict(entries))
     return spaces
 
   def init_policy(self, batch_size):
@@ -174,7 +212,34 @@ class Agent(embodied.jax.Agent):
         self.enc.initial(batch_size),
         self.dyn.initial(batch_size),
         self.dec.initial(batch_size),
+        self._map_initial(batch_size),
         jax.tree.map(zeros, self.act_space))
+
+  def _map_truncate(self, entries, carry):
+    """Resume RSSM-2 from the replay context at a mid-episode chunk boundary."""
+    if not self._use_map:
+      return {}
+    out = {**carry, 'deter2': nn.cast(entries['deter2'][:, -1])}
+    # The accumulators restart: a chunk boundary falls mid-window and partial
+    # sums are not stored, so at most tick-1 steps of aggregation are lost.
+    for key in ('featsum', 'movesum', 'count'):
+      if key in out:
+        out[key] = jnp.zeros_like(out[key])
+    return out
+
+  def _map_initial(self, batch_size):
+    """RSSM-2 carry plus the accumulators the single-step acting path needs.
+
+    observe() consumes whole 8-step windows; policy() sees one step at a time,
+    so it sums features and movement until a window closes and then ticks.
+    """
+    if not self._use_map:
+      return {}
+    carry = dict(self.mapmodel.initial(batch_size))
+    carry['featsum'] = jnp.zeros((batch_size, self._feat1_dim), f32)
+    carry['movesum'] = jnp.zeros((batch_size, 2), f32)
+    carry['count'] = jnp.zeros((batch_size, 1), f32)
+    return nn.cast(carry)
 
   def init_train(self, batch_size):
     return self.init_policy(batch_size)
@@ -183,7 +248,7 @@ class Agent(embodied.jax.Agent):
     return self.init_policy(batch_size)
 
   def policy(self, carry, obs, mode='train'):
-    (enc_carry, dyn_carry, dec_carry, prevact) = carry
+    (enc_carry, dyn_carry, dec_carry, map_carry, prevact) = carry
     kw = dict(training=False, single=True)
     reset = obs['is_first']
     enc_carry, enc_entry, tokens = self.enc(enc_carry, obs, reset, **kw)
@@ -192,7 +257,10 @@ class Agent(embodied.jax.Agent):
     dec_entry = {}
     if dec_carry:
       dec_carry, dec_entry, recons = self.dec(dec_carry, feat, reset, **kw)
-    policy = self.pol(self.feat2tensor(feat), bdims=1)
+    mapfeat = None
+    if self._use_map:
+      map_carry, mapfeat = self._map_act(map_carry, feat, prevact, reset)
+    policy = self.pol(self.actor2tensor(feat, mapfeat), bdims=1)
     act = sample(policy)
     out = {}
     out['finite'] = elements.tree.flatdict(jax.tree.map(
@@ -210,11 +278,43 @@ class Agent(embodied.jax.Agent):
       # over phi, so read the raw per-feature logit rather than Agg.prob.
       rc = self.rewcause(self.feat2tensor(feat), bdims=1)
       out['rewcause_prob'] = jax.nn.sigmoid(rc.output.logit)
-    carry = (enc_carry, dyn_carry, dec_carry, act)
+    carry = (enc_carry, dyn_carry, dec_carry, map_carry, act)
     if self.config.replay_context:
-      out.update(elements.tree.flatdict(dict(
-          enc=enc_entry, dyn=dyn_entry, dec=dec_entry)))
+      entries = dict(enc=enc_entry, dyn=dyn_entry, dec=dec_entry)
+      if self._use_map:
+        entries['map'] = dict(deter2=map_carry['deter2'])
+      out.update(elements.tree.flatdict(entries))
     return carry, act, out
+
+  def _map_act(self, carry, feat, prevact, reset):
+    """One acting step of RSSM-2: accumulate, tick on window close, crop.
+
+    Branchless on purpose -- the GRU runs every step and its result is discarded
+    until the window closes. A 1024-unit GRU on a single step is far cheaper
+    than a host-side branch in the acting loop.
+    """
+    tick = self._map_tick
+    keep = nn.cast(~reset)[:, None]
+    feat1 = f32(sg(self.feat2tensor(feat)))
+    move = f32(mapmod.action_deltas(prevact['action']))
+    featsum = f32(carry['featsum']) * f32(keep) + feat1
+    movesum = f32(carry['movesum']) * f32(keep) + move
+    count = f32(carry['count']) * f32(keep) + 1.0
+
+    inp = nn.cast(jnp.concatenate(
+        [featsum / tick, movesum, jnp.full_like(count, tick)], -1))
+    _, _, deter2 = self.mapmodel.observe(
+        dict(deter2=carry['deter2']), inp[:, None], reset[:, None])
+    closed = (count >= tick)
+    deter2 = nn.cast(jnp.where(closed, f32(deter2[:, 0]), f32(carry['deter2'])))
+    zero = lambda x: jnp.where(closed, jnp.zeros_like(x), x)
+    carry = nn.cast(dict(
+        deter2=deter2, featsum=zero(featsum), movesum=zero(movesum),
+        count=zero(count)))
+    if not self._map_to_actor:
+      return carry, None
+    mapfeat, _ = self.mapfeat(deter2)
+    return carry, mapfeat[:, 0]
 
   def train(self, carry, data):
     carry, obs, prevact, stepid = self._apply_replay_context(carry, data)
@@ -224,8 +324,11 @@ class Agent(embodied.jax.Agent):
     self.slowval.update()
     outs = {}
     if self.config.replay_context:
-      updates = elements.tree.flatdict(dict(
-          stepid=stepid, enc=entries[0], dyn=entries[1], dec=entries[2]))
+      names = dict(stepid=stepid, enc=entries[0], dyn=entries[1],
+                   dec=entries[2])
+      if self._use_map:
+        names['map'] = entries[3]
+      updates = elements.tree.flatdict(names)
       B, T = obs['is_first'].shape
       assert all(x.shape[:2] == (B, T) for x in updates.values()), (
           (B, T), {k: v.shape for k, v in updates.items()})
@@ -236,12 +339,13 @@ class Agent(embodied.jax.Agent):
     return carry, outs, metrics
 
   def loss(self, carry, obs, prevact, training):
-    enc_carry, dyn_carry, dec_carry = carry
+    enc_carry, dyn_carry, dec_carry, map_carry = carry
     reset = obs['is_first']
     B, T = reset.shape
     losses = {}
     metrics = {}
-    map_carry = self.mapmodel.initial(B) if self._use_map else None
+    map_entries = {}
+    deter2_step = None
 
     # World model
     enc_carry, enc_entries, tokens = self.enc(
@@ -286,7 +390,14 @@ class Agent(embodied.jax.Agent):
       moves = mapmod.action_deltas(prevact['action'])
       ticks = mapmod.aggregate(feat1, moves, tick)
       treset = mapmod.last_of_window(reset, tick)
-      map_carry, _, deter2 = self.mapmodel.observe(map_carry, ticks, treset)
+      new_carry, _, deter2 = self.mapmodel.observe(map_carry, ticks, treset)
+      # Keep the acting accumulators alongside deter2 so the carry keeps its
+      # shape across train steps (observe only knows about deter2).
+      map_carry = {**map_carry, **new_carry}
+      # (B, T2, D2) -> (B, T, D2): every step carries the state of the tick it
+      # belongs to, which is what both the actor path and replay_context need.
+      deter2_step = mapmod.repeat_ticks(deter2, tick, T)
+      map_entries = dict(deter2=deter2_step)
       mtgt = mapmod.last_of_window(obs['map12'], tick)
       ptgt = mapmod.last_of_window(obs['mappos'], tick)
       mloss, ploss = self.mapmodel.loss(deter2, sg(mtgt), sg(ptgt))
@@ -300,6 +411,7 @@ class Agent(embodied.jax.Agent):
       metrics['map/posce'] = ploss.mean()                # chance = ln(144) = 4.97
       metrics['map/posacc'] = (
           self.mapmodel.decode(deter2)[1].argmax(-1) == ptgt).mean()
+      metrics['map/gate'] = self.mapmodel.gate()
 
     B, T = reset.shape
     shapes = {k: v.shape for k, v in losses.items()}
@@ -309,7 +421,19 @@ class Agent(embodied.jax.Agent):
     K = min(self.config.imag_last or T, T)
     H = self.config.imag_length
     starts = self.dyn.starts(dyn_entries, dyn_carry, K)
-    policyfn = lambda feat: sample(self.pol(self.feat2tensor(feat), 1))
+    # The rollout must sample from the SAME policy the loss differentiates, or
+    # imag_loss's REINFORCE term scores actions drawn from a different
+    # distribution. RSSM-1's imagine() carries only (deter, stoch) through its
+    # scan, so a crop that slides step by step cannot be threaded in here --
+    # the rollout therefore uses the crop frozen at the imagination start,
+    # which needs no future actions to compute.
+    frozen = None
+    if self._use_map and self._map_to_actor:
+      start2 = deter2_step[:, -K:].reshape((B * K, -1))
+      startfeat, cell0 = self.mapfeat(start2)
+      frozen = startfeat[:, 0]
+    policyfn = lambda feat: sample(
+        self.pol(self.actor2tensor(feat, frozen), 1))
     _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
     first = jax.tree.map(
         lambda x: x[:, -K:].reshape((B * K, 1, *x.shape[2:])), repfeat)
@@ -320,13 +444,32 @@ class Agent(embodied.jax.Agent):
     assert all(x.shape[:2] == (B * K, H + 1) for x in jax.tree.leaves(imgfeat))
     assert all(x.shape[:2] == (B * K, H + 1) for x in jax.tree.leaves(imgact))
     inp = self.feat2tensor(imgfeat)
+    # rew/con keep the stock tensor: a wrong map cell must never be able to
+    # fabricate imagined reward. Only pol/val/slowval see the map, and slowval
+    # must see exactly what val does or the value target drifts from the
+    # estimate for good.
+    ainp = inp
+    if self._use_map and self._map_to_actor:
+      if self._map_imag_shift:
+        # Stage 5. The map content stays frozen -- imagining teaches you no
+        # geography -- but the window slides, so imagining "walk north" finally
+        # changes the actor's input and produces a gradient. This makes the
+        # rollout slightly off-policy (see `frozen` above); over H=15 steps the
+        # agent covers at most ~4 cells of a +/-4-cell crop, so the two inputs
+        # overlap heavily. imag_shift False is the exactly-consistent ablation.
+        cells = mapmod.dead_reckon(
+            cell0, imgact['action'], self._map_coarse, self._map_cell_tiles)
+        imgmapfeat, _ = self.mapfeat(start2, cells)
+      else:
+        imgmapfeat = jnp.repeat(frozen[:, None], imgfeat['deter'].shape[1], 1)
+      ainp = self.actor2tensor(imgfeat, imgmapfeat)
     los, imgloss_out, mets = imag_loss(
         imgact,
         self.rew(inp, 2).pred(),
         self.con(inp, 2).prob(1),
-        self.pol(inp, 2),
-        self.val(inp, 2),
-        self.slowval(inp, 2),
+        self.pol(ainp, 2),
+        self.val(ainp, 2),
+        self.slowval(ainp, 2),
         self.retnorm, self.valnorm, self.advnorm,
         update=training,
         contdisc=self.config.contdisc,
@@ -343,6 +486,10 @@ class Agent(embodied.jax.Agent):
       feat, last, term, rew, boot = jax.tree.map(
           lambda x: x[:, -K:], (feat, last, term, rew, boot))
       inp = self.feat2tensor(feat)
+      if self._use_map and self._map_to_actor:
+        d2 = deter2_step[:, -K:].reshape((B * K, -1))
+        mf, _ = self.mapfeat(d2)
+        inp = self.actor2tensor(feat, mf.reshape((B, K, -1)))
       los, reploss_out, mets = repl_loss(
           last, term, rew, boot,
           self.val(inp, 2),
@@ -359,8 +506,8 @@ class Agent(embodied.jax.Agent):
     metrics.update({f'loss/{k}': v.mean() for k, v in losses.items()})
     loss = sum([v.mean() * self.scales[k] for k, v in losses.items()])
 
-    carry = (enc_carry, dyn_carry, dec_carry)
-    entries = (enc_entries, dyn_entries, dec_entries)
+    carry = (enc_carry, dyn_carry, dec_carry, map_carry)
+    entries = (enc_entries, dyn_entries, dec_entries, map_entries)
     outs = {'tokens': tokens, 'repfeat': repfeat, 'losses': losses}
     return loss, (carry, entries, outs, metrics)
 
@@ -369,7 +516,7 @@ class Agent(embodied.jax.Agent):
       return carry, {}
 
     carry, obs, prevact, _ = self._apply_replay_context(carry, data)
-    (enc_carry, dyn_carry, dec_carry) = carry
+    (enc_carry, dyn_carry, dec_carry, map_carry) = carry
     B, T = obs['is_first'].shape
     RB = min(6, B)
     metrics = {}
@@ -430,8 +577,8 @@ class Agent(embodied.jax.Agent):
     return carry, metrics
 
   def _apply_replay_context(self, carry, data):
-    (enc_carry, dyn_carry, dec_carry, prevact) = carry
-    carry = (enc_carry, dyn_carry, dec_carry)
+    (enc_carry, dyn_carry, dec_carry, map_carry, prevact) = carry
+    carry = (enc_carry, dyn_carry, dec_carry, map_carry)
     stepid = data['stepid']
     obs = {k: data[k] for k in self.obs_space}
     prepend = lambda x, y: jnp.concatenate([x[:, None], y[:, :-1]], 1)
@@ -441,13 +588,14 @@ class Agent(embodied.jax.Agent):
 
     K = self.config.replay_context
     nested = elements.tree.nestdict(data)
-    entries = [nested.get(k, {}) for k in ('enc', 'dyn', 'dec')]
+    entries = [nested.get(k, {}) for k in ('enc', 'dyn', 'dec', 'map')]
     lhs = lambda xs: jax.tree.map(lambda x: x[:, :K], xs)
     rhs = lambda xs: jax.tree.map(lambda x: x[:, K:], xs)
     rep_carry = (
         self.enc.truncate(lhs(entries[0]), enc_carry),
         self.dyn.truncate(lhs(entries[1]), dyn_carry),
-        self.dec.truncate(lhs(entries[2]), dec_carry))
+        self.dec.truncate(lhs(entries[2]), dec_carry),
+        self._map_truncate(lhs(entries[3]), map_carry))
     rep_obs = {k: rhs(data[k]) for k in self.obs_space}
     rep_prevact = {k: data[k][:, K - 1: -1] for k in self.act_space}
     rep_stepid = rhs(stepid)

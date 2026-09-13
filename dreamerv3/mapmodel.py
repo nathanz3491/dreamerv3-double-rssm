@@ -1,7 +1,7 @@
 """RSSM-2 -- the slow map model.
 
 A second, coarser world model that ticks once per ``tick`` env steps and
-predicts a 12x12x13 map of the whole level plus the agent's own coarse cell.
+predicts a 12x12x16 map of the whole level plus the agent's own coarse cell.
 Where the agent has been it recalls; where it hasn't it predicts from the prior
 that Craftax's biomes are clustered rather than random.
 
@@ -38,7 +38,7 @@ class MapModel(nj.Module):
   hidden: int = 512
   layers: int = 2
   coarse: int = 12
-  planes: int = 13
+  planes: int = 16
   act: str = 'silu'
   norm: str = 'rms'
 
@@ -106,6 +106,18 @@ class MapModel(nj.Module):
     mlogit = mlogit.reshape((*x.shape[:-1], self.coarse, self.coarse, self.planes))
     plogit = self.sub('decpos', nn.Linear, self.cells, **self.kw)(x)
     return mlogit, plogit
+
+  def gate(self):
+    """Scalar the actor's map input is multiplied by. Learned, initialised 0.
+
+    This replaces a hand-tuned warm-up schedule. At 0 the actor is map-blind, so
+    an untrained RSSM-2 cannot poison the policy while everything trains at
+    once; the gate still receives gradient (d loss/d gate is non-zero even at 0),
+    so the channel opens by itself exactly as fast as it starts paying. Logged
+    as ``map/gate``: if it stays near zero the actor found the map useless, which
+    is the crop-ablation test running continuously instead of once at the end.
+    """
+    return self.value('gate', jnp.zeros, (), f32)
 
   # --- losses ---------------------------------------------------------------
   def loss(self, deter2, map_target, pos_target):
@@ -180,6 +192,29 @@ def crop_egocentric(map12, cells, size=9):
 # numpy, not jnp: a module-level jnp.array lands on device at import time and
 # then trips the transfer guard when traced as a constant (cf. 70a89b8).
 _DELTAS = np.array([[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0]], np.int32)
+
+
+def dead_reckon(cell0, actions, coarse, cell_tiles, shift=True):
+  """(N,), (N, S) -> (N, S) coarse cells visited by an imagined action sequence.
+
+  Imagination has no observations, so RSSM-2 cannot legitimately tick: ticking
+  it on imagined features would let the agent invent terrain and then plan to
+  harvest it. Instead the map is FROZEN and only the crop window moves -- which
+  is also the honest semantics, since imagining does not teach you geography.
+
+  Positions are integrated in tiles and rounded to the nearest cell, assuming
+  the agent starts mid-cell (it has no sub-cell information to do better).
+  """
+  cy0, cx0 = cell0 // coarse, cell0 % coarse
+  if not shift:
+    S = actions.shape[1]
+    return jnp.repeat(cell0[:, None], S, 1)
+  deltas = action_deltas(actions)                       # (N, S, 2) tiles
+  tiles = jnp.cumsum(deltas, 1) - deltas                # offset BEFORE the step
+  cells = (tiles + cell_tiles // 2) // cell_tiles       # -> nearest cell
+  cy = jnp.clip(cy0[:, None] + cells[..., 0], 0, coarse - 1)
+  cx = jnp.clip(cx0[:, None] + cells[..., 1], 0, coarse - 1)
+  return cy * coarse + cx
 
 
 def action_deltas(actions):
