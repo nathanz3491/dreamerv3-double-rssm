@@ -40,7 +40,7 @@ import numpy as np
 class Craftax(embodied.Env):
 
   def __init__(self, task='symbolic', size=None, seed=0, logs=False,
-               mapmodel=False):
+               mapmodel=False, seen_decay=0.99):
     assert task in ('symbolic',), task  # pixels: add 'Craftax-Pixels-v1' below
     import jax
     from craftax.craftax_env import make_craftax_env_from_name
@@ -52,6 +52,7 @@ class Craftax(embodied.Env):
     self._num_ach = NUM_ACHIEVEMENTS
 
     self._mapmodel = bool(mapmodel)
+    self._seen_decay = float(seen_decay)
     if self._mapmodel:
       from dreamerv3 import craftax_map
       self._M = craftax_map
@@ -199,7 +200,7 @@ class Craftax(embodied.Env):
       if is_first or level != self._prev_level:
         self._seen = None
       self._prev_level = level
-      self._seen = self._M.update_seen(self._seen, state)
+      self._seen = self._M.update_seen(self._seen, state, self._seen_decay)
       return dict(
           map12=self._M.coarse_map(state, self._seen),
           mappos=self._M.coarse_pos(state),
