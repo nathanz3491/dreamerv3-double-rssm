@@ -30,7 +30,8 @@ defaults:
     atari: {size: [96, 96], repeat: 4, sticky: True, gray: True, actions: all, lives: unused, noops: 30, autostart: False, pooling: 2, aggregate: max, resize: pillow, clip_reward: False}
     procgen: {size: [96, 96], resize: pillow}
     crafter: {size: [64, 64], logs: False}
-    craftax: {logs: False, use_seed: True, mapmodel: False, seen_decay: 0.99}
+    craftax: {logs: False, use_seed: True, mapmodel: False, seen_decay: 0.99,
+              survival: none, death_penalty: 1.0, maintain_scale: 0.1, maintain_threshold: 3.0}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}

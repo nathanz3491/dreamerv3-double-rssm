@@ -40,7 +40,9 @@ import numpy as np
 class Craftax(embodied.Env):
 
   def __init__(self, task='symbolic', size=None, seed=0, logs=False,
-               mapmodel=False, seen_decay=0.99):
+               mapmodel=False, seen_decay=0.99, survival='none',
+               death_penalty=1.0, maintain_scale=0.1,
+               maintain_threshold=3.0):
     assert task in ('symbolic',), task  # pixels: add 'Craftax-Pixels-v1' below
     import jax
     from craftax.craftax_env import make_craftax_env_from_name
@@ -58,6 +60,34 @@ class Craftax(embodied.Env):
       self._M = craftax_map
     self._seen = None
     self._prev_level = None
+
+    # --- survival shaping ----------------------------------------------------
+    # Craftax pays for COLLECT_DRINK and EAT_COW exactly ONCE. Every drink after
+    # the first is worth zero, so maintenance is unrewarded and -- because a
+    # plateaued agent's future is worth little -- dying is nearly free. Measured
+    # at 689k steps: 45% of deaths are thirst, 23% hunger, and the agent dies
+    # with mean drink 2.45 / food 2.90 still in the tank while knowing exactly
+    # where the water is (map position accuracy 0.73).
+    #
+    #   'death'    one penalty at death. Minimal: makes dying cost something
+    #              absolute without saying how to avoid it, so whether the agent
+    #              learns to walk to water is a real result rather than a
+    #              behaviour we paid for directly.
+    #   'maintain' pay for restoring a meter that is already low. Dense and
+    #              faster, but it pays for the ACT, so an agent can farm it by
+    #              letting a meter drain in order to refill it.
+    #   'both'     both.
+    #
+    # Off by default: 'none' reproduces stock Craftax reward exactly. Shaping
+    # changes `reward`, never `log/achievements`, which is read straight from
+    # the env state -- so achievement counts stay comparable to unshaped runs
+    # and to the leaderboard.
+    assert survival in ('none', 'death', 'maintain', 'both'), survival
+    self._survival = survival
+    self._death_penalty = float(death_penalty)
+    self._maintain_scale = float(maintain_scale)
+    self._maintain_threshold = float(maintain_threshold)
+    self._prev_meters = None
 
     # Everything here touches the host<->device boundary (params pytree, space
     # bounds, RNG key), so it runs under an allow scope; see module docstring.
@@ -134,12 +164,35 @@ class Craftax(embodied.Env):
       # crafter.py encodes via `info['discount'] == 0`; Craftax does not expose
       # timeout separately in `info`, so we derive it from the state timestep).
       timeout = bool(np.asarray(self._state.timestep) >= self._max_timesteps)
+      reward += self._survival_reward(self._state, self._done and not timeout)
     self._reward += reward
     self._length += 1
     return self._obs(
         obs, reward, self._state,
         is_last=self._done,
         is_terminal=self._done and not timeout)
+
+  def _meters(self, state):
+    return np.array([
+        float(state.player_food), float(state.player_drink),
+        float(state.player_energy)], np.float32)
+
+  def _survival_reward(self, state, is_terminal):
+    """Shaping reward. Caller already holds the transfer guard."""
+    if self._survival == 'none':
+      return 0.0
+    meters = self._meters(state)
+    bonus = 0.0
+    if self._survival in ('maintain', 'both') and self._prev_meters is not None:
+      # Pay only for a restore that happened while the meter was actually low,
+      # so ordinary topping-up at full health earns nothing.
+      was_low = self._prev_meters <= self._maintain_threshold
+      restored = meters > self._prev_meters
+      bonus += self._maintain_scale * float((was_low & restored).sum())
+    self._prev_meters = meters
+    if is_terminal and self._survival in ('death', 'both'):
+      bonus -= self._death_penalty
+    return bonus
 
   def _reset(self):
     with self._jax.transfer_guard('allow'):
@@ -152,6 +205,7 @@ class Craftax(embodied.Env):
     self._length = 0
     self._reward = 0.0
     self._prev_ach = np.zeros(self._num_ach, np.float32)
+    self._prev_meters = None
     return self._obs(obs, 0.0, self._state, is_first=True)
 
   # --- achievement featurization ---------------------------------------------
