@@ -31,7 +31,9 @@ defaults:
     procgen: {size: [96, 96], resize: pillow}
     crafter: {size: [64, 64], logs: False}
     craftax: {logs: False, use_seed: True, mapmodel: False, seen_decay: 0.99,
-              survival: none, death_penalty: 1.0, maintain_scale: 0.1, maintain_threshold: 3.0}
+              survival: none, surv_alive: 0.005, surv_death: 5.0,
+              surv_restore: 0.3, surv_threshold: 3.0, surv_kill: 0.5,
+              surv_idle: 1.0, surv_idle_steps: 30}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}
@@ -206,6 +208,13 @@ craftax:
   #   --rewcause True --rewcause_holdout MAKE_IRON_PICKAXE
   task: craftax_symbolic
   run: {steps: 1.1e6, envs: 1, train_ratio: 512}
+  # Replay lives in HOST RAM, and the default size (5e6) never evicts inside a
+  # 1.1M-step run -- so peak memory is the whole run. The map targets make each
+  # step ~40% bigger (map12 2304 floats + mapseen 144 + deter2 1024 in
+  # replay_context, on top of the 8268-dim observation: ~33KB -> ~47KB), which
+  # took a 62GB box over the edge at ~690k steps. 400k steps ~= 19GB, leaving
+  # room for JAX and the model.
+  replay: {size: 4e5}
 
 dmc_proprio:
   <<: *size1m
