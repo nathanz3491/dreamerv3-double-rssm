@@ -382,6 +382,10 @@ class Craftax(embodied.Env):
         reward=np.float32(0.0),
         is_first=True, is_last=False, is_terminal=False,
     )
+    # Must match obs_space exactly -- the agent asserts on the key set, and a
+    # restored obs that omits the map targets fails that assert.
+    if self._mapmodel:
+      result.update(self._map_targets(state, is_first=True))
     if self._logs:
       result['log/reward'] = np.float32(0.0)
       result['log/achievements'] = ach_sum
