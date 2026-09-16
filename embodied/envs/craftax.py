@@ -43,7 +43,7 @@ class Craftax(embodied.Env):
                mapmodel=False, seen_decay=0.99, survival='none',
                surv_alive=0.005, surv_death=5.0, surv_restore=0.3,
                surv_threshold=3.0, surv_kill=0.5, surv_idle=1.0,
-               surv_idle_steps=30):
+               surv_idle_steps=30, phi_scale=4.0, phi_gamma=0.997):
     assert task in ('symbolic',), task  # pixels: add 'Craftax-Pixels-v1' below
     import jax
     from craftax.craftax_env import make_craftax_env_from_name
@@ -105,8 +105,22 @@ class Craftax(embodied.Env):
     # Shaping changes `reward` only, never `log/achievements`, which is read
     # straight from the env state -- so achievement counts stay comparable to
     # unshaped runs and to the leaderboard.
-    assert survival in ('none', 'shaped'), survival
+    # 'potential' is the successor to 'shaped': one potential-based term over
+    # tech-tree progress instead of five hand-written bonuses. It provably
+    # cannot change the optimal policy, so it cannot invent the cheap optima
+    # that made 'shaped' collect HALF the achievements of no shaping at all
+    # (1.73 vs 3.49 at 500k). 'shaped' is kept only to reproduce that result.
+    assert survival in ('none', 'shaped', 'potential'), survival
     self._survival = survival
+    self._phi_scale = float(phi_scale)
+    self._phi_gamma = float(phi_gamma)
+    self._prev_phi = None
+    self._ach_names = None
+    if survival == 'potential':
+      from dreamerv3 import craftax_potential
+      from craftax.craftax.constants import Achievement
+      self._P = craftax_potential
+      self._ach_names = [a.name for a in Achievement]
     self._surv = dict(
         alive=float(surv_alive),          # per step; 0.1 == 1 point per 10 steps
         death=float(surv_death),          # subtracted once, on death not timeout
@@ -243,6 +257,11 @@ class Craftax(embodied.Env):
     """
     if self._survival == 'none':
       return 0.0
+    if self._survival == 'potential':
+      phi = self._P.potential(state, self._ach_names, self._phi_scale)
+      bonus = self._P.shaped(self._prev_phi, phi, self._phi_gamma)
+      self._prev_phi = phi
+      return bonus
     bonus = self._surv['alive']            # paid per step, not per 10, so the
                                            # signal is smooth rather than a
                                            # sawtooth the critic has to model
@@ -300,6 +319,7 @@ class Craftax(embodied.Env):
     self._prev_hostiles = None
     self._prev_sig = None
     self._idle_for = 0
+    self._prev_phi = None          # first step of an episode shapes to zero
     return self._obs(obs, 0.0, self._state, is_first=True)
 
   # --- achievement featurization ---------------------------------------------

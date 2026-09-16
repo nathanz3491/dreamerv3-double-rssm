@@ -33,7 +33,7 @@ defaults:
     craftax: {logs: False, use_seed: True, mapmodel: False, seen_decay: 0.99,
               survival: none, surv_alive: 0.005, surv_death: 5.0,
               surv_restore: 0.3, surv_threshold: 3.0, surv_kill: 0.5,
-              surv_idle: 1.0, surv_idle_steps: 30}
+              surv_idle: 1.0, surv_idle_steps: 30, phi_scale: 4.0, phi_gamma: 0.997}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}
