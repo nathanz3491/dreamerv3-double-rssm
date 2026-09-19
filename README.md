@@ -147,11 +147,12 @@ result. Runs are in progress.
 slides step by step cannot be handed to the rollout policy. With
 `imag_shift: True` the rollout samples actions using the crop frozen at the
 imagination start while the loss differentiates the shifted crop, making the
-REINFORCE term slightly off-policy. At the original H=15 the gap was bounded
-(the agent covers ~4 coarse cells inside a ±4-cell crop); **`imag_length` is now
-50** (see `dreamerv3/configs.yaml`, changed to let the agent see thirst death
-inside imagination), which likely widens this gap well past the crop — not yet
-re-measured. `imag_shift: False` remains the exactly-consistent control.
+REINFORCE term slightly off-policy. At H=15 the gap is bounded (the agent
+covers ~4 coarse cells inside a ±4-cell crop). Raising `imag_length` to 50 was
+tried (to let the agent see thirst death inside imagination) but reverted (see
+`dreamerv3/configs.yaml`): at `size50m` with `imag_last: 0` it compiles but
+never completes a training step. `imag_shift: False` remains the
+exactly-consistent control.
 Closing it properly means threading the coarse cell through the scan.
 
 ## Files

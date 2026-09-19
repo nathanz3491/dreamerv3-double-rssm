@@ -123,12 +123,11 @@ defaults:
     policy_dist_disc: categorical
     policy_dist_cont: bounded_normal
     imag_last: 0
-    # 15 is DreamerV3's default and is shorter than the thing Craftax kills you
-    # with: thirst death arrives ~50+ steps after the meter starts biting, so at
-    # H=15 the agent cannot see its own death inside imagination at all and the
-    # entire signal has to arrive through the bootstrap value. 50 costs 3.2x the
-    # imagined states (1024 x 51 vs 1024 x 16) -- watch fps/train.
-    imag_length: 50
+    # 50 was tried and REVERTED: at size50m with imag_last 0 (K = T = 64) it
+    # gives 1024 rollouts x 51 steps, compiles fine, enters the training loop and
+    # then never completes a single training step. 30 trains normally; 15 is the
+    # stock value. Raising this is only safe alongside a smaller imag_last.
+    imag_length: 15
     horizon: 333
     contdisc: True
     imag_loss: {slowtar: False, lam: 0.95, actent: 3e-4, slowreg: 1.0}
