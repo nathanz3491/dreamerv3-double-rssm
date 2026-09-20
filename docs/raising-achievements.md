@@ -11,12 +11,16 @@ the shaping term and is inflated by construction. It is also not
 
 | run | achievements | vs vanilla |
 |---|---|---|
-| **Map model, `imag_shift False`** | **5.03** | **+0.59** |
+| **Map + potential, `imag_shift False`** | **5.80** | **+1.36** |
+| Map model, `imag_shift False` | 5.03 | +0.59 |
 | Vanilla DreamerV3 | 4.44 | — |
 | Map model, `imag_shift True` (bug) | 4.35 | −0.09 |
 | Map + potential, `imag_shift True` (bug) | 3.87 | −0.57 |
 | Map + five hand-written reward terms | 2.30 | −2.14 |
-| Map + potential, `imag_shift False` | *pending* | — |
+
+The two changes **compose**: the flag restores a working policy gradient, and Φ
+gives that gradient somewhere to point. Under the bug the same shaping scored
+3.87 — worse than no shaping at all.
 
 ---
 
@@ -197,8 +201,22 @@ a reward already spent, which is why value-per-step falls with tier depth.
 
 ### Status
 
-Measured only under the `imag_shift` bug (3.87, peak 4.68 at 477k). A clean run
-is in flight; **the potential has no trustworthy measurement yet.**
+**+0.77 on top of the fixed map (5.03 → 5.80), and it opened the tech-tree gate.**
+
+| unlock rate | vanilla | map fixed | map + potential |
+|---|---|---|---|
+| `PLACE_TABLE` | 0.64 | 0.63 | **0.90** |
+| `MAKE_WOOD_PICKAXE` | 0.24 | 0.07 | **0.30** |
+| `COLLECT_STONE` | 0.12 | 0.00 | **0.20** |
+| `MAKE_WOOD_SWORD` | 0.00 | 0.00 | **0.10** |
+| `PLACE_STONE` | 0.00 | 0.00 | **0.03** |
+
+`MAKE_WOOD_SWORD` and `PLACE_STONE` had never been unlocked by any
+configuration. `PLACE_TABLE` at 0.90 is the ramp paying for prerequisites and
+the agent converting them.
+
+Measured under the bug it scored 3.87 — the shaping was fine, the gradient it
+fed was not.
 
 ---
 
@@ -218,18 +236,23 @@ completes a single training step. 30 trains normally.
 
 ## What has not been fixed
 
-**`MAKE_WOOD_PICKAXE` is 0.07** against vanilla's 0.24. The map still trails on
-tech-tree depth even with the bug gone, and `COLLECT_STONE` remains at zero.
+**Survival.** Episode length is 278 — inside the random-policy band of 261–284,
+where it has sat for every run. `COLLECT_DRINK` actually fell to 0.60 against
+vanilla's 0.80. The potential bought tech-tree depth, not survival, and thirst
+remains the leading cause of death.
 
-A probe that placed the trained agent beside its own crafting table, holding
-wood, meters full — a state where one keypress yields a pickaxe, verified 10/10
-seeds — got **zero presses across 25 trials using 6 of 43 actions**
-([`tools/craft_probe.py`](../tools/craft_probe.py)). That was measured before the
-fix and is worth re-running.
+**Depth beyond stone.** `MAKE_STONE_PICKAXE`, `PLACE_FURNACE`, `COLLECT_COAL`
+and everything past them are still at zero. The gate opened; the corridor behind
+it has not.
 
-The remaining candidate is exploration: adaptive entropy targeting rather than a
-fixed `actent`, or seeding replay with a handful of scripted crafting
-trajectories so the transition exists in the buffer at all.
+**A stale measurement worth redoing.** [`tools/craft_probe.py`](../tools/craft_probe.py)
+placed the agent beside its own table holding wood — one keypress from a pickaxe,
+verified 10/10 seeds — and got zero presses across 25 trials using 6 of 43
+actions. That was run *before* the fix, on an agent whose policy gradient was
+corrupt. It should be re-run.
+
+The remaining candidate is still exploration: adaptive entropy targeting rather
+than a fixed `actent`, or seeding replay with scripted crafting trajectories.
 
 ---
 
@@ -247,3 +270,14 @@ python dreamerv3/main.py --logdir ~/logdir/map --configs craftax size50m \
 Watch it with [`tools/mapwatch.py`](../tools/mapwatch.py), which checks the
 process is alive before quoting an ETA — reading `metrics.jsonl` alone reported
 a run as healthy four hours after it had been OOM-killed.
+
+To watch the trained agent play, one step at a time, with its own view rendered
+as ASCII beside its vitals and the actor's action distribution:
+
+```bash
+python tools/watch_agent.py --logdir ~/logdir/map_pot_fixed --episodes 5   --delay 1.5 --configs craftax size50m --env.craftax.mapmodel True   --env.craftax.survival potential --agent.mapmodel.enabled True   --agent.mapmodel.to_actor True --agent.mapmodel.imag_shift False   --jax.platform cpu
+```
+
+It runs on CPU, so it does not disturb a training job. The per-state action
+distribution is near-deterministic (one action at ~100%); the 0.11 run-average
+entropy comes from varying *across* states, not hedging within one.

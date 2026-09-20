@@ -278,6 +278,15 @@ class Agent(embodied.jax.Agent):
       # over phi, so read the raw per-feature logit rather than Agg.prob.
       rc = self.rewcause(self.feat2tensor(feat), bdims=1)
       out['rewcause_prob'] = jax.nn.sigmoid(rc.output.logit)
+    if mode == 'probe':
+      # Inspection only (tools/watch_agent.py): the action distribution the
+      # actor actually produced, and the critic's value for this state. Gated
+      # on 'probe' for the same reason rewcause_prob is -- every other caller
+      # feeds policy outputs into a replay buffer that asserts the key set.
+      # Only heads listed in policy_keys have their params on the policy
+      # device, so `pol` is available here and `val` is not.
+      out['policy_prob'] = jax.nn.softmax(
+          policy['action'].logits, -1)
     carry = (enc_carry, dyn_carry, dec_carry, map_carry, act)
     if self.config.replay_context:
       entries = dict(enc=enc_entry, dyn=dyn_entry, dec=dec_entry)
