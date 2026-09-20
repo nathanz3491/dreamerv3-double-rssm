@@ -40,7 +40,8 @@ import numpy as np
 class Craftax(embodied.Env):
 
   def __init__(self, task='symbolic', size=None, seed=0, logs=False,
-               mapmodel=False, seen_decay=0.99, survival='none',
+               mapmodel=False, seen_decay=0.99, map_privileged=False,
+               survival='none',
                surv_alive=0.005, surv_death=5.0, surv_restore=0.3,
                surv_threshold=3.0, surv_kill=0.5, surv_idle=1.0,
                surv_idle_steps=30, phi_scale=4.0, phi_gamma=0.997):
@@ -56,10 +57,16 @@ class Craftax(embodied.Env):
 
     self._mapmodel = bool(mapmodel)
     self._seen_decay = float(seen_decay)
+    # False (default): the map target is a mosaic of the agent's own lit 9x11
+    # windows, so no gradient ever reaches cells it has not observed. True
+    # reinstates full-map ground truth, kept only to reproduce the original runs
+    # as an ablation -- see craftax_map's module docstring.
+    self._map_privileged = bool(map_privileged)
     if self._mapmodel:
       from dreamerv3 import craftax_map
       self._M = craftax_map
     self._seen = None
+    self._known = None
     self._prev_level = None
 
     # --- survival shaping ----------------------------------------------------
@@ -177,6 +184,9 @@ class Craftax(embodied.Env):
       spaces['map12'] = elements.Space(np.float32, (C, C, P), 0.0, 1.0)
       spaces['mappos'] = elements.Space(np.int32, (), 0, self._M.N_CELLS)
       spaces['mapseen'] = elements.Space(np.float32, (C, C), 0.0, 1.0)
+      # Supervision WEIGHT: fraction of each cell's 16 tiles the agent has
+      # observed. Cells at 0.0 carry no gradient.
+      spaces['mapknown'] = elements.Space(np.float32, (C, C), 0.0, 1.0)
     if self._logs:
       spaces['log/reward'] = elements.Space(np.float32)
       spaces['log/achievements'] = elements.Space(np.int32)
@@ -355,24 +365,34 @@ class Craftax(embodied.Env):
             np.asarray(state.achievements).sum())
     return obs
 
-  # --- map-model targets (privileged; training supervision only) -------------
+  # --- map-model targets (training supervision only) --------------------------
   def _map_targets(self, state, is_first):
     """Coarse map, coarse position and cumulative visitation for RSSM-2.
 
-    The visitation mask is per-episode AND per-level: Craftax has 9 levels,
-    each its own 48x48 map, and v1 models only the level the agent is on
-    (design SS7.1), so descending a ladder resets the mask.
+    The map is built from ``_known``, a running mosaic of the agent's own lit
+    9x11 windows -- an outside observer watching only the agent's screen could
+    reconstruct it. ``mapknown`` says what fraction of each cell that rests on,
+    and the loss weights by it, so unobserved terrain contributes no gradient.
+
+    Both the mosaic and the visitation mask are per-episode AND per-level:
+    Craftax has 9 levels, each its own 48x48 map, and v1 models only the level
+    the agent is on (design SS7.1), so descending a ladder resets them.
     """
     with self._jax.transfer_guard('allow'):
       level = int(state.player_level)
       if is_first or level != self._prev_level:
         self._seen = None
+        self._known = None
       self._prev_level = level
       self._seen = self._M.update_seen(self._seen, state, self._seen_decay)
+      self._known = self._M.update_known(self._known, state)
+      map12 = (self._M.coarse_map(state, self._seen) if self._map_privileged
+               else self._M.coarse_map_observed(self._known, state, self._seen))
       return dict(
-          map12=self._M.coarse_map(state, self._seen),
+          map12=map12,
           mappos=self._M.coarse_pos(state),
           mapseen=self._seen.astype(np.float32),
+          mapknown=self._M.known_fraction(self._known),
       )
 
   # --- Phase 4: frontier checkpoint/restore ----------------------------------

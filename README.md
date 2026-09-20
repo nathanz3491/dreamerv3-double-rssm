@@ -117,9 +117,13 @@ python dreamerv3/main.py --logdir ~/logdir/s3 --configs craftax size50m \
   --agent.mapmodel.to_actor True --agent.mapmodel.imag_shift True
 ```
 
-`env.craftax.mapmodel` emits the privileged targets; `agent.mapmodel.enabled`
-trains RSSM-2 on them. Both are needed. The targets are **supervision only** and
-never enter the encoder — the agent's observation stays the stock 8,268 floats.
+`env.craftax.mapmodel` emits the targets; `agent.mapmodel.enabled` trains RSSM-2
+on them. Both are needed. The targets are **supervision only** and never enter
+the encoder — the agent's observation stays the stock 8,268 floats. By default
+the target is a mosaic built only from the agent's own lit 9x11 windows
+(`craftax_map.coarse_map_observed`), weighted by `mapknown` so unseen cells
+carry no gradient; `--env.craftax.map_privileged True` reinstates the original
+full-map ground truth as an ablation.
 
 Tests (pure numpy, no GPU):
 
@@ -129,31 +133,40 @@ python -m pytest dreamerv3/test_craftax_map.py -q
 
 ## Status
 
-RSSM-2 learns quickly. Early in a 1.1M-step run:
+The map model helps, and the tech-tree gate has opened for the first time:
+**map + potential shaping reaches 5.80 achievements/episode at 1.1M steps**,
+against 4.44 for vanilla DreamerV3. Full writeup, every number sourced from
+`tools/death_eval.py`: [`docs/raising-achievements.md`](docs/raising-achievements.md).
 
 | metric | value | chance |
 |---|---|---|
 | map BCE / cell | 0.047 | 0.693 |
 | position accuracy | 0.863 | 0.007 |
 
-**Whether this fixes the plateau is not yet known.** The number that decides it
-is `map/gate`: if the actor keeps opening the channel, it is genuinely reading
-the map; if the gate stalls near zero, the map is decoration and that is the
-result. Runs are in progress.
+`map/gate` — whether the actor is genuinely reading the map rather than
+ignoring a decorative channel — rose monotonically 0.095 → 0.526 over 1.1M
+steps with no reversal.
 
-### Known limitation
+### Known limitation (fixed; kept for the ablation)
 
 `rssm.imagine()` threads only `(deter, stoch)` through its scan, so a crop that
 slides step by step cannot be handed to the rollout policy. With
-`imag_shift: True` the rollout samples actions using the crop frozen at the
-imagination start while the loss differentiates the shifted crop, making the
-REINFORCE term slightly off-policy. At H=15 the gap is bounded (the agent
-covers ~4 coarse cells inside a ±4-cell crop). Raising `imag_length` to 50 was
-tried (to let the agent see thirst death inside imagination) but reverted (see
-`dreamerv3/configs.yaml`): at `size50m` with `imag_last: 0` it compiles but
-never completes a training step. `imag_shift: False` remains the
-exactly-consistent control.
-Closing it properly means threading the coarse cell through the scan.
+`imag_shift: True` the rollout **picks** imagined actions reading the crop
+frozen at the imagination start, while the loss **scores** those actions
+reading the shifted crop. `imag_loss` is REINFORCE
+(`logpi(a) x advantage`), so this takes the log-probability of actions drawn
+from a different distribution — not a bounded ~4-cell gap as originally
+assumed, but a runaway one: measured at 1.1M steps, `True` gives policy loss
+-61.09 and action entropy 0.005 (collapsed); `False` gives 0.0001 and 0.138,
+matching vanilla's 0.134. Every conclusion drawn before this fix — that the
+map collapses entropy, trades depth for breadth, or blocks crafting — was a
+conclusion about the bug. `imag_shift` now defaults to `False`.
+Raising `imag_length` to 50 (to let the agent see thirst death inside
+imagination) was tried and reverted: at `size50m` with `imag_last: 0` it
+compiles but never completes a training step. 30 trains normally; the ceiling
+between 30 and 50 hasn't been found.
+Closing the shift bug properly means threading the coarse cell through the
+scan.
 
 ## Files
 

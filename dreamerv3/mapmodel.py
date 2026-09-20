@@ -120,19 +120,37 @@ class MapModel(nj.Module):
     return self.value('gate', jnp.zeros, (), f32)
 
   # --- losses ---------------------------------------------------------------
-  def loss(self, deter2, map_target, pos_target):
-    """BCE over every cell (seen AND unseen) + cross-entropy over position.
+  def loss(self, deter2, map_target, pos_target, weight=None):
+    """BCE over OBSERVED cells + cross-entropy over position.
 
-    Supervising unseen cells is deliberate: masking to visited cells would mean
-    the model never learns to predict the unseen, and prediction of the unseen
-    is the whole point. One loss teaches both behaviours -- cells with evidence
-    in the history get recalled, cells without get generated from the prior.
+    ``weight`` is (B, T2, C, C) -- the fraction of each coarse cell the agent has
+    actually observed (``obs['mapknown']``). Cells it has never seen weigh zero
+    and contribute no gradient.
+
+    This used to supervise every cell against the true map, on the reasoning that
+    prediction of the unseen is the point. It is, but grading against terrain the
+    agent had no way to observe teaches Craftax's world generator rather than
+    inference, and leaves no held-out set: every cell the model was scored on, it
+    had also studied. Prediction of the unseen is preserved instead by HINDSIGHT
+    (``last_in_segment``) -- an early tick is graded against what the agent went
+    on to discover, so every label is still something it saw with its own eyes.
+
+    Normalised by weight mass and rescaled by the cell count rather than summed
+    over all cells. At ~26% coverage a plain sum would shrink this loss ~4x
+    against every other term and the head would quietly stop training; with
+    ``weight`` all ones the value is identical to the old sum.
     """
     mlogit, plogit = self.decode(deter2)
     mlogit, plogit = f32(mlogit), f32(plogit)   # reduce in f32, not bf16
     tgt = f32(map_target)
     bce = jnp.maximum(mlogit, 0) - mlogit * tgt + jnp.log1p(jnp.exp(-jnp.abs(mlogit)))
-    map_loss = bce.sum((-1, -2, -3))
+    if weight is None:
+      map_loss = bce.sum((-1, -2, -3))
+    else:
+      w = f32(weight)[..., None]
+      cells = map_target.shape[-2] * map_target.shape[-3]
+      map_loss = (bce * w).sum((-1, -2, -3)) / jnp.maximum(
+          w.sum((-1, -2, -3)), 1e-3) * cells
     onehot = jax.nn.one_hot(pos_target.astype(jnp.int32), self.cells)
     pos_loss = -(onehot * jax.nn.log_softmax(plogit, -1)).sum(-1)
     return map_loss, pos_loss
@@ -158,6 +176,35 @@ def last_of_window(x, tick):
   """(B, T, ...) -> (B, T2, ...) taking the final entry of each tick window."""
   T2 = x.shape[1] // tick
   return x[:, tick - 1: T2 * tick: tick]
+
+
+def any_in_window(x, tick):
+  """(B, T, ...) -> (B, T2, ...): was this true anywhere in the tick window?"""
+  T2 = x.shape[1] // tick
+  return x[:, :T2 * tick].reshape(x.shape[0], T2, tick, *x.shape[2:]).any(2)
+
+
+def last_in_segment(x, starts):
+  """(B, T2, ...) -> each tick carries the value at the LAST tick of its episode.
+
+  This is the hindsight target. The map mosaic only grows within an episode, so
+  the final one holds everything the agent ever saw; grading tick j against it
+  asks the model to predict terrain it has not reached yet, and marks the answer
+  once the agent actually gets there. Every label remains an observation -- just
+  a later one than the tick being graded.
+
+  Without this the target at tick j is the mosaic as of tick j, i.e. exactly what
+  the model has already been shown, which trains a memory rather than a
+  predictor. ``starts`` is (B, T2), True where a new episode begins at that tick;
+  segments never borrow across an episode boundary.
+  """
+  T2 = x.shape[1]
+  shape = (-1,) + (1,) * (x.ndim - 2)
+  outs = [None] * T2
+  outs[T2 - 1] = x[:, T2 - 1]
+  for j in range(T2 - 2, -1, -1):
+    outs[j] = jnp.where(starts[:, j + 1].reshape(shape), x[:, j], outs[j + 1])
+  return jnp.stack(outs, 1)
 
 
 def repeat_ticks(x, tick, T):

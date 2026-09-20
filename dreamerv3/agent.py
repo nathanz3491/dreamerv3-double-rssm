@@ -40,10 +40,10 @@ class Agent(embodied.jax.Agent):
 
     # 'ach' is the reward-cause LABEL (multi-hot of newly-unlocked
     # achievements); it must not be fed to the encoder or reconstructed.
-    # 'map12'/'mappos'/'mapseen' are privileged RSSM-2 TARGETS -- like 'ach'
+    # 'map12'/'mappos'/'mapseen'/'mapknown' are RSSM-2 TARGETS -- like 'ach'
     # they are supervision only and must never reach the encoder or decoder.
     exclude = ('is_first', 'is_last', 'is_terminal', 'reward', 'ach',
-               'map12', 'mappos', 'mapseen')
+               'map12', 'mappos', 'mapseen', 'mapknown')
     enc_space = {k: v for k, v in obs_space.items() if k not in exclude}
     dec_space = {k: v for k, v in obs_space.items() if k not in exclude}
     self.enc = {
@@ -287,6 +287,12 @@ class Agent(embodied.jax.Agent):
       # device, so `pol` is available here and `val` is not.
       out['policy_prob'] = jax.nn.softmax(
           policy['action'].logits, -1)
+      if self._use_map and self._map_to_actor:
+        # RSSM-2's map belief, for tools/map_eval.py to score against the true
+        # map. mapmodel's params are only on the policy device when to_actor is
+        # set (see policy_keys), which every map run uses.
+        out['map_pred'] = jax.nn.sigmoid(
+            self.mapmodel.decode(map_carry['deter2'])[0])
     carry = (enc_carry, dyn_carry, dec_carry, map_carry, act)
     if self.config.replay_context:
       entries = dict(enc=enc_entry, dyn=dyn_entry, dec=dec_entry)
@@ -409,7 +415,19 @@ class Agent(embodied.jax.Agent):
       map_entries = dict(deter2=deter2_step)
       mtgt = mapmod.last_of_window(obs['map12'], tick)
       ptgt = mapmod.last_of_window(obs['mappos'], tick)
-      mloss, ploss = self.mapmodel.loss(deter2, sg(mtgt), sg(ptgt))
+      # Cells the agent has not observed weigh zero, so no gradient is ever
+      # taken from terrain it could not have seen. Absent only on runs whose
+      # env predates the key, which fall back to the old all-cells behaviour.
+      wtgt = (mapmod.last_of_window(obs['mapknown'], tick)
+              if 'mapknown' in obs else None)
+      if wtgt is not None and self.config.mapmodel.hindsight:
+        # Position is NOT hindsighted: where the agent stands at tick j is a
+        # fact about tick j, not something later evidence revises.
+        starts = mapmod.any_in_window(reset, tick)
+        mtgt = mapmod.last_in_segment(mtgt, starts)
+        wtgt = mapmod.last_in_segment(wtgt, starts)
+      mloss, ploss = self.mapmodel.loss(
+          deter2, sg(mtgt), sg(ptgt), None if wtgt is None else sg(wtgt))
       # Broadcast (B, T2) back to (B, T) so the shape assert below holds;
       # divide by tick so repeating does not inflate the loss magnitude.
       losses['map'] = mapmod.repeat_ticks(mloss, tick, T) / tick
@@ -418,6 +436,8 @@ class Agent(embodied.jax.Agent):
       metrics['map/bce_cell'] = mloss.mean() / (
           self._map_coarse ** 2 * int(self.config.mapmodel.planes))
       metrics['map/posce'] = ploss.mean()                # chance = ln(144) = 4.97
+      if wtgt is not None:
+        metrics['map/observed'] = wtgt.mean()   # share of cells carrying signal
       metrics['map/posacc'] = (
           self.mapmodel.decode(deter2)[1].argmax(-1) == ptgt).mean()
       metrics['map/gate'] = self.mapmodel.gate()
