@@ -134,3 +134,43 @@ def test_scale_divides_the_whole_potential():
   scaled = P.potential(_state(wood=1, pickaxe=1), _names(), scale=4.0)
   assert abs(scaled * 4.0 - plain) < 1e-6
   assert P.max_potential(4.0) == P.max_potential(1.0) / 4.0
+
+
+# --- the spine must agree with the game -------------------------------------
+# The ramp is only useful if "prerequisites satisfied" means the same thing to
+# us as to Craftax. It did not: PLACE_TABLE was listed at 1 wood while
+# place_block spends 2, so the ramp told the agent it was ready one log early,
+# the keypress silently failed, and nothing on the ramp asked for the second
+# log. The table gates every craft, so the whole spine stalled there.
+#
+# Recipe costs read out of craftax.craftax.game_logic (do_crafting and
+# place_block). Kept as literals so the test runs without craftax installed,
+# and cross-checked against the installed package when there is one.
+GAME_COSTS = {
+    'PLACE_TABLE': dict(wood=2),
+    'MAKE_WOOD_PICKAXE': dict(wood=1),
+    'MAKE_WOOD_SWORD': dict(wood=1),
+    'PLACE_STONE': dict(stone=1),
+    'PLACE_FURNACE': dict(stone=1),
+    'MAKE_STONE_PICKAXE': dict(wood=1, stone=1),
+    'MAKE_STONE_SWORD': dict(wood=1, stone=1),
+    'MAKE_IRON_PICKAXE': dict(wood=1, stone=1, coal=1, iron=1),
+    'MAKE_IRON_SWORD': dict(wood=1, stone=1, coal=1, iron=1),
+}
+
+
+def test_spine_ingredients_match_the_game():
+  for name, cost in GAME_COSTS.items():
+    ours = {k: v for k, v in P.SPINE[name]['inv'].items()
+            if k not in ('pickaxe', 'sword')}
+    assert ours == cost, f'{name}: spine says {ours}, game wants {cost}'
+
+
+def test_one_log_is_not_enough_for_a_table():
+  """The rung that stalled the tech tree, asserted directly."""
+  one = P.progress(_state(wood=1), 'PLACE_TABLE', False)
+  two = P.progress(_state(wood=2), 'PLACE_TABLE', False)
+  assert one < P.PREREQ_CEIL, 'one log must not read as fully prepared'
+  assert two == P.PREREQ_CEIL
+  assert phi(_state(wood=2)) > phi(_state(wood=1)), (
+      'chopping the second log must pay, or the agent will not bother')

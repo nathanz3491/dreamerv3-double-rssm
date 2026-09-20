@@ -69,7 +69,12 @@ PREREQ_CEIL = 0.25
 #          3 iron, 4 diamond)
 #   near   block ids that must be in the 8-neighbourhood
 SPINE = {
-    'PLACE_TABLE': dict(inv=dict(wood=1), near=()),
+    # Two logs, not one: place_block checks `inventory.wood >= 2` and
+    # spends both. At wood=1 the ramp used to read 'fully prepared',
+    # so the agent walked to open ground, pressed the key, got nothing,
+    # and had no reason to chop the second log -- the table gates every
+    # craft, so the whole spine stalled behind an off-by-one.
+    'PLACE_TABLE': dict(inv=dict(wood=2), near=()),
     'MAKE_WOOD_PICKAXE': dict(inv=dict(wood=1), near=(CRAFTING_TABLE,)),
     'MAKE_WOOD_SWORD': dict(inv=dict(wood=1), near=(CRAFTING_TABLE,)),
     'COLLECT_STONE': dict(inv=dict(pickaxe=1), near=(STONE,)),
@@ -82,9 +87,11 @@ SPINE = {
     'COLLECT_COAL': dict(inv=dict(pickaxe=1), near=(COAL,)),
     'COLLECT_IRON': dict(inv=dict(pickaxe=2), near=(IRON,)),
     'MAKE_IRON_PICKAXE': dict(
-        inv=dict(wood=1, coal=1, iron=1), near=(CRAFTING_TABLE, FURNACE)),
+        inv=dict(wood=1, stone=1, coal=1, iron=1),
+        near=(CRAFTING_TABLE, FURNACE)),
     'MAKE_IRON_SWORD': dict(
-        inv=dict(wood=1, coal=1, iron=1), near=(CRAFTING_TABLE, FURNACE)),
+        inv=dict(wood=1, stone=1, coal=1, iron=1),
+        near=(CRAFTING_TABLE, FURNACE)),
     'COLLECT_DIAMOND': dict(inv=dict(pickaxe=3), near=(DIAMOND,)),
 }
 
