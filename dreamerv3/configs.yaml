@@ -107,7 +107,17 @@ defaults:
     mapmodel:
       enabled: False
       to_actor: False    # Stage 4: feed the coarse map to pol/val
-      imag_shift: True   # Stage 5: slide the crop through imagination
+      # Stage 5: slide the crop through imagination. DEFAULT FALSE -- True is
+      # BROKEN and was measured doing real damage. rssm.imagine() threads only
+      # (deter, stoch) through its scan, so the rollout that PICKS imagined
+      # actions reads the crop frozen at the imagination start while the loss
+      # that SCORES them reads the shifted crop. imag_loss is REINFORCE, so it
+      # takes logpi of actions drawn from a different distribution; as the gate
+      # opens the two diverge and the policy objective runs away. Measured at
+      # 1.1M: policy loss -61 with True vs 0.0001 with False, entropy 0.005 vs
+      # 0.138, achievements 4.35 vs 5.03. Fixing True properly means threading
+      # the coarse cell through nj.scan in rssm.py.
+      imag_shift: False
       tick: 8           # env steps per RSSM-2 tick; must divide batch_length
       deter: 1024
       hidden: 512
