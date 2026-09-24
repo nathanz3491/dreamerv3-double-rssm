@@ -42,6 +42,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- `docs/architecture.svg` / `.pdf` -- the current model on one page: where the
+  potential sits (env wrapper, reaching the agent only through reward), what
+  RSSM-2 reads (sg(feat) and its own actions), which heads see the map (pi and
+  V only), and every stop-gradient. Regenerate with
+  `python tools/make_architecture.py`.
 - `tools/map_eval.py` -- scores RSSM-2's map belief against the true map, split
   into seen / unseen / marginal-prior floor, per plane. Ground truth is used
   here and only here: measuring against it was never the problem, learning from

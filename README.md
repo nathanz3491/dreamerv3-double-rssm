@@ -125,6 +125,12 @@ the target is a mosaic built only from the agent's own lit 9x11 windows
 carry no gradient; `--env.craftax.map_privileged True` reinstates the original
 full-map ground truth as an ablation.
 
+The whole model on one page — where the potential sits, what RSSM-2 reads,
+which heads see the map, every stop-gradient — is
+[`docs/architecture.svg`](docs/architecture.svg) /
+[`.pdf`](docs/architecture.pdf), regenerated with
+`python tools/make_architecture.py`.
+
 Tests (pure numpy, no GPU):
 
 ```bash
