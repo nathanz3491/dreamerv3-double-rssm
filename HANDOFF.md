@@ -172,6 +172,19 @@ A session ran on branch `fix/spine-recipe-costs` (2 commits ahead of `tomain`, o
 
 Housekeeping this run: fixed `README.md`'s "Known limitation" section, which still framed the `imag_shift` bug as a "bounded ~4-cell gap" (the original, wrong assumption from when Stage 5 shipped) instead of the runaway divergence the 2026-09-20 later session actually measured, and never mentioned the 5.80 result; added a link to the new `docs/raising-achievements.md`. Also fixed the "Running it" section's claim that `env.craftax.mapmodel` "emits the privileged targets" — no longer true by default, now notes the observation-only mosaic and the `map_privileged` ablation flag. No `AGENTS.md` needed — still no multi-agent-role concept in this codebase.
 
+## Today (2026-09-22 / 2026-09-23)
+
+No development session ran either day. Working tree stayed clean on `fix/spine-recipe-costs` at `6d54091` (2 commits ahead of `tomain`, still not merged), and `craftax/` remained pinned at `c3c2e0d`.
+
+## Today (2026-09-24, discovered on this 2026-09-25 run)
+
+No automated HANDOFF run logged 2026-09-24 evening — the same recurring scheduling gap noted throughout this log. A short session ran 2026-09-24 at 17:53, after that morning's HANDOFF check, and left its work uncommitted overnight:
+
+- **Added `docs/architecture.svg` / `.pdf`** (via new `tools/make_architecture.py`, 17.8KB) — the current model on one page: where the potential sits (env wrapper, reaching the agent only through reward), what RSSM-2 reads (`sg(feat)` and its own actions), which heads see the map (`pi` and `V` only), and every stop-gradient in the system. Pure documentation — no code-behavior change. `CHANGELOG.md`'s `[Unreleased]` → `Added` section was updated to describe it.
+- Committed today (2026-09-25) as this run's housekeeping: the new files plus the `CHANGELOG.md` entry, as a single commit (this is documentation, not a logical unit needing splitting).
+
+Housekeeping this run: added a link to `docs/architecture.svg`/`.pdf` in `README.md`'s map-model section (was previously unlinked from anywhere in the repo). No `AGENTS.md` needed — still no multi-agent-role concept in this codebase.
+
 ## Tomorrow
 
 - **Train the observation-only map model (`133523e`) and compare it against the 5.80 record.** This is an architecture change with only unit-test coverage so far — no run exists yet showing whether removing the ~74% privileged-cell gradient (and relying on hindsight instead) helps, hurts, or is neutral against the same map+potential config that hit 5.80.
