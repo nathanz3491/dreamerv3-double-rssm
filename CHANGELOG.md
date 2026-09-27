@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **Honest RSSM-2 targets are now built from the observation vector and the
+  agent's own actions only** (`craftax_map.ObservedTargets`); the env's honest
+  path never receives the game state. Terrain is a mosaic of the lit 9x11
+  windows decoded from `obs['vector']`; position is dead-reckoned from the fixed
+  spawn, judging each move by the tile the agent could see in front of it.
+  Previously the position label and the mosaic's placement read the true
+  coordinates -- recoverable on the surface, but after a ladder the game
+  teleports the agent somewhere it cannot know, so below the surface both
+  leaked. Each level now gets its own frame anchored where the agent arrived.
+  Checked against the real game: 100% position agreement and 0 wrong tiles of
+  337k over random surface rollouts; through the env wrapper the label equals
+  the true cell on 2489/2489 surface steps. `tools/map_eval.py` uses the same
+  observer for its seen/unseen split, on the surface only.
 - **RSSM-2 is no longer trained on ground truth it could not have observed.**
   The map target is now a mosaic accumulated from the agent's own lit 9x11
   windows (`craftax_map.coarse_map_observed`, `update_known`), so an outside

@@ -67,8 +67,10 @@ class Craftax(embodied.Env):
       from dreamerv3 import craftax_map
       self._M = craftax_map
     self._seen = None
-    self._known = None
     self._prev_level = None
+    self._last_action = 0
+    if self._mapmodel:
+      self._observed = self._M.ObservedTargets(self._seen_decay)
 
     # --- survival shaping ----------------------------------------------------
     # Craftax pays for COLLECT_DRINK and EAT_COW exactly ONCE. Every drink after
@@ -206,8 +208,8 @@ class Craftax(embodied.Env):
     with self._jax.transfer_guard('allow'):
       key, subkey = self._jax.random.split(self._key)
       self._key = key
-      act = self._jax.numpy.asarray(
-          int(action['action']), self._jax.numpy.int32)
+      self._last_action = int(action['action'])
+      act = self._jax.numpy.asarray(self._last_action, self._jax.numpy.int32)
       obs, self._state, reward, done, info = self._step_fn(
           subkey, self._state, act)
       self._done = bool(done)
@@ -359,7 +361,7 @@ class Craftax(embodied.Env):
         is_terminal=is_terminal,
     )
     if self._mapmodel:
-      obs.update(self._map_targets(state, is_first))
+      obs.update(self._map_targets(state, vector, is_first))
     if self._logs:
       obs['log/reward'] = np.float32(reward)
       with self._jax.transfer_guard('allow'):
@@ -368,41 +370,34 @@ class Craftax(embodied.Env):
     return obs
 
   # --- map-model targets (training supervision only) --------------------------
-  def _map_targets(self, state, is_first):
+  def _map_targets(self, state, vector, is_first):
     """Coarse map, coarse position and cumulative visitation for RSSM-2.
 
-    The map is built from ``_known``, a running mosaic of the agent's own lit
-    9x11 windows -- an outside observer watching only the agent's screen could
-    reconstruct it. ``mapknown`` says what fraction of each cell that rests on,
-    and the loss weights by it, so unobserved terrain contributes no gradient.
+    Honest mode (default) hands ``ObservedTargets`` the observation vector and
+    the action just taken -- and nothing else. It never sees ``state``, so no
+    label can contain terrain the agent has not seen or a coordinate it could
+    not have worked out. Privileged mode is the old setup, kept as an ablation:
+    true map on every cell, true coordinates.
 
-    Both the mosaic and the visitation mask are per-episode AND per-level:
-    Craftax has 9 levels, each its own 48x48 map, and v1 models only the level
-    the agent is on (design SS7.1), so descending a ladder resets them.
+    Both are per-episode AND per-level: Craftax has 9 levels, each its own 48x48
+    map, and v1 models only the level the agent is on (design SS7.1).
     """
+    if not self._map_privileged:
+      return self._observed.step(vector, self._last_action, is_first)
     with self._jax.transfer_guard('allow'):
       level = int(state.player_level)
       if is_first or level != self._prev_level:
         self._seen = None
-        self._known = None
       self._prev_level = level
       self._seen = self._M.update_seen(self._seen, state, self._seen_decay)
-      self._known = self._M.update_known(self._known, state)
-      if self._map_privileged:
-        # The old setup, reproduced whole: ground truth everywhere AND every
-        # cell supervised. Emitting the observed fraction here would mask the
-        # unseen cells away again and quietly turn the ablation into a copy of
-        # the honest run.
-        map12 = self._M.coarse_map(state, self._seen)
-        known = np.ones((self._M.COARSE, self._M.COARSE), np.float32)
-      else:
-        map12 = self._M.coarse_map_observed(self._known, state, self._seen)
-        known = self._M.known_fraction(self._known)
+      # Ground truth everywhere AND every cell supervised. Emitting the observed
+      # fraction here would mask unseen cells away again and quietly turn the
+      # ablation into a copy of the honest run.
       return dict(
-          map12=map12,
+          map12=self._M.coarse_map(state, self._seen),
           mappos=self._M.coarse_pos(state),
           mapseen=self._seen.astype(np.float32),
-          mapknown=known,
+          mapknown=np.ones((self._M.COARSE, self._M.COARSE), np.float32),
       )
 
   # --- Phase 4: frontier checkpoint/restore ----------------------------------
@@ -435,7 +430,7 @@ class Craftax(embodied.Env):
     # Must match obs_space exactly -- the agent asserts on the key set, and a
     # restored obs that omits the map targets fails that assert.
     if self._mapmodel:
-      result.update(self._map_targets(state, is_first=True))
+      result.update(self._map_targets(state, obs, is_first=True))
     if self._logs:
       result['log/reward'] = np.float32(0.0)
       result['log/achievements'] = ach_sum
