@@ -1,8 +1,29 @@
 """Coarse-map targets for the two-RSSM map model.
 
-Turns a privileged Craftax ``EnvState`` into the supervision RSSM-2 learns from:
-a 12x12x16 downsample of the current level, the agent's coarse cell, and a
-cumulative visitation mask.
+Turns a Craftax ``EnvState`` into the supervision RSSM-2 learns from: a 12x12x16
+downsample of the current level, the agent's coarse cell, and a cumulative
+visitation mask.
+
+Two ways to build the map target, and the difference is the whole ballgame:
+
+  ``coarse_map``           reads the TRUE 48x48 map, including cells the agent
+                           has never observed. Privileged. Kept for evaluation
+                           and for reproducing the original runs as an ablation.
+  ``coarse_map_observed``  reads a mosaic accumulated from the agent's own lit
+                           9x11 windows. An outside observer watching only the
+                           agent's screen could reconstruct it byte for byte.
+
+The second is the default. Supervising unseen cells against ground truth taught
+RSSM-2 Craftax's world generator rather than teaching it to remember and infer,
+and left no held-out set at all -- every cell it was ever scored on, it had also
+studied. Under the mosaic, unobserved cells carry no gradient and become a real
+exam (``tools/map_eval.py``).
+
+``coarse_pos`` stays absolute and is NOT privileged: Craftax spawns the player at
+the map centre every episode (``world_gen.generate_world``), so absolute position
+is the constant (24, 24) plus a displacement the agent can dead-reckon from its
+own actions. The exception is descending a ladder, which teleports; v1 resets the
+map state on a level change, so that frame simply starts over.
 
 These are TRAINING TARGETS ONLY. Nothing here is ever fed to the encoder -- the
 agent's observation stays the stock 8268-dim vector. Same posture as
@@ -173,6 +194,93 @@ def update_seen(seen, state, decay=1.0):
   if cy0 <= cy1 and cx0 <= cx1:
     seen[cy0:cy1 + 1, cx0:cx1 + 1] = 1.0
   return seen
+
+
+UNKNOWN = -1           # a tile the agent has not observed this episode
+
+
+def _light_of_level(state):
+  light = np.asarray(state.light_map)
+  if light.ndim == 3:
+    light = light[int(state.player_level)]
+  return light
+
+
+def visible_bounds(state):
+  """Tile bounds of the agent's 9x11 window, clipped to the map."""
+  y, x = np.asarray(state.player_position).reshape(2)
+  return (max(0, int(y) - OBS_H // 2), min(MAP_SIZE, int(y) + OBS_H // 2 + 1),
+          max(0, int(x) - OBS_W // 2), min(MAP_SIZE, int(x) + OBS_W // 2 + 1))
+
+
+def update_known(known, state):
+  """Stamp the agent's lit 9x11 window into a running mosaic of known terrain.
+
+  Reading ``state.map`` inside the window is an implementation shortcut, not a
+  leak: the window is exactly what the observation already carries, down to the
+  light mask that Craftax's own renderer applies (``renderer.py``, "Mask out
+  tiles and mobs in darkness"). Tiles outside it are never touched.
+  """
+  if known is None:
+    known = np.full((MAP_SIZE, MAP_SIZE), UNKNOWN, np.int32)
+  y0, y1, x0, x1 = visible_bounds(state)
+  lit = _light_of_level(state)[y0:y1, x0:x1] > 0.05
+  known[y0:y1, x0:x1] = np.where(
+      lit, _blocks_of_level(state)[y0:y1, x0:x1], known[y0:y1, x0:x1])
+  return known
+
+
+def _visible_mobs(state):
+  """Mob counts restricted to what is on screen and lit.
+
+  Mobs move, so unlike terrain they are never accumulated into the mosaic: a cow
+  three rooms away is not something the agent saw, and a cow it saw 200 steps ago
+  is not there now. The P_SEEN recency plane is what carries staleness.
+  """
+  passive, hostile = _mob_counts(state)
+  y0, y1, x0, x1 = visible_bounds(state)
+  vis = np.zeros((MAP_SIZE, MAP_SIZE), bool)
+  vis[y0:y1, x0:x1] = True
+  vis &= _light_of_level(state) > 0.05
+  return passive * vis, hostile * vis
+
+
+def coarse_map_observed(known, state, seen=None):
+  """(12, 12, 16) target built only from terrain the agent has observed.
+
+  Mean planes pool over KNOWN tiles only, so a half-observed cell reports the
+  fraction among what was actually seen rather than being diluted toward zero by
+  the unknown half. ``known_fraction`` says how much of each cell that estimate
+  rests on, and the loss weights by it.
+  """
+  known = np.asarray(known)
+  isknown = known != UNKNOWN
+  out = np.zeros((COARSE, COARSE, N_PLANES), np.float32)
+  seen_tiles = isknown.reshape(COARSE, CELL, COARSE, CELL).sum((1, 3))
+
+  for plane, ids in _MEAN_GROUPS:
+    hits = (np.isin(known, ids) & isknown).reshape(
+        COARSE, CELL, COARSE, CELL).sum((1, 3))
+    out[:, :, plane] = hits / np.maximum(seen_tiles, 1)
+  for plane, ids in _MAX_GROUPS:
+    out[:, :, plane] = _pool_presence(np.isin(known, ids) & isknown)
+
+  passive, hostile = _visible_mobs(state)
+  out[:, :, P_MOB_PASSIVE] = _pool_presence(passive > 0)
+  out[:, :, P_MOB_HOSTILE] = _pool_presence(hostile > 0)
+  if seen is not None:
+    out[:, :, P_SEEN] = np.asarray(seen, np.float32)
+  return out
+
+
+def known_fraction(known):
+  """(12, 12) float: what fraction of each cell's 16 tiles has been observed.
+
+  This is the supervision WEIGHT. A cell at 0.0 contributes no gradient, so the
+  model is never taught the contents of terrain it has not seen.
+  """
+  return (np.asarray(known) != UNKNOWN).reshape(
+      COARSE, CELL, COARSE, CELL).mean((1, 3)).astype(np.float32)
 
 
 def crop_egocentric(map12, cell, size=9):

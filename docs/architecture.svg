@@ -1,0 +1,255 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="1330" viewBox="0 0 1900 1330" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif">
+<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#343a40"/></marker><marker id="headT" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#868e96"/></marker></defs>
+<rect width="1900" height="1330" fill="#ffffff"/>
+<text x="20" y="34" font-size="20" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Double-RSSM DreamerV3 + tech-tree potential  —  Craftax-Symbolic, size50m</text>
+<text x="20" y="56" font-size="12.5" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">branch fix/spine-recipe-costs · observation-only map targets + hindsight · imag_shift False · map_privileged False</text>
+<rect x="20" y="100" width="430" height="1000" rx="12" fill="#f1f3f5" stroke="#868e96" stroke-width="1.5"/>
+<text x="36" y="124" font-size="15" font-weight="bold" font-style="normal" fill="#868e96" text-anchor="start">Environment &amp; wrapper</text>
+<rect x="40" y="140" width="390" height="92" rx="7" fill="#ffffff" stroke="#868e96" stroke-width="1.4"/>
+<text x="52" y="160" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Craftax-Symbolic-v1  (true state s)</text>
+<text x="52" y="178" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">48×48 map × 9 levels · mobs · light map</text>
+<text x="52" y="194" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">43 actions · 67 achievements weighted 1/3/5/8 (Σ 226)</text>
+<text x="52" y="210" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">player always spawns at map centre (24, 24)</text>
+<text x="40" y="262" font-size="11.5" font-weight="bold" font-style="normal" fill="#495057" text-anchor="start">embodied/envs/craftax.py — computed from s every step</text>
+<polyline points="390,232 390,285" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<text x="402" y="264" font-size="10.5" font-weight="normal" font-style="normal" fill="#343a40" text-anchor="start">s</text>
+<rect x="40" y="285" width="390" height="78" rx="7" fill="#ffffff" stroke="#868e96" stroke-width="1.4"/>
+<text x="52" y="305" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">obs['vector']  8268  — the only agent input</text>
+<text x="52" y="323" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">9×11×83 local view (blocks, items, mobs, light)</text>
+<text x="52" y="339" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">+ 51 stats: inventory, vitals, xp, mana, spells, facing</text>
+<rect x="40" y="378" width="390" height="62" rx="7" fill="#fafafa" stroke="#adb5bd" stroke-width="1.4" stroke-dasharray="6 4"/>
+<text x="52" y="398" font-size="13" font-weight="bold" font-style="italic" fill="#212529" text-anchor="start">obs['valid']  43  — PROPOSED</text>
+<text x="52" y="416" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">43 precondition flags, derived from obs contents</text>
+<rect x="40" y="455" width="390" height="172" rx="7" fill="#fff4e0" stroke="#e8a33d" stroke-width="1.4"/>
+<text x="52" y="475" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Tech-tree potential Φ — craftax_potential.py</text>
+<text x="52" y="493" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">Φ(s) = Σ<tspan baseline-shift="sub" font-size="75%">spine</tspan> w<tspan baseline-shift="sub" font-size="75%">a</tspan> · progress<tspan baseline-shift="sub" font-size="75%">a</tspan>(s) + capability(s)</text>
+<text x="52" y="509" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">progress = 1 if unlocked, else 0.25 × prereqs met</text>
+<text x="52" y="525" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">13-rung spine: PLACE_TABLE (wood ≥ 2) → pickaxes</text>
+<text x="52" y="541" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">   → COLLECT_STONE / COAL / IRON → COLLECT_DIAMOND</text>
+<text x="52" y="557" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">capability: pickaxe 2.0, sword 1.2 per tier held</text>
+<text x="52" y="573" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">F = γ·Φ(s′) − Φ(s)      γ = 0.997, scale 4</text>
+<text x="52" y="589" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">unlocked rungs keep full weight: winning never lowers Φ</text>
+<polyline points="235,627 235,648" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<text x="246" y="642" font-size="10.5" font-weight="normal" font-style="normal" fill="#343a40" text-anchor="start">F</text>
+<rect x="40" y="648" width="390" height="78" rx="7" fill="#fffaf0" stroke="#e8a33d" stroke-width="1.4"/>
+<text x="52" y="668" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">reward r  (what replay stores)</text>
+<text x="52" y="686" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">r = Σ new achievements × {1,3,5,8} + 0.1·Δhealth</text>
+<text x="52" y="702" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">      + F      ← potential shaping</text>
+<rect x="40" y="741" width="390" height="46" rx="7" fill="#ffffff" stroke="#868e96" stroke-width="1.4"/>
+<text x="52" y="761" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">is_first · is_last · is_terminal</text>
+<text x="52" y="778" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">timeout is not terminal — value bootstraps through it</text>
+<rect x="40" y="802" width="390" height="150" rx="7" fill="#f6fcf8" stroke="#2f9e6a" stroke-width="1.4"/>
+<text x="52" y="822" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">RSSM-2 targets — training only, never inputs</text>
+<text x="52" y="840" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">map12 12×12×16  mosaic of own lit 9×11 windows</text>
+<text x="52" y="856" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">mapknown 12×12  share of cell observed → loss weight</text>
+<text x="52" y="872" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">mapseen 12×12  visit recency (decay 0.99)</text>
+<text x="52" y="888" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">mappos 0..143  coarse cell (fixed spawn ⇒ dead-reckonable)</text>
+<text x="52" y="904" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">unseen cells: no gradient; scored only by map_eval</text>
+<rect x="40" y="967" width="390" height="62" rx="7" fill="#f8f9fa" stroke="#adb5bd" stroke-width="1.4"/>
+<text x="52" y="987" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">ablation switch</text>
+<text x="52" y="1005" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">env.craftax.map_privileged True → full-map targets (old runs)</text>
+<polyline points="430,324 470,324" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<polyline points="430,409 470,409" fill="none" stroke="#868e96" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#headT)"/>
+<polyline points="430,687 470,687" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<polyline points="430,764 470,764" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<polyline points="430,877 470,877" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="470" y="100" width="100" height="1000" rx="12" fill="#f8f9fa" stroke="#495057" stroke-width="1.5"/>
+<text x="520" y="130" font-size="15" font-weight="bold" font-style="normal" fill="#212529" text-anchor="middle">Replay</text>
+<text x="520" y="150" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="middle"></text>
+<text x="520" y="170" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="middle">4e5 steps</text>
+<text x="520" y="190" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="middle"></text>
+<text x="520" y="210" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="middle">batch</text>
+<text x="520" y="230" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="middle">16 × 64</text>
+<text x="520" y="250" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="middle"></text>
+<text x="520" y="270" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="middle">train ratio</text>
+<text x="520" y="290" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="middle">512</text>
+<text x="520" y="310" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="middle"></text>
+<text x="520" y="330" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="middle">1.1M env</text>
+<text x="520" y="350" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="middle">steps</text>
+<rect x="600" y="100" width="520" height="560" rx="12" fill="#eef4ff" stroke="#4c7bd9" stroke-width="1.5"/>
+<text x="616" y="124" font-size="15" font-weight="bold" font-style="normal" fill="#4c7bd9" text-anchor="start">World model — DreamerV3 RSSM-1</text>
+<polyline points="570,179 620,179" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<text x="595" y="172" font-size="9.5" font-weight="normal" font-style="normal" fill="#343a40" text-anchor="middle">obs, a, r</text>
+<rect x="620" y="140" width="230" height="78" rx="7" fill="#ffffff" stroke="#4c7bd9" stroke-width="1.4"/>
+<text x="632" y="160" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Encoder</text>
+<text x="632" y="178" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">symlog(vector [⊕ valid])</text>
+<text x="632" y="194" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">→ MLP 3 × 512 → tokens e<tspan baseline-shift="sub" font-size="75%">t</tspan></text>
+<rect x="870" y="150" width="230" height="58" rx="7" fill="#ffffff" stroke="#4c7bd9" stroke-width="1.4"/>
+<text x="882" y="170" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">previous action a<tspan baseline-shift="sub" font-size="75%">t−1</tspan></text>
+<text x="882" y="188" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">one-hot, 43</text>
+<polyline points="735,218 735,240" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<polyline points="985,208 985,240" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="620" y="240" width="480" height="150" rx="7" fill="#ffffff" stroke="#4c7bd9" stroke-width="1.4"/>
+<text x="632" y="260" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">RSSM-1  (fast: every env step)</text>
+<text x="632" y="278" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">deter h<tspan baseline-shift="sub" font-size="75%">t</tspan> 4096, block GRU (8 blocks):   h<tspan baseline-shift="sub" font-size="75%">t</tspan> = f(h<tspan baseline-shift="sub" font-size="75%">t−1</tspan>, z<tspan baseline-shift="sub" font-size="75%">t−1</tspan>, a<tspan baseline-shift="sub" font-size="75%">t−1</tspan>)</text>
+<text x="632" y="294" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">posterior  z<tspan baseline-shift="sub" font-size="75%">t</tspan> ~ q(z | h<tspan baseline-shift="sub" font-size="75%">t</tspan>, e<tspan baseline-shift="sub" font-size="75%">t</tspan>)     ← training and acting</text>
+<text x="632" y="310" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">prior        z<tspan baseline-shift="sub" font-size="75%">t</tspan> ~ p(z | h<tspan baseline-shift="sub" font-size="75%">t</tspan>)           ← imagination</text>
+<text x="632" y="326" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">stoch z: 32 × 32 categorical, 1% unimix</text>
+<text x="632" y="342" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">h = deterministic memory carried step to step;</text>
+<text x="632" y="358" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">z = stochastic code for what this frame adds</text>
+<polyline points="860,390 860,410" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="620" y="410" width="480" height="40" rx="7" fill="#dce7ff" stroke="#4c7bd9" stroke-width="1.4"/>
+<text x="632" y="430" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">feat = [h, z]   →   5120      (feat2tensor)</text>
+<polyline points="695,450 695,470" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<polyline points="860,450 860,470" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<polyline points="1025,450 1025,470" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="620" y="470" width="150" height="78" rx="7" fill="#ffffff" stroke="#4c7bd9" stroke-width="1.4"/>
+<text x="632" y="490" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Decoder</text>
+<text x="632" y="508" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">MLP → vector</text>
+<text x="632" y="524" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">[⊕ valid]</text>
+<rect x="785" y="470" width="150" height="78" rx="7" fill="#ffffff" stroke="#4c7bd9" stroke-width="1.4"/>
+<text x="797" y="490" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Reward head</text>
+<text x="797" y="508" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">symexp two-hot</text>
+<text x="797" y="524" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">255 bins</text>
+<rect x="950" y="470" width="150" height="78" rx="7" fill="#ffffff" stroke="#4c7bd9" stroke-width="1.4"/>
+<text x="962" y="490" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Continue head</text>
+<text x="962" y="508" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">binary</text>
+<text x="962" y="524" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">1 − terminal</text>
+<polyline points="695,548 695,565" fill="none" stroke="#868e96" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#headT)"/>
+<polyline points="860,548 860,565" fill="none" stroke="#868e96" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#headT)"/>
+<polyline points="1025,548 1025,565" fill="none" stroke="#868e96" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#headT)"/>
+<rect x="620" y="565" width="480" height="78" rx="7" fill="#ffffff" stroke="#4c7bd9" stroke-width="1.4" stroke-dasharray="6 4"/>
+<text x="632" y="585" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">world-model loss</text>
+<text x="632" y="603" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">L<tspan baseline-shift="sub" font-size="75%">dec</tspan> + L<tspan baseline-shift="sub" font-size="75%">rew</tspan> (r includes F) + L<tspan baseline-shift="sub" font-size="75%">con</tspan> + KL<tspan baseline-shift="sub" font-size="75%">dyn</tspan> + KL<tspan baseline-shift="sub" font-size="75%">rep</tspan>  (free nats 1)</text>
+<text x="632" y="619" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">map kept OUT of rew/con — a map error must not corrupt imagined reward</text>
+<polyline points="570,604 620,604" fill="none" stroke="#868e96" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#headT)"/>
+<text x="595" y="597" font-size="9.5" font-weight="normal" font-style="normal" fill="#868e96" text-anchor="middle">r, term</text>
+<rect x="600" y="680" width="520" height="420" rx="12" fill="#ecf8f1" stroke="#2f9e6a" stroke-width="1.5"/>
+<text x="616" y="704" font-size="15" font-weight="bold" font-style="normal" fill="#2f9e6a" text-anchor="start">RSSM-2 — slow spatial belief (mapmodel.py)</text>
+<polyline points="620,430 608,430 608,752 620,752" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="595" y="661" width="26" height="18" rx="9" fill="#e03131"/>
+<text x="608" y="674" font-size="11" font-weight="bold" font-style="normal" fill="#ffffff" text-anchor="middle">sg</text>
+<rect x="620" y="720" width="480" height="78" rx="7" fill="#ffffff" stroke="#2f9e6a" stroke-width="1.4"/>
+<text x="632" y="740" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">aggregate one tick = 8 env steps</text>
+<text x="632" y="758" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">mean sg(feat) 5120  ⊕  Σ action deltas (dy, dx)  ⊕  tick</text>
+<text x="632" y="774" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">position from its OWN actions — no coordinates given</text>
+<polyline points="570,785 620,785" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<text x="595" y="778" font-size="9.5" font-weight="normal" font-style="normal" fill="#343a40" text-anchor="middle">a</text>
+<polyline points="860,798 860,815" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="620" y="815" width="480" height="62" rx="7" fill="#ffffff" stroke="#2f9e6a" stroke-width="1.4"/>
+<text x="632" y="835" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">GRU   deter<tspan baseline-shift="sub" font-size="75%">2</tspan> 1024   (hidden 512 × 2 layers)</text>
+<text x="632" y="853" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">steps once per tick — 8× slower than RSSM-1</text>
+<polyline points="860,877 860,895" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="620" y="895" width="480" height="62" rx="7" fill="#ffffff" stroke="#2f9e6a" stroke-width="1.4"/>
+<text x="632" y="915" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">map decoder</text>
+<text x="632" y="933" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">map logits 12×12×16          position logits 144</text>
+<polyline points="860,957 860,975" fill="none" stroke="#868e96" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#headT)"/>
+<rect x="620" y="975" width="480" height="110" rx="7" fill="#ffffff" stroke="#2f9e6a" stroke-width="1.4" stroke-dasharray="6 4"/>
+<text x="632" y="995" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">RSSM-2 loss</text>
+<text x="632" y="1013" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">BCE weighted by mapknown — unseen cells weigh 0</text>
+<text x="632" y="1029" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">hindsight: each tick graded vs end-of-episode mosaic</text>
+<text x="632" y="1045" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">normalised by observed mass × 144 cells</text>
+<text x="632" y="1061" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">+ position cross-entropy vs mappos</text>
+<polyline points="570,1030 620,1030" fill="none" stroke="#868e96" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#headT)"/>
+<text x="595" y="1023" font-size="9.5" font-weight="normal" font-style="normal" fill="#868e96" text-anchor="middle">targets</text>
+<rect x="1140" y="100" width="700" height="560" rx="12" fill="#f4f0ff" stroke="#7b5cd6" stroke-width="1.5"/>
+<text x="1156" y="124" font-size="15" font-weight="bold" font-style="normal" fill="#7b5cd6" text-anchor="start">Actor–critic — trained in imagination</text>
+<polyline points="1100,430 1130,430 1130,171 1160,171" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<text x="1125" y="300" font-size="10.5" font-weight="normal" font-style="normal" fill="#343a40" text-anchor="middle" transform="rotate(-90 1125 300)">posteriors</text>
+<rect x="1160" y="140" width="320" height="62" rx="7" fill="#ffffff" stroke="#7b5cd6" stroke-width="1.4"/>
+<text x="1172" y="160" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">start states</text>
+<text x="1172" y="178" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">every replay posterior (h, z): 16 × 64</text>
+<polyline points="1320,202 1320,222" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="1160" y="222" width="320" height="110" rx="7" fill="#ffffff" stroke="#7b5cd6" stroke-width="1.4"/>
+<text x="1172" y="242" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">imagine H = 15 steps (RSSM-1 prior)</text>
+<text x="1172" y="260" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">a<tspan baseline-shift="sub" font-size="75%">t</tspan> ~ π(· | ainp<tspan baseline-shift="sub" font-size="75%">t</tspan>)</text>
+<text x="1172" y="276" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">h<tspan baseline-shift="sub" font-size="75%">t+1</tspan> = f(h<tspan baseline-shift="sub" font-size="75%">t</tspan>, z<tspan baseline-shift="sub" font-size="75%">t</tspan>, a<tspan baseline-shift="sub" font-size="75%">t</tspan>);   z<tspan baseline-shift="sub" font-size="75%">t+1</tspan> ~ p(z | h<tspan baseline-shift="sub" font-size="75%">t+1</tspan>)</text>
+<text x="1172" y="292" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">reward &amp; continue heads read feat only</text>
+<rect x="1160" y="352" width="320" height="94" rx="7" fill="#fff4e0" stroke="#e8a33d" stroke-width="1.4"/>
+<text x="1172" y="372" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Φ inside the dream</text>
+<text x="1172" y="390" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">the reward head learned r including F,</text>
+<text x="1172" y="406" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">so every imagined reward carries the ramp.</text>
+<text x="1172" y="422" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">The agent never reads Φ as an input.</text>
+<rect x="1500" y="140" width="320" height="78" rx="7" fill="#ebe4ff" stroke="#7b5cd6" stroke-width="1.4"/>
+<text x="1512" y="160" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">ainp = actor2tensor(feat, mapfeat)</text>
+<text x="1512" y="178" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">feat 5120 ⊕ mapfeat 1296 = 6416</text>
+<text x="1512" y="194" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">feeds π and V only — never rew / con</text>
+<polyline points="1480,240 1490,240 1490,190 1500,190" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<polyline points="1660,218 1660,238" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="1500" y="238" width="320" height="94" rx="7" fill="#ffffff" stroke="#7b5cd6" stroke-width="1.4"/>
+<text x="1512" y="258" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Actor π — 43-way categorical</text>
+<text x="1512" y="276" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">L = −log π(a) · sg(adv) − 3e-4 · H(π)</text>
+<text x="1512" y="292" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">adv = λ-return − V, normalised</text>
+<text x="1512" y="308" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">imagined rollouts sample from π</text>
+<polyline points="1500,285 1480,285" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<text x="1490" y="279" font-size="9.5" font-weight="normal" font-style="normal" fill="#343a40" text-anchor="middle">a</text>
+<polyline points="1480,316 1490,316 1490,397 1500,397" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="1500" y="350" width="320" height="94" rx="7" fill="#ffffff" stroke="#7b5cd6" stroke-width="1.4"/>
+<text x="1512" y="370" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Critic V + slow EMA target</text>
+<text x="1512" y="388" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">λ-returns: λ = 0.95, horizon 333 (γ ≈ 0.997)</text>
+<text x="1512" y="404" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">reads the same ainp</text>
+<text x="1512" y="420" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">also fit on replay returns</text>
+<rect x="1160" y="466" width="660" height="108" rx="7" fill="#f9f7ff" stroke="#7b5cd6" stroke-width="1.4"/>
+<text x="1172" y="486" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">acting in the real env — policy(), every step</text>
+<text x="1172" y="504" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">obs → encoder → RSSM-1 posterior → feat</text>
+<text x="1172" y="520" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">feat → RSSM-2 window sum; every 8th step: GRU tick → new deter<tspan baseline-shift="sub" font-size="75%">2</tspan> → mapfeat</text>
+<text x="1172" y="536" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">ainp → π → sample a<tspan baseline-shift="sub" font-size="75%">t</tspan> → env        (no imagination while acting)</text>
+<polyline points="1820,520 1872,520 1872,80 330,80 330,140" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<text x="1100" y="73" font-size="11.5" font-weight="normal" font-style="normal" fill="#343a40" text-anchor="middle">acting: a<tspan baseline-shift="sub" font-size="75%">t</tspan> ~ π goes to the real env, one step at a time</text>
+<rect x="1140" y="680" width="700" height="420" rx="12" fill="#ecf8f1" stroke="#2f9e6a" stroke-width="1.5"/>
+<text x="1156" y="704" font-size="15" font-weight="bold" font-style="normal" fill="#2f9e6a" text-anchor="start">Actor-side map feature — mapfeat (agent.py)</text>
+<polyline points="1100,926 1130,926 1130,714 1660,714 1660,732" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<text x="1125" y="820" font-size="10.5" font-weight="normal" font-style="normal" fill="#343a40" text-anchor="middle" transform="rotate(-90 1125 820)">map &amp; position logits</text>
+<rect x="1500" y="732" width="320" height="62" rx="7" fill="#ffffff" stroke="#2f9e6a" stroke-width="1.4"/>
+<text x="1512" y="752" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">σ(map logits)</text>
+<text x="1512" y="770" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">12×12×16 belief</text>
+<polyline points="1660,794 1660,810" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="1500" y="810" width="320" height="78" rx="7" fill="#ffffff" stroke="#2f9e6a" stroke-width="1.4"/>
+<text x="1512" y="830" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">crop_egocentric</text>
+<text x="1512" y="848" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">9×9×16 window centred on</text>
+<text x="1512" y="864" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">argmax(position logits)</text>
+<polyline points="1660,888 1660,906" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="1500" y="906" width="320" height="78" rx="7" fill="#ffffff" stroke="#2f9e6a" stroke-width="1.4"/>
+<text x="1512" y="926" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">flatten 1296 → sg → × gate</text>
+<text x="1512" y="944" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">gate: learned scalar, initialised 0</text>
+<text x="1512" y="960" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">— opens only if the map pays</text>
+<polyline points="1820,945 1850,945 1850,179 1820,179" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<text x="1862" y="600" font-size="10" font-weight="normal" font-style="normal" fill="#343a40" text-anchor="middle" transform="rotate(-90 1862 600)">mapfeat 1296</text>
+<rect x="1837" y="851" width="26" height="18" rx="9" fill="#e03131"/>
+<text x="1850" y="864" font-size="11" font-weight="bold" font-style="normal" fill="#ffffff" text-anchor="middle">sg</text>
+<rect x="1160" y="732" width="320" height="126" rx="7" fill="#f8f9fa" stroke="#adb5bd" stroke-width="1.4"/>
+<text x="1172" y="752" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">in imagination (imag_shift False)</text>
+<text x="1172" y="770" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">RSSM-2 does not step while dreaming:</text>
+<text x="1172" y="786" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">the crop is FROZEN at the imagination</text>
+<text x="1172" y="802" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">start and shared by all 15 steps.</text>
+<text x="1172" y="818" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">Sliding it made rollout and loss disagree</text>
+<text x="1172" y="834" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">and broke the policy gradient.</text>
+<rect x="1160" y="876" width="320" height="108" rx="7" fill="#f8f9fa" stroke="#adb5bd" stroke-width="1.4"/>
+<text x="1172" y="896" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">gradient boundaries</text>
+<text x="1172" y="914" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">sg(feat) in: map loss never reaches RSSM-1</text>
+<text x="1172" y="930" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">sg(crop) out: policy loss never reaches</text>
+<text x="1172" y="946" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">   RSSM-2 — only the gate learns from it</text>
+<rect x="20" y="1120" width="1860" height="190" rx="12" fill="#ffffff" stroke="#dee2e6" stroke-width="1.5"/>
+<text x="40" y="1146" font-size="14" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Legend</text>
+<polyline points="40,1172 100,1172" fill="none" stroke="#343a40" stroke-width="1.5" marker-end="url(#head)"/>
+<text x="112" y="1176" font-size="12" font-weight="normal" font-style="normal" fill="#212529" text-anchor="start">data / forward pass</text>
+<polyline points="40,1200 100,1200" fill="none" stroke="#868e96" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#headT)"/>
+<text x="112" y="1204" font-size="12" font-weight="normal" font-style="normal" fill="#212529" text-anchor="start">training target → loss</text>
+<rect x="57" y="1219" width="26" height="18" rx="9" fill="#e03131"/>
+<text x="70" y="1232" font-size="11" font-weight="bold" font-style="normal" fill="#ffffff" text-anchor="middle">sg</text>
+<text x="112" y="1232" font-size="12" font-weight="normal" font-style="normal" fill="#212529" text-anchor="start">stop-gradient</text>
+<rect x="44" y="1250" width="52" height="22" rx="5" fill="#fafafa" stroke="#adb5bd" stroke-dasharray="6 4"/>
+<text x="112" y="1266" font-size="12" font-weight="normal" font-style="normal" fill="#212529" text-anchor="start">proposed, not built</text>
+<text x="360" y="1146" font-size="14" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Colour</text>
+<rect x="360" y="1162" width="30" height="16" rx="4" fill="#f1f3f5" stroke="#868e96"/>
+<text x="400" y="1175" font-size="12" font-weight="normal" font-style="normal" fill="#212529" text-anchor="start">environment &amp; wrapper</text>
+<rect x="360" y="1188" width="30" height="16" rx="4" fill="#fff4e0" stroke="#e8a33d"/>
+<text x="400" y="1201" font-size="12" font-weight="normal" font-style="normal" fill="#212529" text-anchor="start">potential Φ / reward</text>
+<rect x="360" y="1214" width="30" height="16" rx="4" fill="#eef4ff" stroke="#4c7bd9"/>
+<text x="400" y="1227" font-size="12" font-weight="normal" font-style="normal" fill="#212529" text-anchor="start">RSSM-1 world model (DreamerV3)</text>
+<rect x="360" y="1240" width="30" height="16" rx="4" fill="#ecf8f1" stroke="#2f9e6a"/>
+<text x="400" y="1253" font-size="12" font-weight="normal" font-style="normal" fill="#212529" text-anchor="start">RSSM-2 map model</text>
+<rect x="360" y="1266" width="30" height="16" rx="4" fill="#f4f0ff" stroke="#7b5cd6"/>
+<text x="400" y="1279" font-size="12" font-weight="normal" font-style="normal" fill="#212529" text-anchor="start">actor–critic</text>
+<text x="700" y="1146" font-size="14" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">What trains what</text>
+<text x="700" y="1172" font-size="12.5" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">RSSM-1, encoder, decoder, reward, continue  ←  world-model loss on replay</text>
+<text x="700" y="1196" font-size="12.5" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">RSSM-2  ←  map BCE + position CE only (sg on its input)</text>
+<text x="700" y="1220" font-size="12.5" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">π, V  ←  imagined λ-returns; the gate is the only map parameter they move</text>
+<text x="700" y="1244" font-size="12.5" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">Φ  ←  nothing: a fixed function of state, reaching the agent only via r</text>
+<text x="1290" y="1146" font-size="14" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">Where 'valid' would go (proposed)</text>
+<text x="1290" y="1172" font-size="12.5" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">a new obs key, concatenated with vector at the encoder</text>
+<text x="1290" y="1196" font-size="12.5" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">→ RSSM-1 latent; the decoder must reconstruct it, so every</text>
+<text x="1290" y="1220" font-size="12.5" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">imagined step carries it — no extra predictor needed.</text>
+<text x="1290" y="1244" font-size="12.5" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">Not via actor2tensor: validity changes step to step, and a</text>
+<text x="1290" y="1268" font-size="12.5" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">frozen, map-style input would be stale inside the dream.</text>
+</svg>

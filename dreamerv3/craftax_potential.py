@@ -69,7 +69,12 @@ PREREQ_CEIL = 0.25
 #          3 iron, 4 diamond)
 #   near   block ids that must be in the 8-neighbourhood
 SPINE = {
-    'PLACE_TABLE': dict(inv=dict(wood=1), near=()),
+    # Two logs, not one: place_block checks `inventory.wood >= 2` and
+    # spends both. At wood=1 the ramp used to read 'fully prepared',
+    # so the agent walked to open ground, pressed the key, got nothing,
+    # and had no reason to chop the second log -- the table gates every
+    # craft, so the whole spine stalled behind an off-by-one.
+    'PLACE_TABLE': dict(inv=dict(wood=2), near=()),
     'MAKE_WOOD_PICKAXE': dict(inv=dict(wood=1), near=(CRAFTING_TABLE,)),
     'MAKE_WOOD_SWORD': dict(inv=dict(wood=1), near=(CRAFTING_TABLE,)),
     'COLLECT_STONE': dict(inv=dict(pickaxe=1), near=(STONE,)),
@@ -82,9 +87,11 @@ SPINE = {
     'COLLECT_COAL': dict(inv=dict(pickaxe=1), near=(COAL,)),
     'COLLECT_IRON': dict(inv=dict(pickaxe=2), near=(IRON,)),
     'MAKE_IRON_PICKAXE': dict(
-        inv=dict(wood=1, coal=1, iron=1), near=(CRAFTING_TABLE, FURNACE)),
+        inv=dict(wood=1, stone=1, coal=1, iron=1),
+        near=(CRAFTING_TABLE, FURNACE)),
     'MAKE_IRON_SWORD': dict(
-        inv=dict(wood=1, coal=1, iron=1), near=(CRAFTING_TABLE, FURNACE)),
+        inv=dict(wood=1, stone=1, coal=1, iron=1),
+        near=(CRAFTING_TABLE, FURNACE)),
     'COLLECT_DIAMOND': dict(inv=dict(pickaxe=3), near=(DIAMOND,)),
 }
 
@@ -179,12 +186,21 @@ def max_potential(scale=1.0):
   return (sum(TIER_WEIGHT.values()) + sum(CAPABILITY.values())) / scale
 
 
-def shaped(prev_phi, phi, gamma):
+def shaped(prev_phi, phi, gamma, terminal=False):
   """F = gamma * PHI(s') - PHI(s). Returns 0.0 on the first step of an episode.
 
   Potential-based, so it cannot change the optimal policy -- it only moves
-  credit earlier in time.
+  credit earlier in time. That guarantee (Ng, Harada & Russell 1999) requires
+  PHI = 0 at absorbing states: over an episode the shaping telescopes to
+  gamma^T * PHI(s_T) - PHI(s_0), so a death that kept its potential would let
+  the agent climb the tech tree, die, and keep the reward for the climb --
+  shaping would then subsidise dying at high tech instead of being neutral.
+  On a real death (``terminal``) the final step therefore pays -PHI(s): the
+  whole climb is handed back. Timeouts are NOT terminal -- the value bootstraps
+  through them, so their potential stays.
   """
   if prev_phi is None:
     return 0.0
+  if terminal:
+    phi = 0.0
   return float(gamma * phi - prev_phi)

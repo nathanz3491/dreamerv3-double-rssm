@@ -31,7 +31,7 @@ defaults:
     procgen: {size: [96, 96], resize: pillow}
     crafter: {size: [64, 64], logs: False}
     craftax: {logs: False, use_seed: True, mapmodel: False, seen_decay: 0.99,
-              survival: none, surv_alive: 0.005, surv_death: 5.0,
+              map_privileged: False, survival: none, surv_alive: 0.005, surv_death: 5.0,
               surv_restore: 0.3, surv_threshold: 3.0, surv_kill: 0.5,
               surv_idle: 1.0, surv_idle_steps: 30, phi_scale: 4.0, phi_gamma: 0.997}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
@@ -118,6 +118,12 @@ defaults:
       # 0.138, achievements 4.35 vs 5.03. Fixing True properly means threading
       # the coarse cell through nj.scan in rssm.py.
       imag_shift: False
+      # Grade an early tick against the mosaic as it stood at the END of the
+      # episode segment, so the model is asked to predict terrain it has not
+      # reached yet and marked once the agent gets there. Every label is still
+      # something the agent observed. False grades each tick against what it had
+      # already seen by then, which trains recall and not prediction.
+      hindsight: True
       tick: 8           # env steps per RSSM-2 tick; must divide batch_length
       deter: 1024
       hidden: 512

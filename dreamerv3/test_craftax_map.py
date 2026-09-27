@@ -17,6 +17,7 @@ def _state(blocks=None, pos=(24, 24), level=0):
       position=np.zeros((0, 2), np.int32), mask=np.zeros((0,), bool))
   return types.SimpleNamespace(
       map=blocks, player_position=np.array(pos, np.int32), player_level=level,
+      light_map=np.ones((M.MAP_SIZE, M.MAP_SIZE), np.float32),
       passive_mobs=empty, melee_mobs=empty, ranged_mobs=empty)
 
 
@@ -125,3 +126,76 @@ def test_direction_is_preserved_by_the_crop():
   crop = M.crop_egocentric(m, 6 * M.COARSE + 5, size=9)
   ys, xs = np.nonzero(crop[:, :, M.P_STONE])
   assert (ys[0], xs[0]) == (2, 4), (ys, xs)           # up from centre (4, 4)
+
+
+# --- observation-only targets -----------------------------------------------
+# The whole "are we cheating" question reduces to one property: the target must
+# not move when ground truth the agent cannot see changes. These assert it
+# rather than arguing it.
+
+def test_mosaic_ignores_terrain_outside_the_window():
+  """The decisive test. Scramble every unseen cell; the target must not budge."""
+  rng = np.random.default_rng(0)
+  blocks = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
+  blocks[22:27, 22:29] = 3                          # water, inside the window
+  a = M.coarse_map_observed(M.update_known(None, _state(blocks)), _state(blocks))
+
+  scrambled = blocks.copy()
+  y0, y1, x0, x1 = M.visible_bounds(_state(blocks))
+  outside = np.ones_like(blocks, bool)
+  outside[y0:y1, x0:x1] = False
+  scrambled[outside] = rng.integers(3, 20, size=int(outside.sum()))
+  b = M.coarse_map_observed(
+      M.update_known(None, _state(scrambled)), _state(scrambled))
+
+  np.testing.assert_array_equal(a, b)
+
+
+def test_privileged_map_does_move_when_unseen_terrain_changes():
+  """The contrast: coarse_map reads everything, which is why it is the old one."""
+  blocks = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
+  far = blocks.copy()
+  far[2, 2] = 3                                     # water nowhere near (24,24)
+  assert not np.array_equal(M.coarse_map(_state(blocks)), M.coarse_map(_state(far)))
+
+
+def test_unobserved_cells_carry_no_weight():
+  known = M.update_known(None, _state())
+  frac = M.known_fraction(known)
+  assert frac.max() > 0.0, 'the window it stands in must be observed'
+  assert frac.min() == 0.0, 'the far side of the map must not be'
+  # A 9x11 window cannot cover a 48x48 map.
+  assert frac.mean() < 0.15, frac.mean()
+
+
+def test_the_mosaic_accumulates_as_the_agent_walks():
+  known, before = None, None
+  for x in range(10, 40, 4):
+    known = M.update_known(known, _state(pos=(24, x)))
+    now = M.known_fraction(known).sum()
+    assert before is None or now >= before, 'coverage must never shrink'
+    before = now
+  assert before > M.known_fraction(M.update_known(None, _state())).sum()
+
+
+def test_darkness_hides_tiles_from_the_mosaic():
+  """Craftax zeroes unlit tiles in the observation; the target must match."""
+  blocks = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
+  blocks[24, 26] = 3                                # water, two tiles away
+  lit = _state(blocks)
+  dark = _state(blocks)
+  dark.light_map = np.zeros((M.MAP_SIZE, M.MAP_SIZE), np.float32)
+  a = M.coarse_map_observed(M.update_known(None, lit), lit)
+  b = M.coarse_map_observed(M.update_known(None, dark), dark)
+  assert a[:, :, M.P_WATER].sum() > 0
+  assert b[:, :, M.P_WATER].sum() == 0
+  assert M.known_fraction(M.update_known(None, dark)).sum() == 0
+
+
+def test_mean_planes_pool_over_known_tiles_only():
+  """A half-seen cell reports the fraction among what was seen, not diluted."""
+  blocks = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
+  blocks[20:24, 20:24] = 3                          # one full coarse cell of water
+  st = _state(blocks, pos=(21, 21))
+  obs = M.coarse_map_observed(M.update_known(None, st), st)
+  assert obs[5, 5, M.P_WATER] == 1.0, obs[5, 5, M.P_WATER]
