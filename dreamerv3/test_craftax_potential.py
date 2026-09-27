@@ -174,3 +174,33 @@ def test_one_log_is_not_enough_for_a_table():
   assert two == P.PREREQ_CEIL
   assert phi(_state(wood=2)) > phi(_state(wood=1)), (
       'chopping the second log must pay, or the agent will not bother')
+
+
+# --- death hands the potential back -----------------------------------------
+def test_dying_pays_back_the_whole_climb():
+  """Climb to a pickaxe, then die: net shaping must be ~0, not +PHI(pickaxe).
+
+  Without PHI = 0 at the absorbing state the sum telescopes to
+  gamma^T * PHI(s_T) - PHI(s_0), and dying with a pickaxe would keep the reward
+  for earning it -- the potential would be paying the agent to die at high tech.
+  """
+  g = 0.997
+  path = [_state(), _state(wood=1), _state(wood=2),
+          _state(wood=1, near=(P.CRAFTING_TABLE,), pickaxe=1,
+                 achieved=('PLACE_TABLE', 'MAKE_WOOD_PICKAXE'))]
+  phis = [phi(s) for s in path]
+  total, prev = 0.0, None
+  for t, p_t in enumerate(phis):
+    terminal = t == len(phis) - 1
+    total += g ** t * P.shaped(prev, p_t, g, terminal=terminal)
+    prev = p_t
+  assert phis[-1] > 1.0, 'the climb must be worth something to hand back'
+  # Every step telescopes away except the start, which is ~0 at spawn.
+  assert abs(total + g * phis[0]) < 1e-6, total
+
+
+def test_timeout_keeps_its_potential():
+  """Timeouts bootstrap; they are not deaths and must not be charged."""
+  a, b = phi(_state(wood=1)), phi(_state(wood=2))
+  assert P.shaped(a, b, 0.997) == P.shaped(a, b, 0.997, terminal=False)
+  assert P.shaped(a, b, 0.997, terminal=True) == -a

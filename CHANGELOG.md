@@ -37,6 +37,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   would silently shrink the map loss ~4x against every other term.
 
 ### Fixed
+- **The potential kept its value on death, so shaping subsidised dying at high
+  tech.** Potential-based shaping is only policy-invariant with PHI = 0 at
+  absorbing states; ours returned before ever looking at `is_terminal`, so over
+  an episode the shaping telescoped to `gamma^T * PHI(s_T) - PHI(s_0)` and an
+  agent that climbed to a pickaxe and died kept the reward for the climb. A real
+  death now pays `-PHI(s)` on its final step; timeouts, which bootstrap, keep
+  their potential (`craftax_potential.shaped(terminal=...)`). Episode length had
+  never moved off the random band, which this is consistent with.
 - **Tech-tree potential asked for one log too few to place a crafting table.**
   `craftax_potential.SPINE` listed `PLACE_TABLE` at `wood=1`; Craftax's
   `place_block` requires `inventory.wood >= 2` and spends both. The ramp

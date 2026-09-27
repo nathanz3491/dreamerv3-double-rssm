@@ -186,12 +186,21 @@ def max_potential(scale=1.0):
   return (sum(TIER_WEIGHT.values()) + sum(CAPABILITY.values())) / scale
 
 
-def shaped(prev_phi, phi, gamma):
+def shaped(prev_phi, phi, gamma, terminal=False):
   """F = gamma * PHI(s') - PHI(s). Returns 0.0 on the first step of an episode.
 
   Potential-based, so it cannot change the optimal policy -- it only moves
-  credit earlier in time.
+  credit earlier in time. That guarantee (Ng, Harada & Russell 1999) requires
+  PHI = 0 at absorbing states: over an episode the shaping telescopes to
+  gamma^T * PHI(s_T) - PHI(s_0), so a death that kept its potential would let
+  the agent climb the tech tree, die, and keep the reward for the climb --
+  shaping would then subsidise dying at high tech instead of being neutral.
+  On a real death (``terminal``) the final step therefore pays -PHI(s): the
+  whole climb is handed back. Timeouts are NOT terminal -- the value bootstraps
+  through them, so their potential stays.
   """
   if prev_phi is None:
     return 0.0
+  if terminal:
+    phi = 0.0
   return float(gamma * phi - prev_phi)

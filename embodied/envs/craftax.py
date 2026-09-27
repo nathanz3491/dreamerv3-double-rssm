@@ -269,7 +269,8 @@ class Craftax(embodied.Env):
       return 0.0
     if self._survival == 'potential':
       phi = self._P.potential(state, self._ach_names, self._phi_scale)
-      bonus = self._P.shaped(self._prev_phi, phi, self._phi_gamma)
+      bonus = self._P.shaped(
+          self._prev_phi, phi, self._phi_gamma, terminal=is_terminal)
       self._prev_phi = phi
       return bonus
     bonus = self._surv['alive']            # paid per step, not per 10, so the
