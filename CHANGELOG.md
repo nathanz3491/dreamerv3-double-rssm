@@ -13,7 +13,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   BCE is weighted by `obs['mapknown']` -- the fraction of each coarse cell
   actually observed -- so unseen cells contribute no gradient. `coarse_map` and
   `env.craftax.map_privileged: True` are kept to reproduce the old runs as an
-  ablation.
+  ablation: it supervises every cell (`mapknown` = 1 everywhere) and should be
+  run with `agent.mapmodel.hindsight False`, which together reproduce the old
+  loss exactly.
 
   The capability that motivated full-map supervision is preserved by HINDSIGHT
   (`agent.mapmodel.hindsight`, default True): an early tick is graded against

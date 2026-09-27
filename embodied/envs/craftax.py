@@ -59,8 +59,9 @@ class Craftax(embodied.Env):
     self._seen_decay = float(seen_decay)
     # False (default): the map target is a mosaic of the agent's own lit 9x11
     # windows, so no gradient ever reaches cells it has not observed. True
-    # reinstates full-map ground truth, kept only to reproduce the original runs
-    # as an ablation -- see craftax_map's module docstring.
+    # reinstates full-map ground truth on every cell, kept only to reproduce the
+    # original runs as an ablation -- run it with agent.mapmodel.hindsight False
+    # too, since the old targets were never hindsighted. See craftax_map.
     self._map_privileged = bool(map_privileged)
     if self._mapmodel:
       from dreamerv3 import craftax_map
@@ -387,13 +388,21 @@ class Craftax(embodied.Env):
       self._prev_level = level
       self._seen = self._M.update_seen(self._seen, state, self._seen_decay)
       self._known = self._M.update_known(self._known, state)
-      map12 = (self._M.coarse_map(state, self._seen) if self._map_privileged
-               else self._M.coarse_map_observed(self._known, state, self._seen))
+      if self._map_privileged:
+        # The old setup, reproduced whole: ground truth everywhere AND every
+        # cell supervised. Emitting the observed fraction here would mask the
+        # unseen cells away again and quietly turn the ablation into a copy of
+        # the honest run.
+        map12 = self._M.coarse_map(state, self._seen)
+        known = np.ones((self._M.COARSE, self._M.COARSE), np.float32)
+      else:
+        map12 = self._M.coarse_map_observed(self._known, state, self._seen)
+        known = self._M.known_fraction(self._known)
       return dict(
           map12=map12,
           mappos=self._M.coarse_pos(state),
           mapseen=self._seen.astype(np.float32),
-          mapknown=self._M.known_fraction(self._known),
+          mapknown=known,
       )
 
   # --- Phase 4: frontier checkpoint/restore ----------------------------------
