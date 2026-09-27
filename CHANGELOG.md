@@ -71,6 +71,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- `docs/entropy-and-action-suppression.md` -- reference note on reading policy
+  entropy: competence-conditioned concentration vs action-support collapse, the
+  valid-action-suppression mechanism (Zabounidis et al. 2026, verified), our
+  audit numbers, better metrics than raw 43-action entropy, and experiments A-D.
+  Also records the status of the LLM-memory and LLM-reward directions, with the
+  verified SCALAR citation.
 - `docs/architecture.svg` / `.pdf` -- the current model on one page: where the
   potential sits (env wrapper, reaching the agent only through reward), what
   RSSM-2 reads (sg(feat) and its own actions), which heads see the map (pi and

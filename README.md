@@ -153,6 +153,17 @@ against 4.44 for vanilla DreamerV3. Full writeup, every number sourced from
 ignoring a decorative channel — rose monotonically 0.095 → 0.526 over 1.1M
 steps with no reversal.
 
+These map numbers come from the **privileged** runs, trained against the true
+map on every cell, and "chance" is not a fair floor: most planes are nearly
+always empty. Scored with `tools/map_eval.py` against a per-plane prior, that
+model beats the prior on cells it saw but is confidently *worse* than the prior
+on cells it never saw. Current runs train only on what the agent observed
+(`ObservedTargets`); their numbers will replace these.
+
+How to read policy entropy — skill versus suppressed valid actions, the metrics
+that separate them, and the experiments planned:
+[`docs/entropy-and-action-suppression.md`](docs/entropy-and-action-suppression.md).
+
 ### Known limitation (fixed; kept for the ablation)
 
 `rssm.imagine()` threads only `(deter, stoch)` through its scan, so a crop that
