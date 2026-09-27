@@ -123,9 +123,9 @@ class MapModel(nj.Module):
   def loss(self, deter2, map_target, pos_target, weight=None):
     """BCE over OBSERVED cells + cross-entropy over position.
 
-    ``weight`` is (B, T2, C, C) -- the fraction of each coarse cell the agent has
-    actually observed (``obs['mapknown']``). Cells it has never seen weigh zero
-    and contribute no gradient.
+    ``weight`` is (B, T2, C, C) or (B, T2, C, C, P). For terrain planes it is
+    the fraction of each coarse cell the agent has actually observed
+    (``obs['mapknown']``), so cells it has never seen contribute no gradient.
 
     This used to supervise every cell against the true map, on the reasoning that
     prediction of the unseen is the point. It is, but grading against terrain the
@@ -147,10 +147,15 @@ class MapModel(nj.Module):
     if weight is None:
       map_loss = bce.sum((-1, -2, -3))
     else:
-      w = f32(weight)[..., None]
-      cells = map_target.shape[-2] * map_target.shape[-3]
+      # (..., C, C) weights every plane of a cell alike; (..., C, C, P) lets
+      # the caller weight planes separately.
+      w = f32(weight)
+      if w.ndim == bce.ndim - 1:
+        w = w[..., None]
+      w = jnp.broadcast_to(w, bce.shape)
+      n = bce.shape[-1] * bce.shape[-2] * bce.shape[-3]
       map_loss = (bce * w).sum((-1, -2, -3)) / jnp.maximum(
-          w.sum((-1, -2, -3)), 1e-3) * cells
+          w.sum((-1, -2, -3)), 1e-3) * n
     onehot = jax.nn.one_hot(pos_target.astype(jnp.int32), self.cells)
     pos_loss = -(onehot * jax.nn.log_softmax(plogit, -1)).sum(-1)
     return map_loss, pos_loss

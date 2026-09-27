@@ -21,6 +21,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   still asked to predict terrain it has not reached, and is marked once the
   agent gets there. Every label remains an observation, just a later one.
 
+  Both the masking and the hindsight apply to the 13 TERRAIN planes only. The
+  mob planes ("visible right now") and P_SEEN (the agent's own visitation
+  record) are facts about the current tick that are known everywhere, so they
+  keep their causal target at full weight -- otherwise the model would be asked
+  where cows will wander, and could never learn to say "not seen yet".
+
   Measured: 25.9% of the 12x12 grid is observed per episode, so ~74% of the old
   gradient came from cells with no observational basis. On a fresh map every
   episode that signal cannot be learnable, and the eval below shows it was not

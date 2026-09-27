@@ -420,14 +420,28 @@ class Agent(embodied.jax.Agent):
       # env predates the key, which fall back to the old all-cells behaviour.
       wtgt = (mapmod.last_of_window(obs['mapknown'], tick)
               if 'mapknown' in obs else None)
-      if wtgt is not None and self.config.mapmodel.hindsight:
-        # Position is NOT hindsighted: where the agent stands at tick j is a
-        # fact about tick j, not something later evidence revises.
-        starts = mapmod.any_in_window(reset, tick)
-        mtgt = mapmod.last_in_segment(mtgt, starts)
-        wtgt = mapmod.last_in_segment(wtgt, starts)
+      mweight = None
+      if wtgt is not None:
+        # Only TERRAIN is static, so only terrain may be graded against later
+        # evidence, and only terrain is unknown until seen. The mob planes mean
+        # "visible right now" and P_SEEN is the agent's own visitation record:
+        # both are facts about tick j, known everywhere (outside the window the
+        # honest answer is "no mob visible", "not seen"), so they keep the
+        # causal target at full weight. Hindsighting them would ask the model
+        # where cows will wander and where it will walk; masking P_SEEN would
+        # leave it unable to say "I have not seen this cell" -- the one thing
+        # the actor needs to tell real terrain from a guess.
+        # Position is not hindsighted either: where the agent stands at tick j
+        # is a fact about tick j.
+        P = mtgt.shape[-1]
+        terrain = jnp.arange(P) < cmap.P_MOB_PASSIVE          # planes 0..12
+        if self.config.mapmodel.hindsight:
+          starts = mapmod.any_in_window(reset, tick)
+          mtgt = jnp.where(terrain, mapmod.last_in_segment(mtgt, starts), mtgt)
+          wtgt = mapmod.last_in_segment(wtgt, starts)
+        mweight = jnp.where(terrain, wtgt[..., None], 1.0)
       mloss, ploss = self.mapmodel.loss(
-          deter2, sg(mtgt), sg(ptgt), None if wtgt is None else sg(wtgt))
+          deter2, sg(mtgt), sg(ptgt), None if mweight is None else sg(mweight))
       # Broadcast (B, T2) back to (B, T) so the shape assert below holds;
       # divide by tick so repeating does not inflate the loss magnitude.
       losses['map'] = mapmod.repeat_ticks(mloss, tick, T) / tick
