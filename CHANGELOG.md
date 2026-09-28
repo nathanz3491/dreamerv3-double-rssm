@@ -71,6 +71,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- `docs/comparison-report.pdf` (from `tools/make_comparison_report.py` and
+  `docs/eval_results.json`) -- every finished run compared on the same fixed
+  evaluation worlds, with the unlock rate of every achievement any run reached.
+  Two findings: the control run with the recipe and death fixes scores the
+  highest total (5.93) but never makes a pickaxe (0/30 vs 9/30 for the old
+  record); and WAKE_UP (sleeping) accounts for the map runs' whole lead over
+  vanilla -- without it the fixed map model scores 4.20 against vanilla's 4.44.
+  Re-scoring two old checkpoints with the current code reproduced them exactly.
 - `docs/entropy-and-action-suppression.md` -- reference note on reading policy
   entropy: competence-conditioned concentration vs action-support collapse, the
   valid-action-suppression mechanism (Zabounidis et al. 2026, verified), our

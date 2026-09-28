@@ -144,6 +144,20 @@ The map model helps, and the tech-tree gate has opened for the first time:
 against 4.44 for vanilla DreamerV3. Full writeup, every number sourced from
 `tools/death_eval.py`: [`docs/raising-achievements.md`](docs/raising-achievements.md).
 
+**2026-09-28, re-scored against every finished run:** the 5.80 headline needs
+two caveats. The newest run (recipe + death fixes, privileged map) scores
+highest of all (**5.93**) but **never crafts a pickaxe** (0/30 episodes vs.
+9/30 for the 5.80 run) — the total went up while the tech tree got shallower.
+And **every map run's lead over vanilla is `WAKE_UP` (sleep)**: 83-98% unlock
+rate vs. 0% for vanilla; strip it out and the fixed map model scores 4.20
+against vanilla's 4.44. Only the potential shaping adds real tech-tree
+progress on top. Full table and method:
+[`docs/comparison-report.pdf`](docs/comparison-report.pdf) /
+[`docs/eval_results.json`](docs/eval_results.json), from
+`tools/make_comparison_report.py`. The honest (non-privileged) map run was
+still training as of this report (an out-of-memory restart) and isn't in it
+yet.
+
 | metric | value | chance |
 |---|---|---|
 | map BCE / cell | 0.047 | 0.693 |
