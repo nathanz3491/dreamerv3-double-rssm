@@ -71,6 +71,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- `honest_map` scored and added to `docs/comparison-report.pdf`: the
+  observation-only map model reaches 5.87 achievements, level with the
+  privileged control's 5.93, so dropping privileged supervision cost nothing
+  measurable. With the same recipe and death fixes it makes a pickaxe in 20% of
+  episodes, which the control never did -- the fixes are unlikely to be what
+  removed the control's pickaxe.
 - `docs/comparison-report.pdf` (from `tools/make_comparison_report.py` and
   `docs/eval_results.json`) -- every finished run compared on the same fixed
   evaluation worlds, with the unlock rate of every achievement any run reached.

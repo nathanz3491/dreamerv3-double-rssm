@@ -239,8 +239,7 @@ def main():
     plt.close(fig)
 
     # --------------------------------------------- 5. interpretation
-    fig = page(pdf, 'Why the newest result is suspicious, and what would '
-               'settle it')
+    fig = page(pdf, 'What the results say, and what would settle the rest')
     y = 0.90
     for block in data['interpretation']:
       fig.text(0.07, y, block['heading'], fontsize=10.5, weight='bold',
