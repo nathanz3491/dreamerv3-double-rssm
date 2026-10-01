@@ -71,6 +71,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Experiment B, two switchable arms on top of the honest-map configuration
+  (`env.craftax.valid_obs True` plus one of):
+  - `agent.valid.input True` (B1): the 43 validity flags enter the encoder, so
+    RSSM-1's latent -- and every imagined step -- carries them.
+  - `agent.valid.mask True` (B2): impossible actions get zero probability and
+    zero gradient, so their logits are never pushed down where they cannot
+    work. Acting uses the true flags; imagination uses a learned `feas` head on
+    the latent, read by both the rollout and the loss so they cannot disagree.
+  `dreamerv3/craftax_valid.py` computes the flags from the observation vector
+  alone; `test_craftax_valid.py` checks it against the game (0 disagreements in
+  77,700 action-state checks).
 - `tools/action_suppression.py` (experiment A): rolls a checkpoint and, at each
   step, asks the game which of the 43 actions would change anything (state
   copied, every action stepped with one key, compared with doing nothing).

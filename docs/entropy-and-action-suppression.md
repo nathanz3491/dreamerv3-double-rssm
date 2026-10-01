@@ -228,8 +228,29 @@ the alternative: give the agent the 43 validity flags as an encoder input so
 RSSM-1's latent carries them. The game oracle built here is the test for any
 observation-derived validity function that B needs.
 
-## Next step
+## Experiment B: built (2026-10-01)
 
-Experiment B: train with validity information, as a labelled arm (published
-Craftax baselines do not mask). Build the observation-derived validity function
-first and check it against `make_oracle` in `tools/action_suppression.py`.
+Two arms on the honest-map configuration, each a separate 1.1M-step run
+compared against `honest_map` (5.87):
+
+| arm | flags | what changes |
+|---|---|---|
+| B1, tell it | `--env.craftax.valid_obs True --agent.valid.input True` | the 43 flags are an encoder input; the decoder must reconstruct them |
+| B2, mask it | `--env.craftax.valid_obs True --agent.valid.mask True` | impossible actions get zero probability and zero gradient |
+
+`dreamerv3/craftax_valid.py` reads only the observation vector (a test pins its
+signature) and agrees with the game in 77,700 of 77,700 action-state checks
+over random play plus states seeded with random inventories, stations,
+potions, mana and XP. NOOP, the moves and DO are never masked.
+
+In B2 the real-game mask is the true flags. Inside imagination there is no
+observation, so a learned head (`feas`) predicts validity from the latent. The
+imagined rollout and the actor loss read the same head on the same states, so
+they stay consistent -- the property `imag_shift` broke. Its threshold (0.1)
+errs toward allowing: a missed possible action would be unpressable in every
+dream; a false "possible" only costs a no-op. Logged as `valid/recall` and
+`valid/false_pos`.
+
+What would count as a result: deep achievements (stone pickaxe, furnace) rising
+without raw entropy rising, and experiment A on the new checkpoints showing the
+frontier keys' probability where valid lifting off zero.

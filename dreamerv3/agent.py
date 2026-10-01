@@ -14,6 +14,8 @@ from . import craftax_map as cmap
 from . import mapmodel as mapmod
 from . import rssm
 from . import craftax_features as cf
+from . import craftax_valid as cvalid
+from embodied.jax import outs as jouts
 
 f32 = jnp.float32
 i32 = jnp.int32
@@ -42,8 +44,12 @@ class Agent(embodied.jax.Agent):
     # achievements); it must not be fed to the encoder or reconstructed.
     # 'map12'/'mappos'/'mapseen'/'mapknown' are RSSM-2 TARGETS -- like 'ach'
     # they are supervision only and must never reach the encoder or decoder.
+    # 'valid' (experiment B) is an INPUT only when valid.input is set; with
+    # valid.mask alone it is the label for the feasibility head, like 'ach'.
     exclude = ('is_first', 'is_last', 'is_terminal', 'reward', 'ach',
                'map12', 'mappos', 'mapseen', 'mapknown')
+    if not config.valid.input:
+      exclude += ('valid',)
     enc_space = {k: v for k, v in obs_space.items() if k not in exclude}
     dec_space = {k: v for k, v in obs_space.items() if k not in exclude}
     self.enc = {
@@ -116,6 +122,29 @@ class Agent(embodied.jax.Agent):
       return nn.cast(sg(flat) * self.mapmodel.gate()), pred
     self.mapfeat = mapfeat
 
+    # --- experiment B: what can the agent actually do? ------------------------
+    # docs/entropy-and-action-suppression.md. Unmasked policy gradients push an
+    # action down in every state where it does nothing, and shared weights
+    # carry that into the rare states where it would work: the furnace was
+    # never placed in 386 states where it could have been. With valid.mask an
+    # impossible action gets zero probability, hence zero gradient, so its
+    # logit is never pushed down where it cannot work.
+    #   acting       mask = obs['valid'], computed from the observation alone
+    #                (craftax_valid.valid_actions; exact against the game)
+    #   imagination  mask = a learned head on the latent -- there is no
+    #                observation inside a dream. The rollout and the loss read
+    #                the same head on the same states, so they cannot disagree
+    #                the way imag_shift's rollout and loss did. Acting reading
+    #                the true flags instead only changes what reaches replay.
+    self._use_valid = 'valid' in obs_space
+    self._valid_mask = self._use_valid and bool(config.valid.mask)
+    if self._valid_mask:
+      n = int(act_space['action'].high)
+      assert n == cvalid.N_ACTIONS, (n, cvalid.N_ACTIONS)
+      self.feas = embodied.jax.MLPHead(
+          elements.Space(bool, (n,), 0, 2), **config.validhead, name='feas')
+      self._valid_threshold = float(config.valid.threshold)
+
     scalar = elements.Space(np.float32, ())
     binary = elements.Space(bool, (), 0, 2)
     self.rew = embodied.jax.MLPHead(scalar, **config.rewhead, name='rew')
@@ -158,6 +187,8 @@ class Agent(embodied.jax.Agent):
         self.dyn, self.enc, self.dec, self.rew, self.con, self.pol, self.val]
     if self._use_rewcause:
       self.modules.append(self.rewcause)
+    if self._valid_mask:
+      self.modules.append(self.feas)
     if self._use_map:
       self.modules.append(self.mapmodel)
     self.opt = embodied.jax.Optimizer(
@@ -172,6 +203,8 @@ class Agent(embodied.jax.Agent):
     if not self._use_map:
       scales.pop('map', None)       # ditto -- agent asserts the keys match
       scales.pop('mappos', None)
+    if not self._valid_mask:
+      scales.pop('feas', None)
     self.scales = scales
 
   @property
@@ -261,6 +294,8 @@ class Agent(embodied.jax.Agent):
     if self._use_map:
       map_carry, mapfeat = self._map_act(map_carry, feat, prevact, reset)
     policy = self.pol(self.actor2tensor(feat, mapfeat), bdims=1)
+    if self._valid_mask:
+      policy = self._masked(policy, obs['valid'] > 0.5)
     act = sample(policy)
     out = {}
     out['finite'] = elements.tree.flatdict(jax.tree.map(
@@ -300,6 +335,29 @@ class Agent(embodied.jax.Agent):
         entries['map'] = dict(deter2=map_carry['deter2'])
       out.update(elements.tree.flatdict(entries))
     return carry, act, out
+
+  def _masked(self, policy, valid):
+    """Policy with impossible actions removed: zero probability, no gradient.
+
+    The basic actions (NOOP, moves, DO) are always allowed. The mask is added
+    after the categorical's unimix, so no uniform floor leaks back onto a
+    masked action.
+    """
+    if valid is None:
+      return policy
+    basic = jnp.zeros(valid.shape[-1], bool).at[jnp.asarray(cvalid.BASIC)].set(True)
+    allowed = valid | basic
+    logits = policy['action'].logits + jnp.where(allowed, 0.0, -1e4)
+    return {**policy, 'action': jouts.Categorical(logits)}
+
+  def _dream_valid(self, x, bdims):
+    """Validity inside imagination, from the latent -- or None if unmasked."""
+    if not self._valid_mask:
+      return None
+    logit = f32(self.feas(x, bdims).output.logit)
+    # A low threshold errs toward allowing: a false "impossible" blocks an
+    # action in every dream, a false "possible" merely costs a no-op.
+    return sg(jax.nn.sigmoid(logit)) > self._valid_threshold
 
   def _map_act(self, carry, feat, prevact, reset):
     """One acting step of RSSM-2: accumulate, tick on window close, crop.
@@ -387,6 +445,18 @@ class Agent(embodied.jax.Agent):
       mask = 1.0 - jnp.clip((ach * hv[None, None, :]).sum(-1), 0.0, 1.0)
       rc = self.rewcause(inp, 2).loss(sg(target))        # (B, T)
       losses['rewcause'] = rc * sg(weight) * sg(mask)
+    if self._valid_mask:
+      target = f32(obs['valid'] > 0.5)
+      # Named 'feas', not 'valid': with valid.input the decoder already owns
+      # a 'valid' reconstruction loss.
+      losses['feas'] = self.feas(inp, 2).loss(sg(target))
+      pred = self._dream_valid(inp, 2)
+      special = jnp.arange(target.shape[-1]) >= len(cvalid.BASIC)
+      pos = (target > 0) & special
+      # Recall on the actions that are actually possible is the number that
+      # matters: a missed one is an action the dreaming agent cannot press.
+      metrics['valid/recall'] = (pred & pos).sum() / jnp.maximum(pos.sum(), 1)
+      metrics['valid/false_pos'] = (pred & ~(target > 0) & special).mean()
     con = f32(~obs['is_terminal'])
     if self.config.contdisc:
       con *= 1 - 1 / self.config.horizon
@@ -475,8 +545,9 @@ class Agent(embodied.jax.Agent):
       start2 = deter2_step[:, -K:].reshape((B * K, -1))
       startfeat, cell0 = self.mapfeat(start2)
       frozen = startfeat[:, 0]
-    policyfn = lambda feat: sample(
-        self.pol(self.actor2tensor(feat, frozen), 1))
+    policyfn = lambda feat: sample(self._masked(
+        self.pol(self.actor2tensor(feat, frozen), 1),
+        self._dream_valid(self.feat2tensor(feat), 1)))
     _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
     first = jax.tree.map(
         lambda x: x[:, -K:].reshape((B * K, 1, *x.shape[2:])), repfeat)
@@ -510,7 +581,7 @@ class Agent(embodied.jax.Agent):
         imgact,
         self.rew(inp, 2).pred(),
         self.con(inp, 2).prob(1),
-        self.pol(ainp, 2),
+        self._masked(self.pol(ainp, 2), self._dream_valid(inp, 2)),
         self.val(ainp, 2),
         self.slowval(ainp, 2),
         self.retnorm, self.valnorm, self.advnorm,
