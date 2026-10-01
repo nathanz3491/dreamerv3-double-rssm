@@ -160,9 +160,76 @@ level. Mean action entropy cannot distinguish that from action-support
 collapse; state-conditioned probes, validity analysis and causal interventions
 can.
 
+## Experiment A: results (2026-10-01)
+
+`tools/action_suppression.py`, 20 episodes per checkpoint on the same fixed
+evaluation worlds as `death_eval`. Validity comes from the game itself: at
+every step the state is copied, all 43 actions are stepped with one random key,
+and an action counts as valid if the result differs from doing nothing.
+Measurement only. Raw numbers: `docs/experiment_a/*.json`.
+
+| | vanilla | old record | control | honest map |
+|---|---|---|---|---|
+| valid-action mass | 35.7% | 39.8% | 37.2% | 39.4% |
+| actions that do something, per step | 5.2 | 4.9 | 4.4 | 4.6 |
+| entropy H(A\|s) | 0.153 | 0.118 | 0.129 | 0.099 |
+| entropy of the mean policy | 0.732 | 0.678 | 0.758 | 0.688 |
+| I(A; s) | 0.579 | 0.560 | 0.628 | 0.589 |
+
+**Not a one-key collapse.** The mean policy's entropy is five to seven times
+the per-state entropy: the agents are confident in each state and choose
+differently in different states. On that measure the low entropy looks like
+skill. But only 36-40% of the probability lands on actions that do anything;
+the rest goes to no-ops, mostly DO with nothing in front (14-19% of all
+presses) and keys that can never work there.
+
+**The frontier is suppressed.** Probability of each key in the states where it
+would work, with the number of such states:
+
+| key | vanilla | old record | control | honest map |
+|---|---|---|---|---|
+| make wood pickaxe | 6.3% (22) | 25.0% (32) | **0.0% (150)** | 15.6% (34) |
+| make wood sword | 0.1% (23) | 1.5% (71) | 21.5% (58) | 1.4% (80) |
+| place table | 1.1% (798) | 3.9% (823) | 6.2% (643) | 3.5% (866) |
+| place stone | — | 0.4% (386) | — | **0.0% (133)** |
+| place furnace | — | **0.0% (386)** | — | **0.0% (133)** |
+| make stone pickaxe | — | 0.0% (4) | — | 0.0% (17) |
+
+Three findings:
+
+1. **In every run exactly one wood craft survives.** It is pressed far more
+   where it works than where it doesn't (old record: pickaxe 25.0% when valid
+   vs 0.8% when not). The other stays flat or dead. Which one survives
+   varies: the pickaxe in vanilla, the old record and the honest run; the
+   sword in the control. The control stood at a table able to craft a pickaxe
+   in 150 states and gave it 0.0% in every one. The honest run carries the same
+   recipe and death fixes and kept the pickaxe, so those fixes are not what
+   killed it. This is the pattern valid-action suppression predicts, with an
+   arbitrary winner per run.
+2. **The tech tree stops because the next keys are dead where they would
+   work.** The old record could have placed a furnace in 386 states and never
+   did; the honest run had 133 such states and never placed one. The stone
+   pickaxe was never pressed in any state where it was craftable. The agent is
+   reaching the frontier; it is not pressing the button there.
+3. **Some keys are pressed more where they cannot work.** Place plant in all
+   four runs, the stone pickaxe wherever it was ever craftable, and place table
+   in the honest run all have higher probability where they are invalid. The
+   policy has not learned those preconditions at all.
+
+### What this implies for experiment B
+
+A mask applied to an already-trained policy will not help: renormalising a
+probability of 0.0% over the valid set leaves it at 0.0%. The fix has to act
+during training. With a mask in training, an invalid action has zero
+probability and so receives no gradient, and its logit is never pushed down in
+the states where it cannot work. That is the mechanism the Zabounidis et al.
+paper identifies. It needs the mask in both the real env and imagination, or
+the alternative: give the agent the 43 validity flags as an encoder input so
+RSSM-1's latent carries them. The game oracle built here is the test for any
+observation-derived validity function that B needs.
+
 ## Next step
 
-Experiment A: an observation-derived validity function (checked against the
-real game, like the recipe test) plus the metrics above in `action_audit.py`,
-run on the privileged checkpoint and on `honest_map` / `priv_map` when they
-finish. The validity function is also the core of experiment B.
+Experiment B: train with validity information, as a labelled arm (published
+Craftax baselines do not mask). Build the observation-derived validity function
+first and check it against `make_oracle` in `tools/action_suppression.py`.

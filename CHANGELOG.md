@@ -71,6 +71,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- `tools/action_suppression.py` (experiment A): rolls a checkpoint and, at each
+  step, asks the game which of the 43 actions would change anything (state
+  copied, every action stepped with one key, compared with doing nothing).
+  Reports valid-action mass, conditional vs marginal entropy, opportunity
+  probabilities and each key's probability where valid vs invalid. Results for
+  four checkpoints in `docs/experiment_a/` and
+  `docs/entropy-and-action-suppression.md`: only 36-40% of probability lands on
+  actions that do anything; exactly one wood craft survives per run (the
+  control gave the pickaxe 0.0% across 150 craftable states); the furnace was
+  never placed in 386 (old record) and 133 (honest run) states where it could
+  have been. The tech tree stalls at suppressed frontier keys, not unreached
+  states.
 - `honest_map` scored and added to `docs/comparison-report.pdf`: the
   observation-only map model reaches 5.87 achievements, level with the
   privileged control's 5.93, so dropping privileged supervision cost nothing
