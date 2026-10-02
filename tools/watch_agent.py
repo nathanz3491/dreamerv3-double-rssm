@@ -93,7 +93,10 @@ def main():
   cp.agent = agent
   cp.load(keys=['agent'])
 
-  anames = [a.name for a in Achievement]
+  # By index, not iteration order: Craftax's Achievement enum is not
+  # declared in value order (positions 25-66 are shuffled), and the state's
+  # achievements array is indexed by value.
+  anames = [Achievement(i).name for i in range(len(Achievement))]
   actnames = {a.value: a.name for a in Action}
 
   for ep in range(known.episodes):

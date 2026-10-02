@@ -137,7 +137,10 @@ class Craftax(embodied.Env):
       from dreamerv3 import craftax_potential
       from craftax.craftax.constants import Achievement
       self._P = craftax_potential
-      self._ach_names = [a.name for a in Achievement]
+      # By index, not iteration order: Craftax's Achievement enum is not
+      # declared in value order (positions 25-66 are shuffled), and the state's
+      # achievements array is indexed by value.
+      self._ach_names = [Achievement(i).name for i in range(len(Achievement))]
     self._surv = dict(
         alive=float(surv_alive),          # per step; 0.1 == 1 point per 10 steps
         death=float(surv_death),          # subtracted once, on death not timeout

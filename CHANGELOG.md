@@ -52,6 +52,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   would silently shrink the map loss ~4x against every other term.
 
 ### Fixed
+- **Achievements past index 24 were reported under the wrong names.** Craftax's
+  `Achievement` enum is not declared in value order -- positions 25-66 are
+  shuffled -- and `death_eval`, `watch_agent`, `play_agent`, the env wrapper and
+  a test named the state's achievements array by enum iteration order. Index 29
+  (`ENTER_DUNGEON`) printed as `MAKE_IRON_ARMOUR`. Every earlier evaluation
+  only unlocked indices 0-24, which happen to line up, so no previously
+  reported per-achievement number changes; the potential's 13 spine
+  achievements are all below 25. Now named by index everywhere, with
+  `test_achievement_names_follow_indices`.
 - **The Craftax adapter declared `obs['vector']` in [0, 1], which crashes the
   first agent to level up.** Craftax divides health, food, drink, energy and
   mana by 10, and their maxima grow with attributes (up to 13 and 21); XP is

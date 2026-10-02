@@ -21,7 +21,10 @@ def _names():
   if NAMES is None:
     try:
       from craftax.craftax.constants import Achievement
-      NAMES = [a.name for a in Achievement]
+      # By index, not iteration order: Craftax's Achievement enum is not
+      # declared in value order (positions 25-66 are shuffled), and the state's
+      # achievements array is indexed by value.
+      NAMES = [Achievement(i).name for i in range(len(Achievement))]
     except Exception:
       NAMES = [f'ACH_{i}' for i in range(N_ACH)]
       for i, n in enumerate(P.SPINE):     # put the spine somewhere findable
@@ -204,3 +207,18 @@ def test_timeout_keeps_its_potential():
   a, b = phi(_state(wood=1)), phi(_state(wood=2))
   assert P.shaped(a, b, 0.997) == P.shaped(a, b, 0.997, terminal=False)
   assert P.shaped(a, b, 0.997, terminal=True) == -a
+
+
+def test_achievement_names_follow_indices():
+  """Craftax's Achievement enum is not declared in value order; name by index.
+
+  Iterating the enum labelled index 29 (ENTER_DUNGEON) as MAKE_IRON_ARMOUR, and
+  it went unnoticed until a run first unlocked an achievement past index 24.
+  """
+  try:
+    from craftax.craftax.constants import Achievement
+  except Exception:
+    return
+  names = _names()
+  for i in range(len(Achievement)):
+    assert names[i] == Achievement(i).name, (i, names[i], Achievement(i).name)
