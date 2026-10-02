@@ -180,7 +180,12 @@ class Craftax(embodied.Env):
   @property
   def obs_space(self):
     spaces = {
-        'vector': elements.Space(np.float32, (self._obs_dim,), 0.0, 1.0),
+        # Not bounded by 1: Craftax divides health, food, drink, energy and mana
+        # by 10, and their maxima grow with attributes (max health 8 + str,
+        # max mana 6 + 3 * int, up to 13 and 21), and XP is unbounded. The old
+        # high=1.0 held only until an agent first levelled up -- which needs
+        # XP, which only a new floor gives -- and then failed the space check.
+        'vector': elements.Space(np.float32, (self._obs_dim,), 0.0, np.inf),
         'ach': elements.Space(np.float32, (self._num_ach,), 0.0, 1.0),
         'reward': elements.Space(np.float32),
         'is_first': elements.Space(bool),

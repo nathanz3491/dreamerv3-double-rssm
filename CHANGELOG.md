@@ -52,6 +52,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   would silently shrink the map loss ~4x against every other term.
 
 ### Fixed
+- **The Craftax adapter declared `obs['vector']` in [0, 1], which crashes the
+  first agent to level up.** Craftax divides health, food, drink, energy and
+  mana by 10, and their maxima grow with attributes (up to 13 and 21); XP is
+  unbounded. Levelling needs XP, and XP comes only from reaching a new floor,
+  so no run hit this until experiment B2 (masked policy) entered the dungeon at
+  ~306k steps and the space check raised on a value of 1.1. The upper bound is
+  now unbounded.
 - **The potential kept its value on death, so shaping subsidised dying at high
   tech.** Potential-based shaping is only policy-invariant with PHI = 0 at
   absorbing states; ours returned before ever looking at `is_terminal`, so over
