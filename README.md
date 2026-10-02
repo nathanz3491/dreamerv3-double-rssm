@@ -178,6 +178,20 @@ How to read policy entropy — skill versus suppressed valid actions, the metric
 that separate them, and the experiments planned:
 [`docs/entropy-and-action-suppression.md`](docs/entropy-and-action-suppression.md).
 
+**2026-10-01:** the honest (non-privileged) map run finished training —
+**5.87 achievements/episode, against the privileged control's 5.93** — and,
+unlike the control, **crafts a pickaxe in 20% of episodes**, ruling out the
+recipe/death fixes as the reason the control never crafts one.
+**Experiment A** (`tools/action_suppression.py`) then answered why directly:
+scored against a game-oracle validity function, every checkpoint spends only
+36–40% of its action probability on actions that do anything, and the
+control pressed a craftable wood pickaxe in 0 of 150 valid states while its
+wood sword got 21.5% — action-support suppression at the exact frontier key,
+not an unreached-state problem. **Experiment B** (`craftax_valid.py`, two
+training arms — feed the validity flags to the encoder, or mask invalid
+actions to zero probability/gradient during training) is built and tested
+but **not yet trained**.
+
 ### Known limitation (fixed; kept for the ablation)
 
 `rssm.imagine()` threads only `(deter, stoch)` through its scan, so a crop that
