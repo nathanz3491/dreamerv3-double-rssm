@@ -145,6 +145,20 @@ vanilla DreamerV3 -- about 3.0% of Craftax's 226-point maximum. Every run,
 compared on the same evaluation worlds with each achievement's unlock rate:
 [`docs/comparison-report.pdf`](docs/comparison-report.pdf).
 
+What holds B2 back, measured step by step from its replay and shown in its
+own episodes: [`docs/b2-casebook.pdf`](docs/b2-casebook.pdf)
+(`tools/episode_cases.py` on the box, then `tools/make_casebook.py` from an
+environment with Craftax installed). In short, it spends wood as fast as it
+gets it: it builds a table the moment it holds two logs (2.2 tables per
+episode), and a stone-pickaxe chance lasts one step before its only log goes
+into the wood sword. 41% of episodes never drink.
+
+Next: a two-level agent. A manager picks a tech-tree goal every 8 steps
+from RSSM-2's slow state, and the actor pursues it
+([`docs/design-manager.md`](docs/design-manager.md)). Enable it with
+`--env.craftax.goals_obs True --agent.manager.enabled True` on top of the B2
+flags; the first run (`mgr`) is training.
+
 
 The map model helps, and the tech-tree gate has opened for the first time:
 **map + potential shaping reaches 5.80 achievements/episode at 1.1M steps**,

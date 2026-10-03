@@ -87,6 +87,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Two-level agent (`agent.manager.enabled`, `env.craftax.goals_obs`;
+  design in `docs/design-manager.md`). A manager actor-critic picks one of
+  13 tech-tree goals (`craftax_goals.GOALS`) every 8 steps, reading RSSM-1's
+  state and RSSM-2's slow state. The actor sees the goal and is paid the change
+  in its predicted progress (`gphi` head, trained on observation-only targets)
+  on top of the game reward. The manager is paid the game reward only, so it
+  learns the order of the tech tree instead of being told it, and its critic
+  bootstraps 8 steps at a time. B2 unlocks almost nothing after step ~160;
+  the iron tier needs plans far longer than the actor's 15-step imagination,
+  and imagining further had already failed. The replay value loss is off in
+  this mode (see the design doc). `test_craftax_goals` checks goal progress
+  against the game state.
+- `docs/b2-casebook.pdf`: B2's shortfalls measured step by step from replay
+  (`tools/episode_cases.py`, data in `docs/cases/`), compared with B1, the
+  honest run and vanilla, then shown as frames from B2's own episodes
+  (`tools/make_casebook.py`, drawn with Craftax's textures from the decoded
+  observation). It measured the cause of the table-to-pickaxe leak, which had
+  been inferred: B2 places a table the moment it holds two logs (98% of its
+  2.2 tables per episode), so every table-but-no-pickaxe episode is left with
+  0 wood. A stone-pickaxe chance lasts a median of one step, and 36% end with
+  the only log going into the wood sword. 41% of episodes never drink. The
+  report's "Where B2 falls short" page now states these measurements instead
+  of the earlier guesses.
 - Training curves for every run, rebuilt from replay
   (`tools/curves_from_replay.py`, `tools/plot_training_curves.py`,
   `docs/training-curves.png`/`.pdf`, data in `docs/curves/`). Seven of the ten
