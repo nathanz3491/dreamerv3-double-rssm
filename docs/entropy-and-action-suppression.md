@@ -254,3 +254,40 @@ dream; a false "possible" only costs a no-op. Logged as `valid/recall` and
 What would count as a result: deep achievements (stone pickaxe, furnace) rising
 without raw entropy rising, and experiment A on the new checkpoints showing the
 frontier keys' probability where valid lifting off zero.
+
+## Experiment B: results (2026-10-03)
+
+Both arms trained 1.1M steps on the honest-map configuration, scored with
+`death_eval` (30 episodes) and experiment A (20 episodes) on the same worlds as
+every other run. Raw experiment A files: `docs/experiment_a/expB_*.json`.
+
+| | honest map | B1, told | B2, masked |
+|---|---|---|---|
+| achievements | 5.87 | 6.90 | **7.60** |
+| without WAKE_UP | 4.90 | 6.10 | **6.80** |
+| place furnace (episodes) | 0% | 23% | **40%** |
+| place stone (episodes) | 0% | 0% | **40%** |
+| collect coal (episodes) | 0% | 0% | **20%** |
+| probability on actions with an effect | 39.4% | 46.6% | **57.1%** |
+| furnace, probability where valid | 0.0% (133) | 1.2% (452) | **3.2% (599)** |
+| place stone, probability where valid | 0.0% (133) | 0.0% (452) | **2.4% (599)** |
+| entropy H(A\|s) | 0.099 | 0.127 | 0.062 |
+
+Reading these against the four outcomes set out above: **both helped, masking
+far more.** The frontier keys that sat at exactly 0% where they worked come off
+zero only once a useless press can no longer push them down, which is the
+suppression mechanism. Telling the agent what is possible helps too (both wood
+crafts survive in B1 for the first time), but placing stone stays dead there.
+
+In B2 every no-effect press is a basic action (DO with nothing in front, NOOP,
+a blocked move), and per-state entropy halves while the mean policy stays
+varied: more decisive, not collapsed.
+
+**The next wall is sequencing.** The stone pickaxe was craftable in only 5 of
+B2's 5,167 evaluation steps: it mines stone but rarely returns to a table with
+both wood and stone. That is planning, not suppression, and it gates iron and
+the 3-5-point tier. Survival did not improve (B2 lifespan 246; half of its
+deaths are mobs or lava).
+
+Caveats: one seed per arm; masking changes the action space relative to
+published Craftax baselines and is reported as a separate arm.

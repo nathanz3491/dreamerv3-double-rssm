@@ -107,7 +107,7 @@ def main():
     plt.close(fig)
 
     # --------------------------------------------- 2. totals + the tech spine
-    fig = page(pdf, 'Most of the gain over vanilla is sleep',
+    fig = page(pdf, 'Sleep inflates the map runs; experiment B is real progress',
                'Mean episode-final achievements per run, split into WAKE_UP and '
                'the rest; unlock rate of the early tech-tree rungs')
     ax = fig.add_axes([0.33, 0.60, 0.59, 0.27])
@@ -164,7 +164,7 @@ def main():
     fig = page(pdf, 'Every achievement any run unlocked',
                f'% of evaluation episodes in which each achievement fired. '
                f'The other {never} of 67 were never unlocked by any run.')
-    ax = fig.add_axes([0.30, 0.06, 0.64, 0.78])
+    ax = fig.add_axes([0.30, 0.05, 0.64, 0.75])
     M = np.array([[r['rates'].get(n, 0.0) for r in runs] for n in names])
     ax.imshow(M, cmap=RAMP, vmin=0, vmax=1, aspect='auto')
     for i in range(M.shape[0]):
@@ -177,7 +177,7 @@ def main():
     ax.set_yticklabels([n.replace('_', ' ').lower() for n in names],
                        fontsize=8)
     ax.set_xticks(range(len(runs)))
-    ax.set_xticklabels([r['short'] for r in runs], rotation=30, ha='right',
+    ax.set_xticklabels([r['short'] for r in runs], rotation=60, ha='left',
                        fontsize=8)
     ax.xaxis.tick_top()
     ax.tick_params(length=0)

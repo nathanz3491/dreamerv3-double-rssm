@@ -139,6 +139,13 @@ python -m pytest dreamerv3/test_craftax_map.py -q
 
 ## Status
 
+**Current best: 7.60 achievements per episode** (experiment B2: honest map
+model + potential + impossible actions masked in training), against 4.44 for
+vanilla DreamerV3 -- about 3.0% of Craftax's 226-point maximum. Every run,
+compared on the same evaluation worlds with each achievement's unlock rate:
+[`docs/comparison-report.pdf`](docs/comparison-report.pdf).
+
+
 The map model helps, and the tech-tree gate has opened for the first time:
 **map + potential shaping reaches 5.80 achievements/episode at 1.1M steps**,
 against 4.44 for vanilla DreamerV3. Full writeup, every number sourced from

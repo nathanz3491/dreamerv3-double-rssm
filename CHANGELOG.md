@@ -87,6 +87,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Experiment B results in `docs/comparison-report.pdf` and
+  `docs/entropy-and-action-suppression.md`. Masking impossible actions (B2)
+  reaches 7.60 achievements against 5.87 for the same model without it, and
+  places the furnace (40%), places stone (40%) and mines coal (20%) -- all at 0%
+  before. Validity flags as an input (B1) reach 6.90. Experiment A on the final
+  checkpoints shows the frontier keys coming off 0% where they work only under
+  masking. Raw files in `docs/experiment_a/expB_*.json`.
 - Experiment B, two switchable arms on top of the honest-map configuration
   (`env.craftax.valid_obs True` plus one of):
   - `agent.valid.input True` (B1): the 43 validity flags enter the encoder, so
