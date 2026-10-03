@@ -41,7 +41,7 @@ class Craftax(embodied.Env):
 
   def __init__(self, task='symbolic', size=None, seed=0, logs=False,
                mapmodel=False, seen_decay=0.99, map_privileged=False,
-               valid_obs=False,
+               valid_obs=False, goals_obs=False,
                survival='none',
                surv_alive=0.005, surv_death=5.0, surv_restore=0.3,
                surv_threshold=3.0, surv_kill=0.5, surv_idle=1.0,
@@ -70,6 +70,13 @@ class Craftax(embodied.Env):
     if self._valid_obs:
       from dreamerv3 import craftax_valid
       self._V = craftax_valid
+    # Two-level agent: obs['goalphi'], progress toward each manager goal,
+    # computed from the observation vector alone (craftax_goals). A training
+    # target for the agent's goal-progress head, never an encoder input.
+    self._goals_obs = bool(goals_obs)
+    if self._goals_obs:
+      from dreamerv3 import craftax_goals
+      self._G = craftax_goals
     if self._mapmodel:
       from dreamerv3 import craftax_map
       self._M = craftax_map
@@ -207,6 +214,9 @@ class Craftax(embodied.Env):
       spaces['mapknown'] = elements.Space(np.float32, (C, C), 0.0, 1.0)
     if self._valid_obs:
       spaces['valid'] = elements.Space(np.float32, (self._num_actions,), 0.0, 1.0)
+    if self._goals_obs:
+      spaces['goalphi'] = elements.Space(
+          np.float32, (self._G.N_GOALS,), 0.0, 1.0)
     if self._logs:
       spaces['log/reward'] = elements.Space(np.float32)
       spaces['log/achievements'] = elements.Space(np.int32)
@@ -381,6 +391,8 @@ class Craftax(embodied.Env):
       obs.update(self._map_targets(state, vector, is_first))
     if self._valid_obs:
       obs['valid'] = self._V.valid_actions(vector).astype(np.float32)
+    if self._goals_obs:
+      obs['goalphi'] = self._G.progress(vector)
     if self._logs:
       obs['log/reward'] = np.float32(reward)
       with self._jax.transfer_guard('allow'):
@@ -452,6 +464,8 @@ class Craftax(embodied.Env):
       result.update(self._map_targets(state, obs, is_first=True))
     if self._valid_obs:
       result['valid'] = self._V.valid_actions(obs).astype(np.float32)
+    if self._goals_obs:
+      result['goalphi'] = self._G.progress(obs)
     if self._logs:
       result['log/reward'] = np.float32(0.0)
       result['log/achievements'] = ach_sum

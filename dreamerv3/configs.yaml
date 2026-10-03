@@ -31,7 +31,7 @@ defaults:
     procgen: {size: [96, 96], resize: pillow}
     crafter: {size: [64, 64], logs: False}
     craftax: {logs: False, use_seed: True, mapmodel: False, seen_decay: 0.99,
-              map_privileged: False, valid_obs: False, survival: none, surv_alive: 0.005, surv_death: 5.0,
+              map_privileged: False, valid_obs: False, goals_obs: False, survival: none, surv_alive: 0.005, surv_death: 5.0,
               surv_restore: 0.3, surv_threshold: 3.0, surv_kill: 0.5,
               surv_idle: 1.0, surv_idle_steps: 30, phi_scale: 4.0, phi_gamma: 0.997}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
@@ -87,7 +87,7 @@ defaults:
     coordinator_address: ''
 
   agent:
-    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, rewcause: 1.0, map: 1.0, mappos: 1.0, feas: 1.0}
+    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, rewcause: 1.0, map: 1.0, mappos: 1.0, feas: 1.0, gphi: 1.0, mpolicy: 1.0, mvalue: 1.0}
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
@@ -108,6 +108,16 @@ defaults:
     #        true flags when acting, the learned 'feas' head in imagination
     valid: {input: False, mask: False, threshold: 0.1}
     validhead: {layers: 2, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
+    # --- two-level agent (docs/design-manager.md; needs env.craftax.goals_obs
+    # and the map model). A manager actor-critic picks one of 13 tech-tree goals
+    # (craftax_goals) every `every` steps from RSSM-1's state plus RSSM-2's slow
+    # state; the actor sees the goal and is paid goal_reward x the change in its
+    # predicted progress, on top of the game reward. The manager is paid the
+    # game reward only. actent is the manager's entropy bonus: it chooses among
+    # 13 options every 8 steps, so it needs more than the actor's 3e-4 to keep
+    # trying goals it has not yet seen pay.
+    manager: {enabled: False, every: 8, goal_reward: 1.0, actent: 1e-3}
+    gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}
     # --- two-RSSM map model (design-map-model.md) ---------------------------
     # enabled: False reproduces stock behaviour byte-for-byte.
     mapmodel:
