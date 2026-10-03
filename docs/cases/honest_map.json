@@ -1,0 +1,139 @@
+{
+ "run": "honest_map",
+ "episodes": 547,
+ "stone_pickaxe": {
+  "chance_steps": 210,
+  "chance_episodes": 17,
+  "pressed_when_possible": 0.0,
+  "wood_pickaxe_pressed_when_possible": 0.08568443051201671,
+  "instead": {
+   "UP": 0.14285714285714285,
+   "RIGHT": 0.13333333333333333,
+   "DO": 0.11428571428571428,
+   "LEFT": 0.11428571428571428,
+   "PLACE_TABLE": 0.10952380952380952,
+   "DOWN": 0.08571428571428572,
+   "MAKE_WOOD_PICKAXE": 0.07142857142857142,
+   "DRINK_POTION_PINK": 0.07142857142857142
+  },
+  "stranded_episodes": 28,
+  "stranded_table_in_view": 0.35714285714285715,
+  "stranded_closest_table": 2.0,
+  "sinks": {
+   "stone": {
+    "PLACE_FURNACE": 0.75,
+    "MAKE_ARROW": 0.25
+   },
+   "wood": {
+    "PLACE_TABLE": 0.853017019082001,
+    "MAKE_WOOD_PICKAXE": 0.08457968024755029,
+    "MAKE_WOOD_SWORD": 0.06188757091284167,
+    "MAKE_ARROW": 0.0005157297576070139
+   }
+  },
+  "chances": 30,
+  "chance_length_median": 5.0,
+  "chance_ended": {
+   "walked away": 0.7666666666666667,
+   "ingredient spent on MAKE_WOOD_SWORD": 0.1,
+   "episode ended": 0.1,
+   "ingredient spent on MAKE_ARROW": 0.03333333333333333
+  }
+ },
+ "wood_pickaxe": {
+  "tables": {
+   "per_episode": 1.5118829981718465,
+   "episodes_with_two_or_more": 0.45521023765996343,
+   "wood_held_when_placing": {
+    "3": 222,
+    "2": 409,
+    "4": 104,
+    "5": 53,
+    "7": 7,
+    "8": 5,
+    "6": 25,
+    "10": 1,
+    "9": 1
+   },
+   "repeats_with_a_table_in_view": 0.20347394540942929
+  },
+  "episodes": 260,
+  "wood_left_after_table": {
+   "1": 57,
+   "0": 166,
+   "2": 24,
+   "3": 9,
+   "5": 1,
+   "4": 3
+  },
+  "zero_wood_after_table": 0.6384615384615384,
+  "got_wood_again": 0.8576923076923076,
+  "had_a_later_chance": 0.5423076923076923
+ },
+ "survival": {
+  "drinks_per_episode": 2.6307129798903106,
+  "meals_per_episode": 0.0712979890310786,
+  "episodes_never_drinking": 0.3473491773308958,
+  "never_drinking_dry_at_step": 205.0,
+  "never_drinking_lifespan": 238.0,
+  "drinking_lifespan": 284.0,
+  "thirst_episodes": 187,
+  "water_in_view_when_drink_hit_zero": 0.3422459893048128,
+  "water_within_3": 0.1711229946524064,
+  "mob_adjacent_last10": {
+   "moves": 0.37594762232942797,
+   "PLACE_TABLE": 0.12267401791867677,
+   "NOOP": 0.12198483804272915,
+   "DO aimed elsewhere": 0.11681598897312198,
+   "SLEEP": 0.06443831840110269,
+   "PLACE_PLANT": 0.052377670572019294,
+   "REST": 0.019641626464507237,
+   "attacks it (DO facing the mob)": 0.013094417643004824,
+   "MAKE_ARROW": 0.012749827705031013,
+   "MAKE_DIAMOND_ARMOUR": 0.011371467953135768,
+   "MAKE_WOOD_PICKAXE": 0.009303928325292901,
+   "DRINK_POTION_BLUE": 0.009303928325292901,
+   "CAST_FIREBALL": 0.00895933838731909,
+   "MAKE_WOOD_SWORD": 0.007925568573397657,
+   "DRINK_POTION_PINK": 0.007580978635423846,
+   "DESCEND": 0.007236388697450034,
+   "MAKE_DIAMOND_PICKAXE": 0.004135079255685734,
+   "DRINK_POTION_YELLOW": 0.0034458993797381117,
+   "MAKE_STONE_SWORD": 0.0031013094417643005,
+   "MAKE_TORCH": 0.0031013094417643005,
+   "DRINK_POTION_CYAN": 0.0031013094417643005,
+   "SHOOT_ARROW": 0.0031013094417643005,
+   "ENCHANT_ARMOUR": 0.0027567195037904893,
+   "PLACE_FURNACE": 0.0027567195037904893,
+   "CAST_ICEBALL": 0.002412129565816678,
+   "ENCHANT_BOW": 0.002067539627842867,
+   "MAKE_STONE_PICKAXE": 0.002067539627842867,
+   "PLACE_TORCH": 0.0017229496898690559,
+   "DRINK_POTION_RED": 0.0013783597518952446,
+   "DRINK_POTION_GREEN": 0.0006891798759476223,
+   "PLACE_STONE": 0.0006891798759476223,
+   "LEVEL_UP_DEXTERITY": 0.00034458993797381116,
+   "LEVEL_UP_STRENGTH": 0.00034458993797381116,
+   "MAKE_IRON_ARMOUR": 0.00034458993797381116,
+   "MAKE_DIAMOND_SWORD": 0.00034458993797381116,
+   "READ_BOOK": 0.00034458993797381116,
+   "MAKE_IRON_PICKAXE": 0.00034458993797381116
+  }
+ },
+ "wasted": {
+  "do_target": {
+   "grass": 0.5862514536761856,
+   "plant": 0.11561571262437008,
+   "tree": 0.08747900245509756,
+   "water": 0.0737175345651893,
+   "sand": 0.046453030107249,
+   "stone": 0.03420984623336348,
+   "a mob": 0.016571908515312057,
+   "path": 0.01628117327820132,
+   "table": 0.010595684196924667,
+   "dark": 0.008108282723866133
+  },
+  "do_share": 0.206206993025626,
+  "blocked_streaks_per_1000_steps": 0.5395647511007787
+ }
+}
