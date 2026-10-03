@@ -20,6 +20,7 @@ import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = ROOT / 'docs' / 'eval_results.json'
+DIAG = ROOT / 'docs' / 'diagnosis.json'           # tools/diagnose_run.py
 OUT = ROOT / 'docs' / 'comparison-report.pdf'
 
 # Reference palette (dataviz skill, light mode): recessive ink, one sequential
@@ -238,7 +239,81 @@ def main():
     pdf.savefig(fig)
     plt.close(fig)
 
-    # --------------------------------------------- 5. interpretation
+    # --------------------------------------------- 5. training curves
+    import plot_training_curves as curves
+    fig = curves.figure(size=A4)
+    pdf.savefig(fig)
+    plt.close(fig)
+
+    # --------------------------------------- 6. where the best run falls short
+    diag = {d['run']: d for d in json.loads(DIAG.read_text(encoding='utf-8'))}
+    fig = page(pdf, 'Where B2 falls short',
+               'Last 150k training steps of each run (~500 episodes), decoded '
+               'from replay by tools/diagnose_run.py')
+    rungs = ['COLLECT_WOOD', 'PLACE_TABLE', 'MAKE_WOOD_PICKAXE',
+             'COLLECT_STONE', 'PLACE_FURNACE', 'MAKE_STONE_PICKAXE',
+             'COLLECT_IRON']
+    series = [('expB_mask', 'B2 masked', '#2a78d6'),
+              ('expB_input', 'B1 told', '#1baf7a'),
+              ('honest_map', 'honest map', '#eb6834')]
+    ax = fig.add_axes([0.10, 0.58, 0.62, 0.30])
+    xs = np.arange(len(rungs))
+    for run, label, colour in series:
+      ys = [100 * diag[run]['funnel'][r]['all'] for r in rungs]
+      ax.plot(xs, ys, color=colour, linewidth=2, marker='o', markersize=7,
+              markeredgecolor=SURFACE, markeredgewidth=2, label=label)
+    b2 = [100 * diag['expB_mask']['funnel'][r]['all'] for r in rungs]
+    for x, y in zip(xs, b2):
+      ax.text(x, y + 4, f'{y:.0f}%', ha='center', fontsize=8, color=INK)
+    ax.set_xticks(xs)
+    ax.set_xticklabels([r.replace('_', ' ').lower() for r in rungs],
+                       rotation=25, ha='right', fontsize=8)
+    ax.set_ylabel('% of episodes reaching the rung')
+    ax.set_ylim(-3, 108)
+    ax.grid(axis='y', color=GRID, linewidth=0.6)
+    ax.set_axisbelow(True)
+    ax.legend(loc='upper right', frameon=False, fontsize=8)
+    sp = diag['expB_mask']['stone_pickaxe']
+    de = diag['expB_mask']['deaths']
+    pct = lambda v: f'{100 * v:.0f}%'
+    text = (
+        "1. The stone pickaxe is the wall. B2 reaches the furnace in "
+        f"{pct(diag['expB_mask']['funnel']['PLACE_FURNACE']['all'])} of episodes "
+        "but makes the stone pickaxe in "
+        f"{pct(diag['expB_mask']['funnel']['MAKE_STONE_PICKAXE']['all'])}. Of the "
+        f"{sp['episodes']} episodes that collected stone, {pct(sp['held_both'])} "
+        "held wood and stone at the same time, but only "
+        f"{pct(sp['both_at_table'])} ever stood next to a table while holding "
+        f"both, and {pct(sp['made'])} made the pickaxe. Two gaps: it rarely "
+        "brings the ingredients back to a table (logistics), and when it does it "
+        "still mostly does not press the key -- masking stops the key being "
+        "pushed down, but a key that is almost never valid is also almost never "
+        "reinforced, so it stays rare.\n"
+        "2. Table to wood pickaxe leaks. "
+        f"{pct(1 - diag['expB_mask']['funnel']['MAKE_WOOD_PICKAXE']['given_previous'])}"
+        " of the episodes that place a table never make the wood pickaxe. At a "
+        "table holding wood it crafts every time (experiment A), so most "
+        "likely these episodes spend their wood on the table itself and never "
+        "come back with more (an inference, not yet measured).\n"
+        "3. Survival. Training-window lifespan "
+        f"{de['lifespan_mean']:.0f} (median {de['lifespan_median']:.0f}) against "
+        "261-284 for a random policy. Thirst is still the first meter to run "
+        f"out in {pct(de['causes'].get('drink ran out', 0))} of deaths and "
+        f"hunger in {pct(de['causes'].get('food ran out', 0))}: Craftax pays "
+        "for the first drink only, so topping up is never rewarded. A hostile "
+        f"mob is adjacent at {pct(de['at_death'].get('hostile', 0))} of deaths; "
+        "it dies in lava in "
+        f"{pct(de['at_death'].get('lava', 0))} (the others: under 1%), the price "
+        "of exploring further. Deaths in its sleep are rare "
+        f"({pct(de['at_death'].get('sleeping', 0))}).\n"
+        "4. Wasted presses. 43% of presses still do nothing (experiment A): DO "
+        "with nothing in front (26%), NOOP and walking into walls. Masking only "
+        "removes the special actions; these basic ones are never masked.")
+    wrap(fig, 0.07, 0.47, text, width=108, size=8.6, line=0.0148)
+    pdf.savefig(fig)
+    plt.close(fig)
+
+    # --------------------------------------------- 7. interpretation
     fig = page(pdf, 'What the results say, and what would settle the rest')
     y = 0.90
     for block in data['interpretation']:

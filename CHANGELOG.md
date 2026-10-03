@@ -87,6 +87,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Training curves for every run, rebuilt from replay
+  (`tools/curves_from_replay.py`, `tools/plot_training_curves.py`,
+  `docs/training-curves.png`/`.pdf`, data in `docs/curves/`). Seven of the ten
+  runs never logged achievements, but each replay chunk stores the
+  achievements unlocked per step, so the episode-final count is recoverable for
+  the whole run. Checked against vanilla's own logged curve: r = 1.000, same
+  mean. B2 leads from the first 50k steps and is still rising at 1.1M.
+- `tools/diagnose_run.py` and a "Where B2 falls short" page in the comparison
+  report (`docs/diagnosis.json`): over B2's last ~500 training episodes it
+  reaches the furnace in 46% but the stone pickaxe in 3%. Of episodes that mined
+  stone, 73% held wood and stone together but only 22% ever stood at a table
+  with both. Thirst is still the first meter to run out in 45% of deaths.
 - Experiment B results in `docs/comparison-report.pdf` and
   `docs/entropy-and-action-suppression.md`. Masking impossible actions (B2)
   reaches 7.60 achievements against 5.87 for the same model without it, and
