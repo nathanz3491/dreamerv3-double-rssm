@@ -36,6 +36,7 @@ RUNS = [
     ('honest_map', 'honest map', '#eb6834', 5),
     ('expB_input', 'B1: validity flags as input', '#1baf7a', 6),
     ('expB_mask', 'B2: impossible actions masked', '#2a78d6', 7),
+    ('mgr', 'manager v1: B2 + goal manager', '#8a5cd6', 8),
 ]
 
 plt.rcParams.update({

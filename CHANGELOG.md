@@ -87,6 +87,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Manager v1 (`mgr`) on the training-curve figure: 7.5 achievements per
+  episode over its last 100k steps, against B2's 7.9, with its manager still
+  choosing goals uniformly at the end.
 - Runs take ~1.4 GB on disk instead of ~9.3 GB. `replay.save_skip`
   (default `['dyn/', 'enc/', 'dec/', 'map/']`) keeps the replay_context
   latents out of the saved chunks. `dyn/deter` alone was 89% of a run's disk
