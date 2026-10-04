@@ -165,9 +165,21 @@ into the wood sword. 41% of episodes never drink.
 
 Next: a two-level agent. A manager picks a tech-tree goal every 8 steps
 from RSSM-2's slow state, and the actor pursues it
-([`docs/design-manager.md`](docs/design-manager.md)). Enable it with
-`--env.craftax.goals_obs True --agent.manager.enabled True` on top of the B2
-flags; the first run (`mgr`) is training.
+([`docs/design-manager.md`](docs/design-manager.md)). v1 scored 7.5
+achievements/episode against B2's 7.9, with the manager still choosing goals
+uniformly after 900k steps — it was never trained, since most goals can't be
+reached within 8 steps. v1.1-v1.3 (2026-10-04) fixed that in turn: v1.1 pays
+both levels the first time a goal is reached per segment/episode; v1.2 shares
+one two-headed critic between manager and actor so the manager takes the
+exact gradient over all 13 goals instead of a noisy sampled advantage, and
+holds a goal until reached or 32 steps; v1.3 adds a survival potential plus
+DRINK/EAT goals, since B2's episodes either survive (7 drinks, little tech)
+or progress (5 tech stages, ~2 drinks, dead of thirst near step 330) but
+never both. Enable with `--env.craftax.goals_obs True
+--agent.manager.enabled True --agent.manager.critic shared
+--agent.manager.hold 32 --env.craftax.survival potential+meters
+--env.craftax.goals_survival True` on top of the B2 flags. v1.3 is built and
+tested, **not yet trained**.
 
 
 The map model helps, and the tech-tree gate has opened for the first time:
