@@ -26,6 +26,26 @@ def test_shape_range_and_none():
   assert ((out >= 0) & (out <= 1)).all()
 
 
+def test_reached_flags_remember_the_episode():
+  """goalreach is the running OR of 'progress == 1', cleared on a new episode."""
+  if TV._craftax() is None:
+    return
+  from embodied.envs.craftax import Craftax
+  env = Craftax(seed=2, goals_obs=True)
+  rng = np.random.default_rng(2)
+  obs = env.step({'action': np.int32(0), 'reset': np.ones((), bool)})
+  seen = obs['goalphi'] >= 1.0
+  assert (obs['goalreach'] == seen).all()
+  for _ in range(400):
+    obs = env.step({'action': np.int32(rng.integers(0, 43)),
+                    'reset': np.zeros((), bool)})
+    if obs['is_last']:
+      obs = env.step({'action': np.int32(0), 'reset': np.ones((), bool)})
+      seen = np.zeros_like(seen)
+    seen |= obs['goalphi'] >= 1.0
+    assert ((obs['goalreach'] > 0.5) == seen).all()
+
+
 def test_matches_the_game():
   if TV._craftax() is None:
     return

@@ -94,6 +94,38 @@ At test time the agent uses only the observation, as before. The goal
 vocabulary is part of the architecture, so results must be compared against
 methods that use similar game knowledge, not tabula-rasa ones.
 
+## v1 result, and v1.1
+
+**v1 (`mgr`) failed to train the manager.** At 900k steps its goal entropy
+was still the maximum, ln 13 = 2.56: every goal picked about 7.7% of the
+time. The actor made progress on its goal on only 1.5% of imagined steps.
+Most goals cannot be reached within 8 steps, so a random goal almost never
+paid, and the actor learned to ignore it. With the actor ignoring the goal,
+the manager's choice changed nothing (advantage about 0.02) and it had nothing
+to learn from. The score trailed B2 by about 0.9 at 800k (5.21 vs 6.11).
+
+**v1.1 (`mgr2`)** pays both levels when the goal is reached:
+
+| change | why |
+|---|---|
+| actor: +`reach_bonus` (1.0) the first time its goal is reached in a segment | a reached goal stands out from noise; "first time" stops step-away-and-back farming |
+| manager: +`mgr_bonus` (0.5) the first time in the episode a goal it set is reached | links the payment to its own choice; below an achievement's +1, so reaching easy goals never outbids playing |
+| manager input: `obs['goalreach']`, 13 reached-this-episode flags | the bonus is once per episode, so the manager has to know which bonuses are still available |
+| goals that already hold are masked from the manager's choice | otherwise the manager learns to propose what is already true, or what the actor would do anyway |
+
+Inside imagination, "reached" means the `gphi` prediction is above
+`reach_threshold` (0.6). Progress is exactly 1.0 when a goal is reached and at
+most 0.25 otherwise. The flags carried through the rollout start from the
+observation-derived ones at the imagination start. `goalreach` is the running
+OR of `goalphi == 1` since the episode began, so it is something an observer
+of the screen could keep. `test_craftax_goals` checks it.
+
+Watch `train/manager/reach_rate` (actor bonus events per rollout),
+`first_reach` (manager bonus events), and `masked_share`. Imagined reach
+events are only as honest as `gphi`. If `reach_rate` in imagination runs far
+above how often goals are really reached in replay, the actor is exploiting
+the progress head.
+
 ## v2 (not built)
 
 - Give RSSM-2 its own action-conditioned dynamics

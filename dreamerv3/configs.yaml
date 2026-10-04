@@ -116,7 +116,15 @@ defaults:
     # game reward only. actent is the manager's entropy bonus: it chooses among
     # 13 options every 8 steps, so it needs more than the actor's 3e-4 to keep
     # trying goals it has not yet seen pay.
-    manager: {enabled: False, every: 8, goal_reward: 1.0, actent: 1e-3}
+    # v1.1 -- reaching the goal pays both levels. reach_bonus: the actor, the
+    # first time its goal is reached in a segment. mgr_bonus: the manager, the
+    # first time in the episode a goal it set is reached (it reads the
+    # reached-this-episode flags, and goals that already hold are masked out
+    # of its choice). Kept below an achievement's +1 so reaching easy goals
+    # never outbids playing. reach_threshold: predicted progress above which
+    # an imagined state counts as reached (progress is 1.0 there, <= 0.25
+    # anywhere else).
+    manager: {enabled: False, every: 8, goal_reward: 1.0, reach_bonus: 1.0, mgr_bonus: 0.5, reach_threshold: 0.6, actent: 1e-3}
     gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}
     # --- two-RSSM map model (design-map-model.md) ---------------------------
     # enabled: False reproduces stock behaviour byte-for-byte.

@@ -87,6 +87,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Manager v1.1: reaching the goal pays both levels. The actor gets +1 the
+  first time its goal is reached in a segment. The manager gets +0.5 the first
+  time in the episode a goal it set is reached; it reads a new observation-only
+  input, `obs['goalreach']` (13 reached-this-episode flags), and goals that
+  already hold are masked from its choice. v1 never trained its manager: after
+  900k steps it still picked uniformly. Most goals cannot be reached in 8
+  steps, so the actor ignored them, and then the choice changed nothing. See
+  `docs/design-manager.md`.
 - Two-level agent (`agent.manager.enabled`, `env.craftax.goals_obs`;
   design in `docs/design-manager.md`). A manager actor-critic picks one of
   13 tech-tree goals (`craftax_goals.GOALS`) every 8 steps, reading RSSM-1's

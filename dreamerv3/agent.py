@@ -47,9 +47,11 @@ class Agent(embodied.jax.Agent):
     # they are supervision only and must never reach the encoder or decoder.
     # 'valid' (experiment B) is an INPUT only when valid.input is set; with
     # valid.mask alone it is the label for the feasibility head, like 'ach'.
-    # 'goalphi' (two-level agent) is the goal-progress head's target, likewise.
+    # 'goalphi' (two-level agent) is the goal-progress head's target, likewise;
+    # 'goalreach' is read by the manager alone, never the encoder.
     exclude = ('is_first', 'is_last', 'is_terminal', 'reward', 'ach',
-               'map12', 'mappos', 'mapseen', 'mapknown', 'goalphi')
+               'map12', 'mappos', 'mapseen', 'mapknown', 'goalphi',
+               'goalreach')
     if not config.valid.input:
       exclude += ('valid',)
     enc_space = {k: v for k, v in obs_space.items() if k not in exclude}
@@ -161,10 +163,13 @@ class Agent(embodied.jax.Agent):
     if self._use_mgr:
       assert self._use_map and self._map_to_actor, (
           'the manager reads RSSM-2: needs mapmodel.enabled and to_actor')
-      assert 'goalphi' in obs_space, 'needs env.craftax.goals_obs True'
+      assert 'goalreach' in obs_space, 'needs env.craftax.goals_obs True'
       self._goals = cgoals.N_GOALS
       self._every = int(config.manager.every)
       self._goal_reward = float(config.manager.goal_reward)
+      self._reach_bonus = float(config.manager.reach_bonus)
+      self._mgr_bonus = float(config.manager.mgr_bonus)
+      self._reach_threshold = float(config.manager.reach_threshold)
       self.mgr = embodied.jax.MLPHead(
           elements.Space(np.int32, (), 0, self._goals), 'categorical',
           **config.policy, name='mgr')
@@ -352,7 +357,8 @@ class Agent(embodied.jax.Agent):
       map_carry, mapfeat = self._map_act(map_carry, feat, prevact, reset)
     ainp = self.actor2tensor(feat, mapfeat)
     if self._use_mgr:
-      goal, phase, map_carry = self._mgr_act(prev_map, map_carry, ainp, reset)
+      goal, phase, map_carry = self._mgr_act(
+          prev_map, map_carry, ainp, reset, obs)
       ainp = jnp.concatenate([ainp, self._goalfeat(goal, phase)], -1)
     policy = self.pol(ainp, bdims=1)
     if self._valid_mask:
@@ -432,43 +438,68 @@ class Agent(embodied.jax.Agent):
         jax.nn.one_hot(goal, self._goals),
         jax.nn.one_hot(phase, self._every)], -1))
 
-  def _mgr_input(self, ainp, deter2):
-    """Manager input: the actor's view (RSSM-1 + map crop) and RSSM-2's state.
+  def _mgr_input(self, ainp, deter2, flags):
+    """Manager input: the actor's view, RSSM-2's state, goals reached so far.
 
     sg on deter2 for the same reason mapfeat stops gradients: the manager's
-    objective must not reshape RSSM-2 into whatever raises its return.
+    objective must not reshape RSSM-2 into whatever raises its return. The
+    flags say which goals were already reached this episode -- the manager's
+    bonus is paid only on a goal's first reach, so without them the same state
+    would sometimes pay and sometimes not.
     """
     deter2 = nn.cast(sg(deter2))
     if deter2.ndim == ainp.ndim - 1:
       deter2 = jnp.repeat(deter2[:, None], ainp.shape[-2], -2)
-    return jnp.concatenate([ainp, deter2], -1)
+    return jnp.concatenate([ainp, deter2, nn.cast(f32(flags))], -1)
 
-  def _mgr_act(self, prev, carry, ainp, reset):
+  def _mgr_dist(self, x, bdims, reached):
+    """The manager's choice, with goals already reached right now ruled out.
+
+    Proposing a goal that already holds would let the manager collect its
+    bonus for nothing and teach the actor nothing. NONE is always allowed.
+    """
+    logits = self.mgr(x, bdims).logits
+    blocked = reached & (jnp.arange(self._goals) > 0)
+    return jouts.Categorical(logits + jnp.where(blocked, -1e4, 0.0))
+
+  def _reached(self, feat, bdims):
+    """Which goals hold in an imagined state, from the progress head."""
+    phi = f32(sg(self.gphi(self.feat2tensor(feat), bdims).pred()))
+    return (phi > self._reach_threshold) & (jnp.arange(self._goals) > 0)
+
+  def _mgr_act(self, prev, carry, ainp, reset, obs):
     """One acting step of the manager: pick a goal at the start of a segment.
 
     Segments are counted from the episode start, so a decision at step 8k
     reads the RSSM-2 tick that closed at step 8k - 1. Branchless like
     _map_act: the manager runs every step and its pick is kept only on a
-    decision step.
+    decision step. Flags and the mask come from the observation itself.
     """
     phase = jnp.where(reset, 0, prev['gphase'])
-    pick = self.mgr(self._mgr_input(ainp, carry['deter2']), 1).sample(
-        nj.seed())
+    flags = obs['goalreach'] > 0.5
+    reached = (obs['goalphi'] >= 1.0 - 1e-3) & (jnp.arange(self._goals) > 0)
+    x = self._mgr_input(ainp, carry['deter2'], flags)
+    pick = self._mgr_dist(x, 1, reached).sample(nj.seed())
     goal = jnp.where(phase == 0, pick, prev['goal'])
     carry = {**carry, 'goal': goal, 'gphase': (phase + 1) % self._every}
     return goal, phase, carry
 
-  def _imagine_mgr(self, starts, first, frozen, deter2, H, training):
+  def _imagine_mgr(self, starts, first, frozen, deter2, flags0, H, training):
     """Imagination with the manager in the loop.
 
     Every rollout opens on a manager decision; after each `every` steps the
-    manager picks again from the state reached. The goal and segment step ride
-    in the scan carry next to (deter, stoch), so the rollout samples each action
-    from exactly the distribution the loss later scores -- the consistency
-    imag_shift lacked.
+    manager picks again from the state reached. Goal, segment step and the
+    reached-this-episode flags ride in the scan carry next to (deter, stoch),
+    so the rollout samples each action and goal from exactly the distribution
+    the loss later scores -- the consistency imag_shift lacked. Inside a dream
+    "reached" is read from the progress head; the flags start from the
+    observation-derived ones at the imagination start.
     """
     actor = lambda feat: self.actor2tensor(feat, frozen)
-    mgr = lambda feat: self.mgr(self._mgr_input(actor(feat), deter2), 1)
+
+    def mgr(feat, flags, reached):
+      x = self._mgr_input(actor(feat), deter2, flags)
+      return self._mgr_dist(x, 1, reached).sample(nj.seed())
 
     def act(feat, goal, phase):
       x = jnp.concatenate([actor(feat), self._goalfeat(goal, phase)], -1)
@@ -480,54 +511,96 @@ class Agent(embodied.jax.Agent):
       action = act(sg(dc), carry['goal'], carry['gphase'])
       dc, (feat, action) = self.dyn.imagine(
           dc, action, 1, training, single=True)
+      reached = self._reached(sg(feat), 1)
+      flags = carry['flags'] | reached
       phase = carry['gphase'] + 1
       decide = phase >= self._every
-      goal = jnp.where(decide, mgr(sg(feat)).sample(nj.seed()), carry['goal'])
+      goal = jnp.where(decide, mgr(sg(feat), flags, reached), carry['goal'])
       phase = jnp.where(decide, 0, phase)
-      return {**dc, 'goal': goal, 'gphase': phase}, (feat, action, goal, phase)
+      carry = {**dc, 'goal': goal, 'gphase': phase, 'flags': flags}
+      return carry, (feat, action, goal, phase, flags, reached)
 
     first1 = jax.tree.map(lambda x: x[:, 0], first)
-    goal0 = mgr(sg(first1)).sample(nj.seed())
+    reached0 = self._reached(sg(first1), 1)
+    flags0 = flags0 | reached0
+    goal0 = mgr(sg(first1), flags0, reached0)
     phase0 = jnp.zeros_like(goal0)
-    carry = {**nn.cast(starts), 'goal': goal0, 'gphase': phase0}
-    _, (feat, action, goals, phases) = nj.scan(
+    carry = {**nn.cast(starts), 'goal': goal0, 'gphase': phase0,
+             'flags': flags0}
+    _, (feat, action, goals, phases, flags, reached) = nj.scan(
         step, carry, (), H, axis=1)
     imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(feat)], 1)
-    goals = jnp.concatenate([goal0[:, None], goals], 1)
-    phases = jnp.concatenate([phase0[:, None], phases], 1)
+    head = lambda x0, xs: jnp.concatenate([x0[:, None], xs], 1)
+    goals, phases = head(goal0, goals), head(phase0, phases)
+    flags, reached = head(flags0, flags), head(reached0, reached)
     last = act(jax.tree.map(lambda x: x[:, -1], imgfeat),
                goals[:, -1], phases[:, -1])
     imgact = concat([action, jax.tree.map(lambda x: x[:, None], last)], 1)
-    return imgfeat, imgact, goals, phases
+    return imgfeat, imgact, goals, phases, flags, reached
 
-  def _mgr_loss(self, imgfeat, goals, rew, con, frozen, deter2, H, training):
+  def _held(self, x, goals):
+    """x[:, t, goal held at t-1] for t = 1..H: (N, H+1, G) -> (N, H)."""
+    held = goals[:, :-1]
+    return jnp.take_along_axis(x[:, 1:], held[..., None], -1)[..., 0]
+
+  def _segments(self, H):
+    idx = list(range(0, H + 1, self._every))
+    if idx[-1] != H:
+      idx.append(H)
+    return idx
+
+  def _actor_bonus(self, goals, reached, H):
+    """+1 to the actor the first time its goal is reached within a segment.
+
+    Only the first time: stepping away from a table and back would otherwise
+    collect the bonus every two steps.
+    """
+    held = goals[:, :-1]
+    now = self._held(reached, goals)
+    before = jnp.take_along_axis(reached[:, :-1], held[..., None], -1)[..., 0]
+    event = f32(now & ~before & (held > 0))                  # (N, H)
+    idx = self._segments(H)
+    parts = []
+    for a, b in zip(idx[:-1], idx[1:]):
+      seg = event[:, a:b]
+      parts.append(seg * f32(jnp.cumsum(seg, 1) == 1))
+    return jnp.concatenate(parts, 1)
+
+  def _mgr_loss(self, imgfeat, goals, flags, reached, rew, con, frozen, deter2,
+                H, training):
     """The manager as an actor-critic over its own decisions.
 
     Its time step is the segment: states 0, every, 2*every, ... and the last
     imagined state for bootstrapping. A segment's reward is the game reward
-    accumulated over it, discounted inside the segment exactly as
-    lambda_return would; its continuation is the product of the segment's
-    continuation probabilities. imag_loss then runs unchanged on that
-    abstract trajectory -- 2 decisions per 15-step rollout at every=8, and
-    a critic whose bootstrap reaches 8x further per step than the actor's.
+    plus mgr_bonus for each goal it set that was reached for the first time
+    this episode, accumulated over the segment and discounted inside it
+    exactly as lambda_return would; its continuation is the product of the
+    segment's continuation probabilities. imag_loss then runs unchanged on
+    that abstract trajectory -- 2 decisions per 15-step rollout at every=8,
+    and a critic whose bootstrap reaches 8x further per step than the
+    actor's.
     """
-    idx = list(range(0, H + 1, self._every))
-    if idx[-1] != H:
-      idx.append(H)
+    held = goals[:, :-1]
+    was = jnp.take_along_axis(flags[:, :-1], held[..., None], -1)[..., 0]
+    first = f32(self._held(reached, goals) & ~was & (held > 0))   # (N, H)
+    step_rew = rew + self._mgr_bonus * jnp.concatenate(
+        [jnp.zeros_like(first[:, :1]), first], 1)
+    idx = self._segments(H)
     mrew, mcon = [jnp.zeros_like(rew[:, 0])], [con[:, 0]]
     for a, b in zip(idx[:-1], idx[1:]):
       live = jnp.cumprod(con[:, a + 1:b + 1], 1)
       before = jnp.concatenate([jnp.ones_like(live[:, :1]), live[:, :-1]], 1)
-      mrew.append((before * rew[:, a + 1:b + 1]).sum(1))
+      mrew.append((before * step_rew[:, a + 1:b + 1]).sum(1))
       mcon.append(live[:, -1])
     mrew, mcon = jnp.stack(mrew, 1), jnp.stack(mcon, 1)
     mfeat = jax.tree.map(lambda x: x[:, idx], imgfeat)
-    minp = self._mgr_input(self.actor2tensor(mfeat, frozen), deter2)
+    minp = self._mgr_input(
+        self.actor2tensor(mfeat, frozen), deter2, flags[:, idx])
     mact = {'goal': goals[:, idx]}
     kw = {**self.config.imag_loss, 'actent': float(self.config.manager.actent)}
     los, _, mets = imag_loss(
         mact, mrew, mcon,
-        {'goal': self.mgr(minp, 2)},
+        {'goal': self._mgr_dist(minp, 2, reached[:, idx])},
         self.mval(minp, 2),
         self.mslowval(minp, 2),
         self.mretnorm, self.mvalnorm, self.madvnorm,
@@ -538,6 +611,8 @@ class Agent(embodied.jax.Agent):
     picks = jax.nn.one_hot(goals[:, idx[:-1]], self._goals).mean((0, 1))
     for i, name in enumerate(cgoals.GOALS):
       mets[f'pick/{name.lower()}'] = picks[i]
+    mets['first_reach'] = first.sum(1).mean()
+    mets['masked_share'] = f32(reached[:, idx[:-1]]).mean()
     return los, mets
 
   def _map_act(self, carry, feat, prevact, reset):
@@ -736,8 +811,9 @@ class Agent(embodied.jax.Agent):
     first = jax.tree.map(
         lambda x: x[:, -K:].reshape((B * K, 1, *x.shape[2:])), repfeat)
     if self._use_mgr:
-      imgfeat, imgact, goals, phases = self._imagine_mgr(
-          starts, first, frozen, start2, H, training)
+      flags0 = obs['goalreach'][:, -K:].reshape((B * K, -1)) > 0.5
+      imgfeat, imgact, goals, phases, flags, reached = self._imagine_mgr(
+          starts, first, frozen, start2, flags0, H, training)
     else:
       policyfn = lambda feat: sample(self._masked(
           self.pol(self.actor2tensor(feat, frozen), 1),
@@ -780,12 +856,15 @@ class Agent(embodied.jax.Agent):
       held = goals[:, :-1]
       pick = lambda p: jnp.take_along_axis(p, held[..., None], -1)[..., 0]
       grew = jnp.where(held == 0, 0.0, pick(phi[:, 1:]) - pick(phi[:, :-1]))
-      actor_rew = rew + self._goal_reward * jnp.concatenate(
-          [jnp.zeros_like(grew[:, :1]), grew], 1)
+      bonus = self._actor_bonus(goals, reached, H)
+      grew = self._goal_reward * grew + self._reach_bonus * bonus
+      actor_rew = rew + jnp.concatenate([jnp.zeros_like(grew[:, :1]), grew], 1)
       metrics['manager/goal_rew'] = grew.mean()
       metrics['manager/goal_rew_pos'] = (grew > 0.05).mean()
+      metrics['manager/reach_rate'] = bonus.sum(1).mean()
       mlos, mmets = self._mgr_loss(
-          imgfeat, goals, rew, con, frozen, start2, H, training)
+          imgfeat, goals, flags, reached, rew, con, frozen, start2, H,
+          training)
       losses['mpolicy'] = mlos['policy'].mean(1).reshape((B, K))
       losses['mvalue'] = mlos['value'].mean(1).reshape((B, K))
       metrics.update(prefix(mmets, 'manager'))

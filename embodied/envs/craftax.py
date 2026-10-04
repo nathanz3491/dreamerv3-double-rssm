@@ -71,12 +71,18 @@ class Craftax(embodied.Env):
       from dreamerv3 import craftax_valid
       self._V = craftax_valid
     # Two-level agent: obs['goalphi'], progress toward each manager goal,
-    # computed from the observation vector alone (craftax_goals). A training
-    # target for the agent's goal-progress head, never an encoder input.
+    # computed from the observation vector alone (craftax_goals) -- a training
+    # target for the agent's goal-progress head, never an encoder input -- and
+    # obs['goalreach'], which goals have read as reached at any step of this
+    # episode. The second is the manager's memory of what it has done: its
+    # bonus pays only on a goal's first reach, and the game's own achievement
+    # flags are not in the observation. Built from goalphi alone, so it is
+    # what an observer of the screen could have kept.
     self._goals_obs = bool(goals_obs)
     if self._goals_obs:
       from dreamerv3 import craftax_goals
       self._G = craftax_goals
+      self._goalreach = np.zeros(craftax_goals.N_GOALS, bool)
     if self._mapmodel:
       from dreamerv3 import craftax_map
       self._M = craftax_map
@@ -216,6 +222,8 @@ class Craftax(embodied.Env):
       spaces['valid'] = elements.Space(np.float32, (self._num_actions,), 0.0, 1.0)
     if self._goals_obs:
       spaces['goalphi'] = elements.Space(
+          np.float32, (self._G.N_GOALS,), 0.0, 1.0)
+      spaces['goalreach'] = elements.Space(
           np.float32, (self._G.N_GOALS,), 0.0, 1.0)
     if self._logs:
       spaces['log/reward'] = elements.Space(np.float32)
@@ -392,13 +400,20 @@ class Craftax(embodied.Env):
     if self._valid_obs:
       obs['valid'] = self._V.valid_actions(vector).astype(np.float32)
     if self._goals_obs:
-      obs['goalphi'] = self._G.progress(vector)
+      obs.update(self._goal_obs(vector, is_first))
     if self._logs:
       obs['log/reward'] = np.float32(reward)
       with self._jax.transfer_guard('allow'):
         obs['log/achievements'] = np.int32(
             np.asarray(state.achievements).sum())
     return obs
+
+  def _goal_obs(self, vector, is_first):
+    phi = self._G.progress(vector)
+    if is_first:
+      self._goalreach[:] = False
+    self._goalreach |= phi >= 1.0
+    return dict(goalphi=phi, goalreach=self._goalreach.astype(np.float32))
 
   # --- map-model targets (training supervision only) --------------------------
   def _map_targets(self, state, vector, is_first):
@@ -465,7 +480,7 @@ class Craftax(embodied.Env):
     if self._valid_obs:
       result['valid'] = self._V.valid_actions(obs).astype(np.float32)
     if self._goals_obs:
-      result['goalphi'] = self._G.progress(obs)
+      result.update(self._goal_obs(obs, is_first=True))
     if self._logs:
       result['log/reward'] = np.float32(0.0)
       result['log/achievements'] = ach_sum
