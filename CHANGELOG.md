@@ -87,6 +87,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Runs take ~1.4 GB on disk instead of ~9.3 GB. `replay.save_skip`
+  (default `['dyn/', 'enc/', 'dec/', 'map/']`) keeps the replay_context
+  latents out of the saved chunks. `dyn/deter` alone was 89% of a run's disk
+  and barely compresses. Their shapes go to `replay/skipped.json`, and a
+  resumed run gets zeros back that the agent overwrites as it trains
+  (`test_restore_save_skip`). `tools/strip_replay.py` does the same to
+  finished runs. It refuses a live run or one short of its `run.steps`. It
+  freed ~69 GB across the ten finished runs.
 - Manager v1.2 (`--agent.manager.critic shared --agent.manager.hold 32`):
   - One critic with two heads: 'game' judges both actors, 'goal' only the
     bottom actor. Each stream is normalised separately and the two are

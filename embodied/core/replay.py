@@ -1,3 +1,4 @@
+import json
 import threading
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
@@ -15,7 +16,8 @@ class Replay:
 
   def __init__(
       self, length, capacity=None, directory=None, chunksize=1024,
-      online=False, selector=None, save_wait=False, name='unnamed', seed=0):
+      online=False, selector=None, save_wait=False, name='unnamed', seed=0,
+      save_skip=()):
 
     self.length = length
     self.capacity = capacity
@@ -49,6 +51,13 @@ class Replay:
     else:
       self.directory = None
     self.save_wait = save_wait
+    # Key prefixes kept in memory but not written to disk: the latents the
+    # agent caches for replay_context, which are ~90% of a run's disk and
+    # barely compress. Their shapes go to skipped.json so load() can put
+    # zeros back; the agent rewrites the real values whenever it trains on
+    # a sequence, so a resumed run recovers them as it samples.
+    self.save_skip = tuple(save_skip)
+    self._skip_written = False
 
     self.metrics = {'samples': 0, 'inserts': 0, 'updates': 0}
 
@@ -303,10 +312,20 @@ class Replay:
         for chunk in self.chunks.values():
           if chunk.length > 0 and chunk.uuid not in self.saved:
             self.saved.add(chunk.uuid)
-            promises.append(self.workers.submit(chunk.save, self.directory))
+            promises.append(self.workers.submit(
+                chunk.save, self.directory, skip=self.save_skip))
+            self._write_skipped(chunk)
         if self.save_wait:
           [promise.result() for promise in promises]
     return None
+
+  def _write_skipped(self, chunk):
+    if self._skip_written or not self.save_skip or not chunk.data:
+      return
+    shapes = {k: [list(v.shape[1:]), str(v.dtype)]
+              for k, v in chunk.data.items() if k.startswith(self.save_skip)}
+    (self.directory / 'skipped.json').write(json.dumps(shapes))
+    self._skip_written = True
 
   @elements.timer.section('replay_load')
   def load(self, data=None, directory=None, amount=None):
@@ -338,6 +357,14 @@ class Replay:
 
     with ThreadPoolExecutor(16, 'replay_loader') as pool:
       chunks = [x for x in pool.map(load, filenames) if x]
+
+    skipped = directory / 'skipped.json'
+    if skipped.exists():
+      shapes = json.loads(skipped.read())
+      for chunk in chunks:
+        for key, (shape, dtype) in shapes.items():
+          if key not in chunk.data:
+            chunk.data[key] = np.zeros((chunk.length, *shape), dtype)
 
     # We need to recompute the number of items per chunk now because some
     # chunks may be corrupted and thus not available.

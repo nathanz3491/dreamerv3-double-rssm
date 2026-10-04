@@ -48,6 +48,9 @@ defaults:
     priosignal: model
     recexp: 1.0
     chunksize: 1024
+    # Not written to disk: the latents cached for replay_context (~90% of a
+    # run's disk; see embodied/core/replay.py). [] keeps the stock behaviour.
+    save_skip: ['dyn/', 'enc/', 'dec/', 'map/']
 
   run:
     steps: 1e10

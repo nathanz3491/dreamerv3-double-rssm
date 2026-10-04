@@ -62,11 +62,13 @@ class Chunk:
     return {k: v[index: index + length] for k, v in self.data.items()}
 
   @elements.timer.section('chunk_save')
-  def save(self, directory, log=False):
+  def save(self, directory, log=False, skip=()):
     assert not self.saved
     self.saved = True
     filename = elements.Path(directory) / self.filename
-    data = {k: v[:self.length] for k, v in self.data.items()}
+    skip = tuple(skip)
+    data = {k: v[:self.length] for k, v in self.data.items()
+            if not (skip and k.startswith(skip))}
     with io.BytesIO() as stream:
       np.savez_compressed(stream, **data)
       stream.seek(0)

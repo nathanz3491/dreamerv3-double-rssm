@@ -131,6 +131,16 @@ which heads see the map, every stop-gradient — is
 [`.pdf`](docs/architecture.pdf), regenerated with
 `python tools/make_architecture.py`.
 
+**Disk.** A finished 1.1M-step run takes ~1.4 GB: ~0.8 GB of replay and a
+~0.7 GB checkpoint. The latents the agent caches in replay for
+`replay_context` (`dyn/`, `map/`, ...) used to be ~90% of a run's 9.3 GB. They
+barely compress and nothing after training reads them, so
+`replay.save_skip` keeps them in memory but off disk, and a resumed run gets
+zeros back that are refreshed as it trains. To shrink a run that predates
+this: `python tools/strip_replay.py ~/logdir/<run>`. It refuses a run that is
+still training or stopped short of its `run.steps`; after stripping, that run
+can no longer be resumed.
+
 Tests (pure numpy, no GPU):
 
 ```bash
