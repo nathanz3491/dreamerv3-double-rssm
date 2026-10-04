@@ -87,6 +87,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Manager v1.3 (`--env.craftax.survival potential+meters
+  --env.craftax.goals_survival True`, on top of v1.2):
+  - A survival potential over food and drink. A meter's value is
+    1 − (1 − m/9)², so it is steep when empty. Its weight grows with tech
+    progress and achievements unlocked: w0 · (1 + T + n/10), with w0 = 0.75.
+  - DRINK and EAT goals for the manager, reached at meter ≥ 8.
+
+  B2 runs either in survival mode (400+ steps, 7 drinks, little tech) or in
+  tech mode (5 stages, about 2 drinks, dead of thirst near step 330), never
+  both. Thirst only cost it a death ~200 steps later, which it never learned
+  to anticipate. Tests: `test_craftax_potential` (survival potential) and
+  `test_craftax_goals` (survival goals against the game's meters).
 - Manager v1 (`mgr`) on the training-curve figure: 7.5 achievements per
   episode over its last 100k steps, against B2's 7.9, with its manager still
   choosing goals uniformly at the end.

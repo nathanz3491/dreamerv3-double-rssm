@@ -16,7 +16,8 @@ from dreamerv3 import test_craftax_valid as TV
 
 
 def test_reads_nothing_but_the_observation():
-  assert list(inspect.signature(G.progress).parameters) == ['vec']
+  # The observation vector, plus a switch for the v1.3 survival goals.
+  assert list(inspect.signature(G.progress).parameters) == ['vec', 'survival']
 
 
 def test_shape_range_and_none():
@@ -73,3 +74,22 @@ def test_matches_the_game():
         done[name] += truth
   # The seeding must actually exercise both outcomes for every goal.
   assert all(0 < v < len(states) for v in done.values()), done
+
+
+def test_survival_goals_follow_the_meters():
+  """v1.3: DRINK / EAT read as reached exactly when the game's meter is >= 8."""
+  if TV._craftax() is None:
+    return
+  import jax
+  env, states = TV.seeded_states(200, seed=3)
+  names = G.names(survival=True)
+  assert names[-2:] == ('DRINK', 'EAT') and len(names) == G.N_GOALS + 2
+  with jax.transfer_guard('allow'):
+    for s in states:
+      vec = np.asarray(env._get_obs_fn(s), np.float32)
+      got = G.progress(vec, survival=True)
+      assert (got[:G.N_GOALS] == G.progress(vec)).all()
+      for i, meter in ((G.N_GOALS, s.player_drink), (G.N_GOALS + 1, s.player_food)):
+        truth = float(np.asarray(meter)) >= G.FULL
+        assert (got[i] == 1.0) == truth, (names[i], got[i], meter)
+        assert truth or got[i] <= 0.25

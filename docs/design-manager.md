@@ -176,6 +176,39 @@ Known risk: Q for a goal never set in a state is the head's extrapolation. An
 over-optimistic one would draw the manager toward it until trying it corrects
 the estimate. Watch `q_spread` alongside the pick distribution.
 
+## v1.3: survival as well as tech
+
+B2 never does both. Over its last 507 training episodes:
+- The ones that live 400+ steps drink 7.3 times and reach 2.5 tech stages.
+- The ones that reach 5 tech stages drink 1.8 times and die near step 330,
+  mostly of thirst.
+
+Episode length tracks drinking (r = 0.57), not tech (r = 0.12). Nothing in
+the reward makes a water trip in the middle of the tech climb worth taking:
+Craftax pays for the first drink only, and death lands ~200 steps after the
+last drink, far past the 15-step imagination.
+
+v1.3 = v1.2 + two changes (`--env.craftax.survival potential+meters
+--env.craftax.goals_survival True`):
+
+- **Survival potential** (`craftax_potential.survival_potential`), added to
+  the tech potential:
+  Φ_surv = w(s) · (u(food) + u(drink)), with u(m) = 1 − (1 − m/9)² and
+  w(s) = w0 · (1 + κ·T + n/10).
+  - T is tech progress (Φ_tech / max) and n is the number of achievements
+    unlocked; w0 = 0.75 and κ = 1.
+  - u is steep when a meter is empty: a 1 → 5 refill pays 3× a 5 → 9 one.
+  - w grows with what has been built, so survival is worth more the more is
+    at stake. Φ is zeroed on death as before, so a death hands all of it back.
+  - A full drink refill is worth ~+0.6 achievement at the start of an episode.
+  - It is a function of the state only, so it stays potential-based.
+- **Survival goals** DRINK and EAT for the manager (15 goals instead of 13).
+  Each is reached when the meter is at 8 or more, read from the observation.
+  The manager can now say "drink, then go back to mining".
+
+Success means episodes that both reach 4+ tech stages and drink 4+ times;
+B2 has almost none.
+
 ## v2 (not built)
 
 - Give RSSM-2 its own action-conditioned dynamics

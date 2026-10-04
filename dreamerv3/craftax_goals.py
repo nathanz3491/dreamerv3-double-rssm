@@ -39,6 +39,19 @@ GOALS = (
 )
 N_GOALS = len(GOALS)
 
+# v1.3: survival goals, appended only when the env runs with goals_survival.
+# Reached when the meter is nearly full (8 of 9), read from the observation.
+# With them the manager can arbitrate between the tech tree and staying alive
+# -- B2 does one or the other per episode, never both.
+SURVIVAL = ('DRINK', 'EAT')
+_METER = {'DRINK': 'drink', 'EAT': 'food'}
+FULL = 8.0
+
+
+def names(survival=False):
+  return GOALS + SURVIVAL if survival else GOALS
+
+
 # What the observation shows once each goal is reached.
 _DONE = {
     'PLACE_TABLE': ('near', P.CRAFTING_TABLE),
@@ -64,11 +77,14 @@ def _around(vec):
   return {int(blocks[cy + dy, cx + dx]) for dy, dx in P.CLOSE}
 
 
-def progress(vec):
-  """(N_GOALS,) float32 in [0, 1]: how far along each goal the agent stands."""
+def progress(vec, survival=False):
+  """(len(names(survival)),) float32 in [0, 1]: how far along each goal."""
   st = V.decode_stats(vec)
   near = _around(vec)
-  out = np.zeros(N_GOALS, np.float32)
+  out = np.zeros(len(names(survival)), np.float32)
+  for i, name in enumerate(SURVIVAL if survival else (), N_GOALS):
+    m = st[_METER[name]]
+    out[i] = 1.0 if m >= FULL - 1e-3 else P.PREREQ_CEIL * m / FULL
   for i, name in enumerate(GOALS[1:], 1):
     kind, *what = _DONE[name]
     done = (what[0] in near) if kind == 'near' else st[what[0]] >= what[1]

@@ -165,7 +165,11 @@ class Agent(embodied.jax.Agent):
       assert self._use_map and self._map_to_actor, (
           'the manager reads RSSM-2: needs mapmodel.enabled and to_actor')
       assert 'goalreach' in obs_space, 'needs env.craftax.goals_obs True'
-      self._goals = cgoals.N_GOALS
+      # 13 tech goals, or 15 with the v1.3 survival goals: whatever the env
+      # emits progress for.
+      self._goals = int(obs_space['goalphi'].shape[0])
+      self._goal_names = cgoals.names(self._goals > cgoals.N_GOALS)
+      assert len(self._goal_names) == self._goals, self._goals
       self._every = int(config.manager.every)
       # v1.2: one two-headed critic shared by both actors (game head for both,
       # goal head for the bottom actor only), goals held until reached.
@@ -670,7 +674,7 @@ class Agent(embodied.jax.Agent):
         horizon=self.config.horizon,
         **kw)
     picks = jax.nn.one_hot(goals[:, idx[:-1]], self._goals).mean((0, 1))
-    for i, name in enumerate(cgoals.GOALS):
+    for i, name in enumerate(self._goal_names):
       mets[f'pick/{name.lower()}'] = picks[i]
     mets['first_reach'] = first.sum(1).mean()
     mets['masked_share'] = f32(reached[:, idx[:-1]]).mean()
@@ -786,7 +790,7 @@ class Agent(embodied.jax.Agent):
     decided = (phases == 0)[:, 1:]
     picks = (jax.nn.one_hot(goals[:, 1:], G) * decided[..., None]).sum((0, 1))
     picks = picks / jnp.maximum(picks.sum(), 1)
-    for i, name in enumerate(cgoals.GOALS):
+    for i, name in enumerate(self._goal_names):
       mets[f'pick/{name.lower()}'] = picks[i]
     return loss, mets
 

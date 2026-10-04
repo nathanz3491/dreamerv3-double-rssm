@@ -41,11 +41,12 @@ class Craftax(embodied.Env):
 
   def __init__(self, task='symbolic', size=None, seed=0, logs=False,
                mapmodel=False, seen_decay=0.99, map_privileged=False,
-               valid_obs=False, goals_obs=False,
+               valid_obs=False, goals_obs=False, goals_survival=False,
                survival='none',
                surv_alive=0.005, surv_death=5.0, surv_restore=0.3,
                surv_threshold=3.0, surv_kill=0.5, surv_idle=1.0,
-               surv_idle_steps=30, phi_scale=4.0, phi_gamma=0.997):
+               surv_idle_steps=30, phi_scale=4.0, phi_gamma=0.997,
+               surv_w0=0.75, surv_kappa=1.0, surv_ach_ref=10.0):
     assert task in ('symbolic',), task  # pixels: add 'Craftax-Pixels-v1' below
     import jax
     from craftax.craftax_env import make_craftax_env_from_name
@@ -82,7 +83,9 @@ class Craftax(embodied.Env):
     if self._goals_obs:
       from dreamerv3 import craftax_goals
       self._G = craftax_goals
-      self._goalreach = np.zeros(craftax_goals.N_GOALS, bool)
+      self._goals_survival = bool(goals_survival)
+      self._n_goals = len(craftax_goals.names(self._goals_survival))
+      self._goalreach = np.zeros(self._n_goals, bool)
     if self._mapmodel:
       from dreamerv3 import craftax_map
       self._M = craftax_map
@@ -140,13 +143,22 @@ class Craftax(embodied.Env):
     # cannot change the optimal policy, so it cannot invent the cheap optima
     # that made 'shaped' collect HALF the achievements of no shaping at all
     # (1.73 vs 3.49 at 500k). 'shaped' is kept only to reproduce that result.
-    assert survival in ('none', 'shaped', 'potential'), survival
+    # 'potential+meters' adds craftax_potential.survival_potential: food and
+    # drink as a potential whose weight grows with tech progress and with
+    # achievements unlocked, so thirst costs something every step instead of
+    # only at a death ~200 steps later. B2 never both drinks and climbs: its
+    # long episodes drink 7x and stall on tech, its tech episodes drink ~2x and
+    # die of thirst near step 300.
+    assert survival in ('none', 'shaped', 'potential', 'potential+meters'), (
+        survival)
     self._survival = survival
     self._phi_scale = float(phi_scale)
     self._phi_gamma = float(phi_gamma)
     self._prev_phi = None
     self._ach_names = None
-    if survival == 'potential':
+    self._meter_kw = dict(w0=float(surv_w0), kappa=float(surv_kappa),
+                          ach_ref=float(surv_ach_ref))
+    if survival in ('potential', 'potential+meters'):
       from dreamerv3 import craftax_potential
       from craftax.craftax.constants import Achievement
       self._P = craftax_potential
@@ -222,9 +234,9 @@ class Craftax(embodied.Env):
       spaces['valid'] = elements.Space(np.float32, (self._num_actions,), 0.0, 1.0)
     if self._goals_obs:
       spaces['goalphi'] = elements.Space(
-          np.float32, (self._G.N_GOALS,), 0.0, 1.0)
+          np.float32, (self._n_goals,), 0.0, 1.0)
       spaces['goalreach'] = elements.Space(
-          np.float32, (self._G.N_GOALS,), 0.0, 1.0)
+          np.float32, (self._n_goals,), 0.0, 1.0)
     if self._logs:
       spaces['log/reward'] = elements.Space(np.float32)
       spaces['log/achievements'] = elements.Space(np.int32)
@@ -305,8 +317,12 @@ class Craftax(embodied.Env):
     """
     if self._survival == 'none':
       return 0.0
-    if self._survival == 'potential':
+    if self._survival in ('potential', 'potential+meters'):
       phi = self._P.potential(state, self._ach_names, self._phi_scale)
+      if self._survival == 'potential+meters':
+        # In achievement units already: not divided by phi_scale.
+        phi += self._P.survival_potential(
+            state, self._ach_names, **self._meter_kw)
       bonus = self._P.shaped(
           self._prev_phi, phi, self._phi_gamma, terminal=is_terminal)
       self._prev_phi = phi
@@ -409,7 +425,7 @@ class Craftax(embodied.Env):
     return obs
 
   def _goal_obs(self, vector, is_first):
-    phi = self._G.progress(vector)
+    phi = self._G.progress(vector, self._goals_survival)
     if is_first:
       self._goalreach[:] = False
     self._goalreach |= phi >= 1.0

@@ -222,3 +222,41 @@ def test_achievement_names_follow_indices():
   names = _names()
   for i in range(len(Achievement)):
     assert names[i] == Achievement(i).name, (i, names[i], Achievement(i).name)
+
+
+# --- survival potential ----------------------------------------------------
+
+def _fed(food, drink, **kw):
+  s = _state(**kw)
+  s.player_food, s.player_drink = food, drink
+  return s
+
+
+def surv(state):
+  return P.survival_potential(state, _names())
+
+
+def test_drinking_pays_and_draining_costs():
+  assert surv(_fed(5, 6)) > surv(_fed(5, 5)) > surv(_fed(5, 4))
+
+
+def test_a_refill_pays_most_when_the_meter_is_low():
+  low = surv(_fed(5, 5)) - surv(_fed(5, 1))
+  high = surv(_fed(5, 9)) - surv(_fed(5, 5))
+  assert low > 2.5 * high
+
+
+def test_survival_is_worth_more_the_more_was_built():
+  base = surv(_fed(5, 5))
+  assert surv(_fed(5, 5, pickaxe=2, wood=1, stone=1)) > base
+  assert surv(_fed(5, 5, achieved=('PLACE_TABLE', 'MAKE_WOOD_PICKAXE'))) > base
+
+
+def test_full_refill_is_about_half_an_achievement_at_the_start():
+  gain = surv(_fed(9, 9)) - surv(_fed(9, 1))
+  assert 0.5 < gain < 0.7, gain
+
+
+def test_dying_hands_back_the_survival_potential_too():
+  phi = surv(_fed(8, 8, achieved=('PLACE_TABLE',)))
+  assert P.shaped(phi, phi, 0.997, terminal=True) == -phi
