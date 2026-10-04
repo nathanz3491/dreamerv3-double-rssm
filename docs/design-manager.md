@@ -126,6 +126,56 @@ events are only as honest as `gphi`. If `reach_rate` in imagination runs far
 above how often goals are really reached in replay, the actor is exploiting
 the progress head.
 
+## v1.2: one two-headed critic, goals held until reached
+
+Built behind flags: `--agent.manager.critic shared --agent.manager.hold 32`.
+Defaults keep v1/v1.1.
+
+Two v1.1 problems it addresses:
+- **Muddled reward sizes.** v1.1 summed achievements, potential, goal progress,
+  the reach bonus and the manager bonus into one return, at sizes nobody had
+  chosen on purpose. One stone pickaxe was paid five ways.
+- **Once-per-episode manager bonus.** Repeated logistics (stone, then table,
+  then craft) earned the manager nothing after the first time.
+
+```
+              ┌─► head 'game' (achievements + potential + health) ──► BOTH actors
+critic body ──┤
+              └─► head 'goal' (progress + reach bonus)              ──► bottom actor only
+input: RSSM-1 feat, map crop, goal one-hot, steps-since-set one-hot (32),
+       RSSM-2 deter2, reached-this-episode flags
+```
+
+- **Bottom actor:** advantage = Â_game + `goal_weight` (0.5) × Â_goal. Each
+  stream has its own lambda-return and return normalisation
+  (`imag_loss_streams`), so each counts by its weight rather than its raw
+  scale.
+- **Manager actor:** no critic of its own (`mval` is gone) and no bonus
+  (`mgr_bonus` is unused). At imagined states 0 and 8 the game head scores all
+  13 goals as if set right now, Q(s, g) = V_game(s, g, step 0), and the
+  manager follows the exact gradient sum_g π(g|s) A(s, g). That replaces v1's
+  single sampled goal per decision, whose advantage drowned in noise. It is
+  judged on the game head only, so it cannot pay itself through the goal
+  bonuses.
+- **Goal duration:** a goal is held until the observation shows it reached
+  (then the next step decides again), or for 32 steps. Reaching it pays the
+  bottom actor once, naturally. Iron-tier goals now fit inside one goal.
+- **Imagination resumes the replay's goal and step** (`gphase` is stored in
+  replay), instead of opening on a fresh decision. The critic therefore sees
+  every step value 0..31 that acting produces, and the replay value loss is
+  back on, for the game head.
+- Masking of goals that already hold, and the reached-this-episode flags as
+  input, carry over from v1.1.
+
+New metrics: `game/*` and `goal/*` (per-stream return, advantage, scale),
+`manager/q_spread` (how much the game head distinguishes goals; ~0 means the
+manager has nothing to learn from), `manager/q_best_minus_mean`, and
+`manager/pick/*` counted at real decisions inside imagination.
+
+Known risk: Q for a goal never set in a state is the head's extrapolation. An
+over-optimistic one would draw the manager toward it until trying it corrects
+the estimate. Watch `q_spread` alongside the pick distribution.
+
 ## v2 (not built)
 
 - Give RSSM-2 its own action-conditioned dynamics

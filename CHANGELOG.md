@@ -87,6 +87,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Manager v1.2 (`--agent.manager.critic shared --agent.manager.hold 32`):
+  - One critic with two heads: 'game' judges both actors, 'goal' only the
+    bottom actor. Each stream is normalised separately and the two are
+    combined by `goal_weight`, so the reward sizes are chosen rather than
+    accidental.
+  - The manager drops its own critic and bonus. It takes the exact gradient
+    over all 13 goals from the game head's Q(s, g).
+  - Goals are held until reached or for 32 steps.
+  - Imagination resumes the replay's goal and step (`gphase` is now stored in
+    replay), which brings the replay value loss back.
+
+  v1.1's once-per-episode manager bonus stopped paying for repeated logistics,
+  and its single combined return paid one stone pickaxe five ways at
+  unchosen sizes. Defaults keep v1/v1.1.
 - Manager v1.1: reaching the goal pays both levels. The actor gets +1 the
   first time its goal is reached in a segment. The manager gets +0.5 the first
   time in the episode a goal it set is reached; it reads a new observation-only

@@ -124,7 +124,14 @@ defaults:
     # never outbids playing. reach_threshold: predicted progress above which
     # an imagined state counts as reached (progress is 1.0 there, <= 0.25
     # anywhere else).
-    manager: {enabled: False, every: 8, goal_reward: 1.0, reach_bonus: 1.0, mgr_bonus: 0.5, reach_threshold: 0.6, actent: 1e-3}
+    # v1.2 -- critic: shared gives one critic body with two heads, 'game' for
+    # both actors and 'goal' for the bottom actor only; the manager drops its
+    # own critic and takes the exact gradient over all goals from the game
+    # head. hold > 0 keeps a goal until reached or for `hold` steps (requires
+    # critic: shared). goal_weight weighs the goal stream's NORMALISED
+    # advantage against the game stream's 1.0. mgr_bonus and every are unused
+    # in v1.2.
+    manager: {enabled: False, every: 8, goal_reward: 1.0, reach_bonus: 1.0, mgr_bonus: 0.5, reach_threshold: 0.6, actent: 1e-3, critic: separate, hold: 0, goal_weight: 0.5}
     gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}
     # --- two-RSSM map model (design-map-model.md) ---------------------------
     # enabled: False reproduces stock behaviour byte-for-byte.
