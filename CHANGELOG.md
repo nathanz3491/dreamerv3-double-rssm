@@ -87,6 +87,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Manager v1.1 and v1 in the comparison report and the training-curve figure
+  (`docs/eval_results.json`, `docs/curves/mgr2.json`). v1.1 is the new best
+  run: 8.53 achievements per episode on the 30 evaluation worlds (B2 7.60,
+  v1 7.13), 3.4% normalized return. It places the furnace and stone in 67% of
+  episodes (B2 40%) and makes a stone sword (23%) and arrows (10%) for the
+  first time. The report's page-1 table now sizes itself to the number of runs.
 - Experiment B3 (`--agent.valid.learned True`): the action mask without the
   game's rules. The `feas` head is trained on the world model's own
   counterfactual: an action did something when it explains the real next

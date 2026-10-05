@@ -126,6 +126,30 @@ events are only as honest as `gphi`. If `reach_rate` in imagination runs far
 above how often goals are really reached in replay, the actor is exploiting
 the progress head.
 
+## v1.1 result: the new best run
+
+`mgr2`, 1.1M steps, scored with `tools/death_eval.py` on the same 30
+evaluation worlds as every other run:
+
+| run | achievements | normalized return | furnace | place stone | stone | stone sword | arrow |
+|---|---|---|---|---|---|---|---|
+| B2 | 7.60 | 3.0% | 40% | 40% | 43% | 0% | 0% |
+| v1 | 7.13 | — | 40% | 43% | 47% | 10% | 0% |
+| **v1.1** | **8.53** | **3.4%** | **67%** | **67%** | **73%** | **23%** | **10%** |
+
+- **The manager learned to choose.** Its entropy fell from ln 13 = 2.56 to
+  1.65, and the goals it set were reached 0.31 times per imagined rollout by
+  the end. It settled on the start of the tech tree in order: wood pickaxe,
+  table, stone, wood sword, then coal.
+- **It overtook B2 late.** v1.1 trailed B2 until ~550k steps, overtook it,
+  and finished 0.9 achievements ahead (8.8 vs 7.9 per training episode over
+  the last 100k steps).
+- **Still missing:** the stone pickaxe (0%; the stone sword takes the
+  ingredients), and coal and torches, which B2 got. Thirst is still the first
+  meter to run out in 16 of 30 deaths.
+- **One seed per run,** so the size of the gap is uncertain. Its direction
+  matches the manager metrics.
+
 ## v1.2: one two-headed critic, goals held until reached
 
 Built behind flags: `--agent.manager.critic shared --agent.manager.hold 32`.

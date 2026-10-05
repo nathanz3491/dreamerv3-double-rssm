@@ -83,7 +83,10 @@ def main():
                   + [f"{100 * rt.get(k, 0):.0f}%" for k in (
                       'PLACE_TABLE', 'MAKE_WOOD_PICKAXE', 'MAKE_WOOD_SWORD',
                       'COLLECT_STONE', 'COLLECT_DRINK')])
-    ax = fig.add_axes([0.07, y - 0.28, 0.86, 0.26])
+    # Height follows the row count, so the note below never collides with a
+    # table that has grown by a run.
+    th = 0.0235 * (len(rows) + 1)
+    ax = fig.add_axes([0.07, y - 0.02 - th, 0.86, th])
     ax.axis('off')
     tab = ax.table(cellText=rows, colLabels=cols, loc='upper left',
                    cellLoc='center', colLoc='center',
@@ -102,13 +105,13 @@ def main():
         cell.set_text_props(weight='bold', color=INK2)
       if i == len(rows):                         # newest run
         cell.set_text_props(weight='bold')
-    wrap(fig, 0.07, y - 0.30, data['table_note'], width=125, size=7.5,
+    wrap(fig, 0.07, y - 0.05 - th, data['table_note'], width=125, size=7.5,
          color=MUTED, line=0.012)
     pdf.savefig(fig)
     plt.close(fig)
 
     # --------------------------------------------- 2. totals + the tech spine
-    fig = page(pdf, 'Sleep inflates the map runs; experiment B is real progress',
+    fig = page(pdf, 'Sleep inflates the map runs; masking and the manager are real progress',
                'Mean episode-final achievements per run, split into WAKE_UP and '
                'the rest; unlock rate of the early tech-tree rungs')
     ax = fig.add_axes([0.33, 0.60, 0.59, 0.27])

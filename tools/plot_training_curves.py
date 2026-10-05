@@ -37,6 +37,7 @@ RUNS = [
     ('expB_input', 'B1: validity flags as input', '#1baf7a', 6),
     ('expB_mask', 'B2: impossible actions masked', '#2a78d6', 7),
     ('mgr', 'manager v1: B2 + goal manager', '#8a5cd6', 8),
+    ('mgr2', 'manager v1.1: + reach bonuses', '#d6336c', 9),
 ]
 
 plt.rcParams.update({

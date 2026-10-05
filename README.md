@@ -149,11 +149,15 @@ python -m pytest dreamerv3/test_craftax_map.py -q
 
 ## Status
 
-**Current best: 7.60 achievements per episode** (experiment B2: honest map
-model + potential + impossible actions masked in training), against 4.44 for
-vanilla DreamerV3 -- about 3.0% of Craftax's 226-point maximum. Every run,
-compared on the same evaluation worlds with each achievement's unlock rate:
-[`docs/comparison-report.pdf`](docs/comparison-report.pdf).
+**Current best: 8.53 achievements per episode** (manager v1.1: B2 plus a
+manager that picks a tech-tree goal every 8 steps, both levels paid when the
+goal is reached), against 7.60 for B2 and 4.44 for vanilla DreamerV3 -- 3.4%
+normalized return (B2 3.0%; best published 1M-step agent, ITC, 7.09%). The
+masking and the manager's goals use game knowledge at test time, which the
+published agents do not. Every run, compared on the same evaluation worlds with
+each achievement's unlock rate:
+[`docs/comparison-report.pdf`](docs/comparison-report.pdf); all training
+curves: [`docs/training-curves.png`](docs/training-curves.png).
 
 What holds B2 back, measured step by step from its replay and shown in its
 own episodes: [`docs/b2-casebook.pdf`](docs/b2-casebook.pdf)
