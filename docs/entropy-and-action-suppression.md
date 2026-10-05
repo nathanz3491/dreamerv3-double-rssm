@@ -291,3 +291,42 @@ deaths are mobs or lava).
 
 Caveats: one seed per arm; masking changes the action space relative to
 published Craftax baselines and is reported as a separate arm.
+
+## Experiment B3: the mask without the rules (built 2026-10-05)
+
+B2's mask is game knowledge used at test time. `craftax_valid.valid_actions`
+transcribes every action's precondition from the game's code and is read from
+`obs['valid']` while acting. The published 1M-step baselines (ITC 7.09%,
+Simulus 6.59%, Dedieu et al. 5.44%) use none, so B2 is not comparable to them
+as it stands. B3 keeps the mask and learns it instead
+(`--agent.valid.learned True`).
+
+- **Head:** the same `feas` head on the RSSM latent, with 43 outputs. It
+  thresholds into the 0/1 mask, both while acting (posterior latent) and in
+  imagination (prior latent). The basic actions (NOOP, moves, DO) are always
+  allowed.
+- **Label:** the world model's own counterfactual, with no rules. For each
+  real step (s, a, s'), compare KL(posterior' || prior(s, NOOP)) with
+  KL(posterior' || prior(s, a)). If the action explains the real outcome
+  better than NOOP by more than `valid.evidence` (1 nat), it did something.
+  Only the action actually taken gets a label each step.
+- **Exploration:** a masked action is never taken, so a wrong "impossible"
+  would never be corrected. With probability `valid.explore` (1%) an acting
+  step ignores the mask.
+- **Warm-up:** a debug run showed an untrained world model labels only
+  0.2–0.5% of actions as having an effect. Masking on that would teach the
+  head that everything is impossible. So the mask stays off for
+  `valid.warmup` train updates (50k, i.e. 100k env steps at train_ratio 512)
+  while the head trains.
+- **Threshold:** the mask threshold is 0.02 in B3 (0.1 in B2, where the head
+  learned the rules).
+
+The rules survive only as a measuring stick:
+- `feas/label_precision` and `feas/label_recall`: agreement of the learned
+  label with the rules, on the special actions actually taken.
+- `valid/recall` and `valid/false_pos`: agreement of the head itself with the
+  rules.
+
+If B3 matches B2, the rules go everywhere, including under the manager runs.
+The 1-nat evidence threshold is a first guess; the label-precision and
+label-recall metrics early in the run are what calibrate it.

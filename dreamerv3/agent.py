@@ -27,6 +27,19 @@ concat = lambda xs, a: jax.tree.map(lambda *x: jnp.concatenate(x, a), *xs)
 isimage = lambda s: s.dtype == np.uint8 and len(s.shape) == 3
 
 
+class Counter(nj.Module):
+  """A step counter kept with the parameters, so acting can read it too."""
+
+  def __init__(self):
+    self.n = nj.Variable(jnp.zeros, (), i32, name='n')
+
+  def read(self):
+    return self.n.read()
+
+  def inc(self):
+    self.n.write(self.n.read() + 1)
+
+
 class Agent(embodied.jax.Agent):
 
   banner = [
@@ -148,6 +161,34 @@ class Agent(embodied.jax.Agent):
       self.feas = embodied.jax.MLPHead(
           elements.Space(bool, (n,), 0, 2), **config.validhead, name='feas')
       self._valid_threshold = float(config.valid.threshold)
+    # B3: the same head, but its label is learned from experience instead of
+    # transcribed from the game's rules, and it -- not obs['valid'] -- masks
+    # the actor while acting. No game knowledge reaches the agent at test time.
+    #   label    for each real step (s, a, s'): would NOOP have explained the
+    #            outcome as well? evidence = KL(post' || prior(s, NOOP))
+    #            - KL(post' || prior(s, a)), the world model's own judgement of
+    #            how much better the action explains what really happened.
+    #            Above valid.evidence nats, the action did something.
+    #   partial  only the action actually taken gets a label each step.
+    #   explore  a masked action is never taken, so a wrong "impossible" would
+    #            never be corrected; with probability valid.explore a step
+    #            ignores the mask.
+    # obs['valid'] (the rules) is kept only as a measuring stick in metrics.
+    self._valid_learned = self._valid_mask and bool(config.valid.learned)
+    #   warmup   an untrained world model judges almost nothing as having an
+    #            effect (0.2-0.5% positive labels in the first few thousand
+    #            steps). Masking on those labels would teach the head that
+    #            everything is impossible, block nearly every action, and
+    #            starve the head of the labels that could correct it. So the
+    #            mask stays off -- acting and imagination both unmasked, as in
+    #            vanilla -- for the first valid.warmup train updates while the
+    #            head trains; at train_ratio 512 that is twice as many env
+    #            steps.
+    if self._valid_learned:
+      self._valid_explore = float(config.valid.explore)
+      self._valid_evidence = float(config.valid.evidence)
+      self._valid_warmup = int(config.valid.warmup)
+      self.feasclock = Counter(name='feasclock')
 
     scalar = elements.Space(np.float32, ())
     binary = elements.Space(bool, (), 0, 2)
@@ -322,6 +363,8 @@ class Agent(embodied.jax.Agent):
       keys.append('mapmodel')
     if self._use_mgr:
       keys.append('mgr')            # the manager picks goals while acting
+    if self._valid_learned:
+      keys += ['feas', 'feasclock']  # B3: the learned mask acts
     return '^(' + '|'.join(keys) + ')/'
 
   @property
@@ -415,7 +458,11 @@ class Agent(embodied.jax.Agent):
           prev_map, map_carry, ainp, reset, obs)
       ainp = jnp.concatenate([ainp, self._goalfeat(goal, phase)], -1)
     policy = self.pol(ainp, bdims=1)
-    if self._valid_mask:
+    if self._valid_learned:
+      allowed = self._dream_valid(self.feat2tensor(feat), 1)
+      explore = jax.random.uniform(nj.seed(), (allowed.shape[0], 1))
+      policy = self._masked(policy, allowed | (explore < self._valid_explore))
+    elif self._valid_mask:
       policy = self._masked(policy, obs['valid'] > 0.5)
     act = sample(policy)
     out = {}
@@ -475,6 +522,50 @@ class Agent(embodied.jax.Agent):
     logits = policy['action'].logits + jnp.where(allowed, 0.0, -1e4)
     return {**policy, 'action': jouts.Categorical(logits)}
 
+  def _feas_learned(self, inp, repfeat, prevact, reset, rules, training):
+    """B3: train the effect head on the world model's own counterfactual.
+
+    The action taken at step t-1 (prevact[:, t]) moved the agent from the
+    posterior state at t-1 to the observation at t. One prior step from that
+    state under the real action, and one under NOOP: if NOOP explains the real
+    posterior at t about as well, the action did nothing. Labels and the
+    counterfactual carry no gradient; only the head learns from them.
+    """
+    B, T = reset.shape
+    flat = lambda x: x.reshape((B * (T - 1), *x.shape[2:]))
+    state = {k: sg(flat(repfeat[k][:, :-1])) for k in ('deter', 'stoch')}
+    act = flat(prevact['action'][:, 1:])
+    _, (real, _) = self.dyn.imagine(state, {'action': act}, 1, training,
+                                    single=True)
+    _, (noop, _) = self.dyn.imagine(state, {'action': jnp.zeros_like(act)}, 1,
+                                    training, single=True)
+    dist = self.dyn._dist
+    post = dist(sg(flat(repfeat['logit'][:, 1:])))
+    evidence = sg(f32(post.kl(dist(sg(noop['logit'])))
+                      - post.kl(dist(sg(real['logit'])))))
+    label = f32(evidence > self._valid_evidence).reshape((B, T - 1))
+    act = act.reshape((B, T - 1))
+    # Only real transitions (not across an episode start) and actions that
+    # can differ from NOOP at all.
+    keep = f32(~reset[:, 1:] & (act > 0))
+    logit = f32(self.feas(inp, 2).output.logit)[:, :-1]           # (B, T-1, A)
+    taken = jnp.take_along_axis(logit, act[..., None], -1)[..., 0]
+    bce = jax.nn.softplus(taken) - label * taken
+    loss = jnp.concatenate([bce * keep, jnp.zeros_like(bce[:, :1])], 1)
+    mets = {'feas/label_rate': (label * keep).sum() / jnp.maximum(keep.sum(), 1),
+            'feas/evidence': (evidence.reshape((B, T - 1)) * keep).sum()
+                             / jnp.maximum(keep.sum(), 1)}
+    if rules is not None:
+      # Measuring stick only: did the learned label agree with the rules for
+      # the special actions actually taken?
+      truth = jnp.take_along_axis(f32(rules[:, :-1] > 0.5), act[..., None],
+                                  -1)[..., 0]
+      special = keep * f32(act >= len(cvalid.BASIC))
+      tp = (label * truth * special).sum()
+      mets['feas/label_precision'] = tp / jnp.maximum((label * special).sum(), 1)
+      mets['feas/label_recall'] = tp / jnp.maximum((truth * special).sum(), 1)
+    return loss, mets
+
   def _dream_valid(self, x, bdims):
     """Validity inside imagination, from the latent -- or None if unmasked."""
     if not self._valid_mask:
@@ -482,7 +573,10 @@ class Agent(embodied.jax.Agent):
     logit = f32(self.feas(x, bdims).output.logit)
     # A low threshold errs toward allowing: a false "impossible" blocks an
     # action in every dream, a false "possible" merely costs a no-op.
-    return sg(jax.nn.sigmoid(logit)) > self._valid_threshold
+    allowed = sg(jax.nn.sigmoid(logit)) > self._valid_threshold
+    if self._valid_learned:
+      allowed = allowed | (self.feasclock.read() < self._valid_warmup)
+    return allowed
 
   def _goalfeat(self, goal, phase):
     """What the actor and its critic see of the manager: goal and segment step.
@@ -832,6 +926,8 @@ class Agent(embodied.jax.Agent):
     self.slowval.update()
     if self._use_mgr and not self._shared:
       self.mslowval.update()
+    if self._valid_learned:
+      self.feasclock.inc()
     outs = {}
     if self.config.replay_context:
       names = dict(stepid=stepid, enc=entries[0], dyn=entries[1],
@@ -887,11 +983,16 @@ class Agent(embodied.jax.Agent):
       mask = 1.0 - jnp.clip((ach * hv[None, None, :]).sum(-1), 0.0, 1.0)
       rc = self.rewcause(inp, 2).loss(sg(target))        # (B, T)
       losses['rewcause'] = rc * sg(weight) * sg(mask)
-    if self._valid_mask:
-      target = f32(obs['valid'] > 0.5)
+    if self._valid_learned:
+      losses['feas'], mets = self._feas_learned(
+          inp, repfeat, prevact, reset, obs.get('valid'), training)
+      metrics.update(mets)
+    elif self._valid_mask:
       # Named 'feas', not 'valid': with valid.input the decoder already owns
       # a 'valid' reconstruction loss.
-      losses['feas'] = self.feas(inp, 2).loss(sg(target))
+      losses['feas'] = self.feas(inp, 2).loss(sg(f32(obs['valid'] > 0.5)))
+    if self._valid_mask and 'valid' in obs:
+      target = f32(obs['valid'] > 0.5)
       pred = self._dream_valid(inp, 2)
       special = jnp.arange(target.shape[-1]) >= len(cvalid.BASIC)
       pos = (target > 0) & special

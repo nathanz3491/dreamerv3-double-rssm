@@ -110,7 +110,16 @@ defaults:
     # input  B1: the 43 validity flags enter the encoder beside the observation
     # mask   B2: impossible actions get zero probability and zero gradient --
     #        true flags when acting, the learned 'feas' head in imagination
-    valid: {input: False, mask: False, threshold: 0.1}
+    # learned (B3): the mask head is trained on the world model's own
+    # counterfactual -- did NOOP explain the outcome as well? -- and masks the
+    # actor while acting, so the rules (obs['valid']) only feed metrics.
+    # evidence: nats by which the action must out-explain NOOP to count as
+    # having done something. explore: share of acting steps that ignore the
+    # mask, so a wrong "impossible" can still be tried and corrected.
+    # warmup: train updates before the learned mask switches on (acting and
+    # imagination run unmasked until then; 50k updates = 100k env steps at
+    # train_ratio 512).
+    valid: {input: False, mask: False, threshold: 0.1, learned: False, explore: 0.01, evidence: 1.0, warmup: 50000}
     validhead: {layers: 2, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
     # --- two-level agent (docs/design-manager.md; needs env.craftax.goals_obs
     # and the map model). A manager actor-critic picks one of 13 tech-tree goals

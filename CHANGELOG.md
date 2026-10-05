@@ -87,6 +87,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Experiment B3 (`--agent.valid.learned True`): the action mask without the
+  game's rules. The `feas` head is trained on the world model's own
+  counterfactual: an action did something when it explains the real next
+  latent better than NOOP by more than `valid.evidence` nats. That head, not
+  `obs['valid']`, masks the actor while acting. There is 1% exploration past
+  the mask, and the mask stays off for the first 50k train updates, because
+  an untrained world model labels almost nothing as having an effect. B2's
+  hand-transcribed rules were game knowledge used at test time, which the
+  published 1M-step baselines do not use. See
+  `docs/entropy-and-action-suppression.md`.
 - Manager v1.3 (`--env.craftax.survival potential+meters
   --env.craftax.goals_survival True`, on top of v1.2):
   - A survival potential over food and drink. A meter's value is
