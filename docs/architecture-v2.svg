@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1010" width="1200" height="1010" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52514e"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="1010" fill="#fcfcfb"/>
+  <text x="30" y="38" font-size="22" font-weight="700" fill="#0b0b0b">v2 architecture: every piece of game knowledge replaced by a learned part</text>
+  <text x="30" y="60" font-size="12" fill="#52514e">Grey = unchanged DreamerV3. Coloured = new in v2; each says what it replaces. Numbers in brackets are vector sizes.</text>
+
+  <!-- top lane: world model -->
+  <rect x="30" y="85" width="170" height="64" rx="8" fill="#ececea" stroke="#b9b8b2"/>
+  <text x="115" y="112" text-anchor="middle" font-size="14" font-weight="700" fill="#0b0b0b">Observation</text>
+  <text x="115" y="132" text-anchor="middle" font-size="12" fill="#52514e">9×11 tiles + stats (8268)</text>
+  <rect x="235" y="85" width="130" height="64" rx="8" fill="#ececea" stroke="#b9b8b2"/>
+  <text x="300" y="122" text-anchor="middle" font-size="14" font-weight="700" fill="#0b0b0b">Encoder</text>
+  <rect x="400" y="85" width="230" height="64" rx="8" fill="#ececea" stroke="#b9b8b2"/>
+  <text x="515" y="110" text-anchor="middle" font-size="14" font-weight="700" fill="#0b0b0b">RSSM-1 (fast world model)</text>
+  <text x="515" y="130" text-anchor="middle" font-size="12" fill="#52514e">updates every step</text>
+  <rect x="665" y="85" width="150" height="64" rx="8" fill="#dedcd6" stroke="#9c9b95"/>
+  <text x="740" y="110" text-anchor="middle" font-size="14" font-weight="700" fill="#0b0b0b">feat</text>
+  <text x="740" y="130" text-anchor="middle" font-size="12" fill="#52514e">latent state (5120)</text>
+  <rect x="850" y="85" width="320" height="64" rx="8" fill="#ececea" stroke="#b9b8b2"/>
+  <text x="1010" y="110" text-anchor="middle" font-size="14" font-weight="700" fill="#0b0b0b">World-model heads (unchanged)</text>
+  <text x="1010" y="130" text-anchor="middle" font-size="12" fill="#52514e">decoder · reward · continue</text>
+  <path stroke="#52514e" stroke-width="1.6" fill="none" d="M200,117 H233" marker-end="url(#a)"/>
+  <path stroke="#52514e" stroke-width="1.6" fill="none" d="M365,117 H398" marker-end="url(#a)"/>
+  <path stroke="#52514e" stroke-width="1.6" fill="none" d="M630,117 H663" marker-end="url(#a)"/>
+  <path stroke="#52514e" stroke-width="1.6" fill="none" d="M815,117 H848" marker-end="url(#a)"/>
+
+  <!-- feat fans down to the four new parts -->
+  <path stroke="#52514e" stroke-width="1.6" fill="none" d="M740,149 V172 H165 V203" marker-end="url(#a)"/>
+  <path stroke="#52514e" stroke-width="1.6" fill="none" d="M455,172 V203" marker-end="url(#a)"/>
+  <path stroke="#52514e" stroke-width="1.6" fill="none" d="M745,172 V203" marker-end="url(#a)"/>
+  <path stroke="#52514e" stroke-width="1.6" fill="none" d="M740,172 H1035 V203" marker-end="url(#a)"/>
+
+  <!-- (1) effect head -->
+  <rect x="30" y="205" width="270" height="270" rx="10" fill="#e8f1fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="45" y="230" font-size="14" font-weight="700" fill="#184f95">(1) EFFECT HEAD</text>
+  <text x="45" y="249" font-size="12" font-weight="700" fill="#2a78d6">replaces: hand-written action rules</text>
+  <text x="45" y="276" font-size="13" fill="#1d1d1b"><tspan font-weight="700">In:</tspan> feat (5120)</text>
+  <text x="45" y="298" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Out:</tspan> 43 probabilities —</text>
+  <text x="45" y="316" font-size="13" fill="#1d1d1b">"does action X do anything here?"</text>
+  <text x="45" y="342" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Used for:</tspan> actions under 2% are</text>
+  <text x="45" y="360" font-size="13" fill="#1d1d1b">blocked (1% of steps try anyway)</text>
+  <text x="45" y="386" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Learns from:</tspan> after each real step,</text>
+  <text x="45" y="404" font-size="13" fill="#1d1d1b">did this action explain what</text>
+  <text x="45" y="422" font-size="13" fill="#1d1d1b">happened better than a random</text>
+  <text x="45" y="440" font-size="13" fill="#1d1d1b">other action would have?</text>
+
+  <!-- (2) goal network -->
+  <rect x="320" y="205" width="270" height="270" rx="10" fill="#e8f7f0" stroke="#1baf7a" stroke-width="2"/>
+  <text x="335" y="230" font-size="14" font-weight="700" fill="#0d6e4c">(2) GOAL NETWORK</text>
+  <text x="335" y="249" font-size="12" font-weight="700" fill="#1baf7a">replaces: the hand-written goal list</text>
+  <text x="335" y="276" font-size="13" fill="#1d1d1b"><tspan font-weight="700">In:</tspan> how feat changed over 8 steps</text>
+  <text x="335" y="294" font-size="13" fill="#1d1d1b">(feat now − feat 8 steps ago)</text>
+  <text x="335" y="320" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Inside:</tspan> encoder → 64 numbers →</text>
+  <text x="335" y="338" font-size="13" fill="#1d1d1b">nearest of 16 learned "codes"</text>
+  <text x="335" y="364" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Out:</tspan> 16 goal types (kinds of change,</text>
+  <text x="335" y="382" font-size="13" fill="#1d1d1b">e.g. "got wood", "drank");</text>
+  <text x="335" y="400" font-size="13" fill="#1d1d1b">progress + "reached?" for the goal</text>
+  <text x="335" y="426" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Learns from:</tspan> grouping the changes</text>
+  <text x="335" y="444" font-size="13" fill="#1d1d1b">the agent actually causes</text>
+
+  <!-- (3) curiosity -->
+  <rect x="610" y="205" width="270" height="270" rx="10" fill="#fdf0e8" stroke="#eb6834" stroke-width="2"/>
+  <text x="625" y="230" font-size="14" font-weight="700" fill="#a3431b">(3) CURIOSITY</text>
+  <text x="625" y="249" font-size="12" font-weight="700" fill="#eb6834">replaces: tech-tree + survival hints</text>
+  <text x="625" y="276" font-size="13" fill="#1d1d1b"><tspan font-weight="700">In:</tspan> feat + the chosen action</text>
+  <text x="625" y="302" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Inside:</tspan> 5 small networks, each</text>
+  <text x="625" y="320" font-size="13" fill="#1d1d1b">guessing the next latent state</text>
+  <text x="625" y="346" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Out:</tspan> curiosity reward =</text>
+  <text x="625" y="364" font-size="13" fill="#1d1d1b">how much the 5 guesses disagree</text>
+  <text x="625" y="390" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Meaning:</tspan> they disagree where the</text>
+  <text x="625" y="408" font-size="13" fill="#1d1d1b">model doesn't understand the game</text>
+  <text x="625" y="426" font-size="13" fill="#1d1d1b">yet — so the agent is paid to go</text>
+  <text x="625" y="444" font-size="13" fill="#1d1d1b">there and find out</text>
+
+  <!-- (4) RSSM-2 memory -->
+  <rect x="900" y="205" width="270" height="270" rx="10" fill="#f2ecfb" stroke="#8a5cd6" stroke-width="2"/>
+  <text x="915" y="230" font-size="14" font-weight="700" fill="#5b3a99">(4) RSSM-2 MEMORY</text>
+  <text x="915" y="249" font-size="12" font-weight="700" fill="#8a5cd6">replaces: the hand-labelled map</text>
+  <text x="915" y="276" font-size="13" fill="#1d1d1b"><tspan font-weight="700">In:</tspan> average feat over the last 8</text>
+  <text x="915" y="294" font-size="13" fill="#1d1d1b">steps + the 8 actions taken (raw)</text>
+  <text x="915" y="320" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Out:</tspan> slow state (1024), updated</text>
+  <text x="915" y="338" font-size="13" fill="#1d1d1b">every 8 steps → manager + actor</text>
+  <text x="915" y="364" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Learns to:</tspan></text>
+  <text x="915" y="382" font-size="13" fill="#1d1d1b">• predict feat 8 / 16 / 32 steps</text>
+  <text x="915" y="400" font-size="13" fill="#1d1d1b">  ahead (what is coming)</text>
+  <text x="915" y="418" font-size="13" fill="#1d1d1b">• recall the view from 8 / 16 / 32</text>
+  <text x="915" y="436" font-size="13" fill="#1d1d1b">  steps ago (where water, tables are)</text>
+
+  <!-- bottom row: manager, actor, critic -->
+  <rect x="30" y="560" width="330" height="190" rx="10" fill="#ececea" stroke="#52514e" stroke-width="1.6"/>
+  <text x="45" y="586" font-size="14" font-weight="700" fill="#0b0b0b">MANAGER (slow actor)</text>
+  <text x="45" y="612" font-size="13" fill="#1d1d1b"><tspan font-weight="700">In:</tspan> feat + slow state (4) +</text>
+  <text x="45" y="630" font-size="13" fill="#1d1d1b">which codes were reached this episode</text>
+  <text x="45" y="656" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Out:</tspan> pick 1 of the 16 goal codes (2),</text>
+  <text x="45" y="674" font-size="13" fill="#1d1d1b">held until reached or 32 steps</text>
+  <text x="45" y="700" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Learns from:</tspan> critic's game + explore</text>
+  <text x="45" y="718" font-size="13" fill="#1d1d1b">values for every code</text>
+
+  <rect x="400" y="560" width="350" height="190" rx="10" fill="#ececea" stroke="#52514e" stroke-width="1.6"/>
+  <text x="415" y="586" font-size="14" font-weight="700" fill="#0b0b0b">ACTOR (fast actor)</text>
+  <text x="415" y="612" font-size="13" fill="#1d1d1b"><tspan font-weight="700">In:</tspan> feat + slow state (4) + goal code</text>
+  <text x="415" y="630" font-size="13" fill="#1d1d1b">+ steps since the goal was set</text>
+  <text x="415" y="656" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Out:</tspan> 43 action probabilities,</text>
+  <text x="415" y="674" font-size="13" fill="#1d1d1b">masked by the effect head (1) → action</text>
+  <text x="415" y="700" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Learns from:</tspan> game + 0.5×goal (2) +</text>
+  <text x="415" y="718" font-size="13" fill="#1d1d1b">w×curiosity (3)</text>
+
+  <rect x="790" y="560" width="380" height="190" rx="10" fill="#ececea" stroke="#52514e" stroke-width="1.6"/>
+  <text x="805" y="586" font-size="14" font-weight="700" fill="#0b0b0b">CRITIC (one network, 3 output heads)</text>
+  <text x="805" y="612" font-size="13" fill="#1d1d1b"><tspan font-weight="700">In:</tspan> same as the actor</text>
+  <text x="805" y="638" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Out:</tspan></text>
+  <text x="805" y="656" font-size="13" fill="#1d1d1b">• game value — Craftax reward (both actors)</text>
+  <text x="805" y="674" font-size="13" fill="#1d1d1b">• goal value — goal progress (actor only)</text>
+  <text x="805" y="692" font-size="13" fill="#1d1d1b">• explore value — curiosity (both actors)</text>
+  <text x="805" y="718" font-size="12" fill="#52514e">each value normalised separately</text>
+
+  <!-- arrows from new parts to bottom row -->
+  <path stroke-width="1.6" fill="none" stroke="#2a78d6" d="M165,475 V520 H560 V558" marker-end="url(#a)"/>
+  <text x="180" y="512" font-size="12" fill="#2a78d6">mask</text>
+  <path stroke-width="1.6" fill="none" stroke="#1baf7a" d="M455,475 V505 H195 V558" marker-end="url(#a)"/>
+  <path stroke-width="1.6" fill="none" stroke="#1baf7a" d="M455,505 H610 V558" marker-end="url(#a)"/>
+  <text x="470" y="498" font-size="12" fill="#1baf7a">codes · goal reward</text>
+  <path stroke-width="1.6" fill="none" stroke="#eb6834" d="M745,475 V535 H980 V558" marker-end="url(#a)"/>
+  <text x="760" y="528" font-size="12" fill="#eb6834">curiosity reward</text>
+  <path stroke-width="1.6" fill="none" stroke="#8a5cd6" d="M1035,475 V545 H300 V558" marker-end="url(#a)"/>
+  <path stroke-width="1.6" fill="none" stroke="#8a5cd6" d="M700,545 V558" marker-end="url(#a)"/>
+  <text x="1048" y="512" font-size="12" fill="#8a5cd6">slow state</text>
+  <path stroke="#52514e" stroke-width="1.6" fill="none" d="M360,655 H398" marker-end="url(#a)"/>
+  <text x="363" y="645" font-size="12" fill="#52514e">goal</text>
+
+  <!-- action out + reward -->
+  <path stroke="#52514e" stroke-width="1.6" fill="none" d="M575,750 V790" marker-end="url(#a)"/>
+  <rect x="470" y="792" width="210" height="44" rx="8" fill="#dedcd6" stroke="#9c9b95"/>
+  <text x="575" y="819" text-anchor="middle" font-size="14" font-weight="700" fill="#0b0b0b">action → game</text>
+  <rect x="790" y="792" width="380" height="44" rx="8" fill="#ececea" stroke="#b9b8b2"/>
+  <text x="980" y="812" text-anchor="middle" font-size="13" font-weight="700" fill="#1d1d1b">Reward: Craftax's own only</text>
+  <text x="980" y="829" text-anchor="middle" font-size="12" fill="#52514e">(achievements + 0.1 × health change; no hints)</text>
+
+  <!-- footer: what is removed -->
+  <rect x="30" y="860" width="1140" height="128" rx="10" fill="#fff" stroke="#e4e3df"/>
+  <text x="45" y="886" font-size="14" font-weight="700" fill="#0b0b0b">Removed from v1.x (game knowledge)</text>
+  <text x="45" y="910" font-size="13" fill="#1d1d1b">• action rules (craftax_valid) → (1)    • 13 hand-picked goals, reached-checks, progress formula → (2)</text>
+  <text x="45" y="932" font-size="13" fill="#1d1d1b">• tech-tree potential + survival potential (reward hints) → (3)    • map labels: block groupings, movement rules, spawn point → (4)</text>
+  <text x="45" y="954" font-size="13" fill="#1d1d1b">• hand-computed movement vectors into RSSM-2 → raw actions (4)    • "actions 0–5 always allowed", "action 0 = NOOP" → (1)</text>
+  <text x="45" y="976" font-size="12" fill="#52514e">What remains: the raw observation, Craftax's reward and generic learning — the same footing as ITC, Simulus and DreamerV3.</text>
+</svg>

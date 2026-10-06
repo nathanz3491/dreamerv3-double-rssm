@@ -91,7 +91,7 @@ defaults:
     coordinator_address: ''
 
   agent:
-    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, rewcause: 1.0, map: 1.0, mappos: 1.0, feas: 1.0, gphi: 1.0, mpolicy: 1.0, mvalue: 1.0}
+    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, rewcause: 1.0, map: 1.0, mappos: 1.0, feas: 1.0, gphi: 1.0, mpolicy: 1.0, mvalue: 1.0, memfut: 1.0, memrec: 1.0, goalvq: 1.0, curio: 1.0}
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
@@ -119,7 +119,10 @@ defaults:
     # warmup: train updates before the learned mask switches on (acting and
     # imagination run unmasked until then; 50k updates = 100k env steps at
     # train_ratio 512).
-    valid: {input: False, mask: False, threshold: 0.1, learned: False, explore: 0.01, evidence: 1.0, warmup: 50000}
+    # exempt_basic False (v2) learns the mask for NOOP, moves and DO too;
+    # reference random (v2) compares each action with a random other action
+    # instead of assuming action 0 is NOOP.
+    valid: {input: False, mask: False, threshold: 0.1, learned: False, explore: 0.01, evidence: 1.0, warmup: 50000, exempt_basic: True, reference: noop}
     validhead: {layers: 2, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
     # --- two-level agent (docs/design-manager.md; needs env.craftax.goals_obs
     # and the map model). A manager actor-critic picks one of 13 tech-tree goals
@@ -144,7 +147,17 @@ defaults:
     # critic: shared). goal_weight weighs the goal stream's NORMALISED
     # advantage against the game stream's 1.0. mgr_bonus and every are unused
     # in v1.2.
-    manager: {enabled: False, every: 8, goal_reward: 1.0, reach_bonus: 1.0, mgr_bonus: 0.5, reach_threshold: 0.6, actent: 1e-3, critic: separate, hold: 0, goal_weight: 0.5}
+    # v2 -- goals: learned replaces the hand-written goal list with a codebook
+    # of `codes` latent-change types (goalcodes.py), learned from changes over
+    # code_window steps; a goal counts as reached when the change since it was
+    # set is classified as its code (nearest code, cosine above code_reach).
+    # Needs critic: shared.
+    manager: {enabled: False, every: 8, goal_reward: 1.0, reach_bonus: 1.0, mgr_bonus: 0.5, reach_threshold: 0.6, actent: 1e-3, critic: separate, hold: 0, goal_weight: 0.5, goals: named, codes: 16, code_dim: 64, code_window: 8, code_reach: 0.3, code_beta: 0.25, code_decay: 0.99}
+    # v2 -- curiosity replaces the reward hints: `members` networks predict the
+    # next latent; their disagreement is a third reward stream (weight for the
+    # bottom actor, mgr_weight for the manager's goal values).
+    curiosity: {enabled: False, members: 5, layers: 2, units: 512, weight: 0.2, mgr_weight: 0.2}
+    memhead: {layers: 2, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in}
     gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}
     # --- two-RSSM map model (design-map-model.md) ---------------------------
     # enabled: False reproduces stock behaviour byte-for-byte.
@@ -162,6 +175,12 @@ defaults:
       # 0.138, achievements 4.35 vs 5.03. Fixing True properly means threading
       # the coarse cell through nj.scan in rssm.py.
       imag_shift: False
+      # target: map trains RSSM-2 on hand-built map labels; memory (v2) trains
+      # it to predict RSSM-1's latent `ahead` ticks on and to recall the
+      # observation `back` ticks ago, fed raw actions -- no game knowledge.
+      target: map
+      ahead: [1, 2, 4]
+      back: [1, 2, 4]
       # Grade an early tick against the mosaic as it stood at the END of the
       # episode segment, so the model is asked to predict terrain it has not
       # reached yet and marked once the agent gets there. Every label is still

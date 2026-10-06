@@ -87,6 +87,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- v2, the two-level agent without game knowledge (`docs/design-v2.md`,
+  `docs/architecture-v2.svg`). It is built and debug-tested but not run yet.
+  Each piece is a flag, and the defaults keep every earlier run reproducible:
+  - **Learned mask for all actions** against a random-action reference
+    (`valid.exempt_basic False`, `valid.reference random`).
+  - **Learned goal codebook** (`manager.goals learned`, new
+    `dreamerv3/goalcodes.py`): 16 types of 8-step latent change, trained as a
+    VQ-VAE with moving-average codes. A goal is reached when the change since
+    it was set is classified as its code.
+  - **Curiosity** (`curiosity.enabled`): ensemble disagreement as a third
+    reward stream and critic head.
+  - **RSSM-2 memory** (`mapmodel.target memory`): raw actions in; predicts
+    RSSM-1's latent 1/2/4 ticks ahead and recalls the observation 1/2/4 ticks
+    back, with no map labels.
+
+  The published 1M-step agents use none of the knowledge v1.2 does, so this is
+  the comparable line. The honest map stays as an ablation
+  (`mapmodel.target map`).
 - Manager v1.2 in the comparison report and the training-curve figure: the
   new best run. It scores 9.73 achievements per episode on the 30 evaluation
   worlds (v1.1 8.53, B2 7.60), 3.9% normalized return. It is the first run to
