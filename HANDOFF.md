@@ -289,6 +289,15 @@ A full-day session on `fix/spine-recipe-costs`, split between a self-committed e
 
 Housekeeping this run: `README.md`'s Status section already had the 8.53/v1.1 headline from the session itself; the "Next" paragraph below it still framed v1.1-v1.3 as a block of future work and said nothing about B3, so updated it to say v1.1 is now trained (pointing at the headline above) and that v1.2, v1.3, and B3 remain built-but-not-trained, with a link to `docs/entropy-and-action-suppression.md` for B3. No `AGENTS.md` needed — still no multi-agent-role concept in this codebase (the manager/actor split remains a model architecture, not an agent role).
 
+## Today (2026-10-06)
+
+Two commits made by the session itself after the 05:16 HANDOFF run (tree clean at `2792c5d`):
+
+- **`9c68cb2` — scored manager v1.1 and v1.2; v1.2 is the new best: 9.73 achievements/episode** (v1.1 8.53, B2 7.60), 3.9% normalized return, first run to make the stone pickaxe regularly (23%). Evaluated with `tools/death_eval.py` on the same 30 worlds; added to `docs/comparison-report.pdf` and `docs/training-curves.*` (`docs/curves/mgr3.json`).
+- **`2792c5d` — v2: two-level agent without game knowledge** (`docs/design-v2.md`, `docs/architecture-v2.svg`, `goalcodes.py`, `agent.py` +386 lines). Learned mask for all actions, VQ-learned goals (16 codes over 8-step latent changes), ensemble-disagreement curiosity as a third reward stream, `mapmodel.target memory`. All behind flags; debug-tested small, not run at full size.
+
+Housekeeping: README/CHANGELOG already updated by the session; no further doc drift found.
+
 ## Tomorrow
 
 - **Train manager v1.2 and v1.3** — both are built and tested but still unscored; v1.3's survival potential + DRINK/EAT goals are the most direct answer yet to the drink-vs-tech tradeoff v1.1 still shows (thirst kills 16/30 episodes).
