@@ -200,6 +200,31 @@ Known risk: Q for a goal never set in a state is the head's extrapolation. An
 over-optimistic one would draw the manager toward it until trying it corrects
 the estimate. Watch `q_spread` alongside the pick distribution.
 
+## v1.2 result: the new best run
+
+`mgr3`, 1.1M steps, scored on the same 30 evaluation worlds:
+
+| run | achievements | normalized return | stone pickaxe | coal | wood sword | stone sword | lifespan |
+|---|---|---|---|---|---|---|---|
+| B2 | 7.60 | 3.0% | 0% | 20% | 20% | 0% | 246 |
+| v1.1 | 8.53 | 3.4% | 0% | 0% | 33% | 23% | 259 |
+| **v1.2** | **9.73** | **3.9%** | **23%** | 10% | **57%** | **37%** | 221 |
+
+- **The early manager collapse did not sink it.** Its entropy fell to 0.55-0.8
+  within 20k steps, and its favourite goal kept moving (table, stone pickaxe,
+  diamond, furnace, stone sword). It trailed v1.1 until ~350k steps, then
+  pulled ahead. It finished at 9.85 achievements per training episode over the
+  last 100k steps (v1.1 8.81, B2 7.91).
+- **It favours goals it cannot complete yet:** iron pickaxe, iron sword and
+  diamond took 50-60% of its picks around 800k. Their progress counts every
+  ingredient (wood, stone, coal, iron, a table and a furnace nearby), so
+  under them the bottom actor is paid for stocking up rather than for
+  spending. This plausibly explains the first regular stone pickaxe, but it is
+  not yet checked in its episodes.
+- **It dies earliest of the leading runs** (221 steps). 14 of its 30 deaths
+  are mobs or lava and 14 are thirst: it does more, and is more exposed.
+  v1.3 adds survival goals and a survival potential on top of v1.2.
+
 ## v1.3: survival as well as tech
 
 B2 never does both. Over its last 507 training episodes:

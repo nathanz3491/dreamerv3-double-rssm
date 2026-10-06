@@ -149,10 +149,12 @@ python -m pytest dreamerv3/test_craftax_map.py -q
 
 ## Status
 
-**Current best: 8.53 achievements per episode** (manager v1.1: B2 plus a
-manager that picks a tech-tree goal every 8 steps, both levels paid when the
-goal is reached), against 7.60 for B2 and 4.44 for vanilla DreamerV3 -- 3.4%
-normalized return (B2 3.0%; best published 1M-step agent, ITC, 7.09%). The
+**Current best: 9.73 achievements per episode** (manager v1.2: B2 plus a
+manager that picks a tech-tree goal and holds it until reached, with one
+two-headed critic shared by both levels), against 8.53 for v1.1, 7.60 for B2
+and 4.44 for vanilla DreamerV3 -- 3.9% normalized return (v1.1 3.4%, B2 3.0%;
+best published 1M-step agent, ITC, 7.09%). It is the first run to make the
+stone pickaxe regularly (23% of episodes). The
 masking and the manager's goals use game knowledge at test time, which the
 published agents do not. Every run, compared on the same evaluation worlds with
 each achievement's unlock rate:

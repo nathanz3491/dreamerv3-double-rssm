@@ -111,7 +111,7 @@ def main():
     plt.close(fig)
 
     # --------------------------------------------- 2. totals + the tech spine
-    fig = page(pdf, 'Sleep inflates the map runs; masking and the manager are real progress',
+    fig = page(pdf, 'Sleep inflates the map runs; the manager is real progress',
                'Mean episode-final achievements per run, split into WAKE_UP and '
                'the rest; unlock rate of the early tech-tree rungs')
     ax = fig.add_axes([0.33, 0.60, 0.59, 0.27])

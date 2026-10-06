@@ -87,6 +87,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Manager v1.2 in the comparison report and the training-curve figure: the
+  new best run. It scores 9.73 achievements per episode on the 30 evaluation
+  worlds (v1.1 8.53, B2 7.60), 3.9% normalized return. It is the first run to
+  make the stone pickaxe regularly (23%), and it also mines coal (10%). Its
+  manager favours iron-tier goals it cannot complete yet, which pay the bottom
+  actor for gathering every ingredient. It dies earliest of the leading runs
+  (221 steps), half of those deaths to mobs or lava.
 - Manager v1.1 and v1 in the comparison report and the training-curve figure
   (`docs/eval_results.json`, `docs/curves/mgr2.json`). v1.1 is the new best
   run: 8.53 achievements per episode on the 30 evaluation worlds (B2 7.60,
