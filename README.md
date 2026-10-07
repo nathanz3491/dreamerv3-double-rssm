@@ -187,12 +187,16 @@ or progress (5 tech stages, ~2 drinks, dead of thirst near step 330) but
 never both. Enable with `--env.craftax.goals_obs True
 --agent.manager.enabled True --agent.manager.critic shared
 --agent.manager.hold 32 --env.craftax.survival potential+meters
---env.craftax.goals_survival True` on top of the B2 flags. v1.1 is now trained
-and scored above (8.53); v1.2, v1.3, and experiment B3 -- the action mask
-learned from the world model's own counterfactual instead of read from the
-game's rules, `--agent.valid.learned True`
-([`docs/entropy-and-action-suppression.md`](docs/entropy-and-action-suppression.md))
--- are built and tested, **not yet trained**.
+--env.craftax.goals_survival True` on top of the B2 flags. v1.1, v1.2 and v1.3
+are trained and scored above.
+
+Experiment B3 learns the action mask from the world model's own counterfactual
+instead of reading it from the game's rules (`--agent.valid.learned True`). It
+scored 5.60, below B2's 7.60, because its labels fed back on themselves. B3-fix
+detaches the mask head and labels from decoded observations:
+`--agent.valid.detach True --agent.valid.label obs --agent.valid.margin 0.5
+--agent.valid.threshold 0.15`. It is training now. Details are in
+[`docs/entropy-and-action-suppression.md`](docs/entropy-and-action-suppression.md).
 
 
 The map model helps, and the tech-tree gate has opened for the first time:

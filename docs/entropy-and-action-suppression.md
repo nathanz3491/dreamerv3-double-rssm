@@ -330,3 +330,62 @@ The rules survive only as a measuring stick:
 If B3 matches B2, the rules go everywhere, including under the manager runs.
 The 1-nat evidence threshold is a first guess; the label-precision and
 label-recall metrics early in the run are what calibrate it.
+
+### B3 result (finished 2026-10-07)
+
+B3 failed. On the 30 evaluation worlds it scores **5.60** achievements
+(lifespan 282) against B2's 7.60, and below the unmasked honest-map run (5.87).
+It makes the table 70% of the time, the wood pickaxe 10% and collects stone 3%.
+The labels were the cause:
+- **They fed back on themselves.** The label came from the world model's
+  latent predictions, while the head's loss also trained that world model. It
+  learned to pull "real action" and "NOOP" apart: evidence climbed to 13.8
+  nats, and 87% of the "did something" labels disagreed with the rules.
+- **They weren't grounded.** "Did something" meant "the latent moved", not
+  "the screen changed".
+
+### The fix: detached, observation-grounded labels
+
+- `valid.detach True`: the head's loss no longer reaches the world model.
+- `valid.label obs`: decode the one-step prior under the real action and under
+  NOOP, and score both against the observation that really came next. The
+  label is 1 if the real action explains it better by more than
+  `valid.margin` nats. Decoding uses the argmax stoch, so sampling noise does
+  not differ between the two.
+- The margin is **absolute**, in nats. A first version used the relative
+  error `(e_ref - e_real) / (e_ref + e_real)`, and its labels came out at
+  chance (precision 2%). A real effect, such as one new tile plus one item, is
+  a few nats inside ~100 nats of total reconstruction error.
+
+**Calibration.** The run loads B2's trained world model with a fresh head and
+optimizer and trains for 45k env steps. `valid.rule_mix 0.8` masks that share
+of acting steps by the rules, purely so batches hold both valid and invalid
+special actions; it is never set in a comparison run. Logged per margin are
+TPR (valid special actions labelled "did something") and FPR (invalid ones
+labelled so):
+
+| margin (nats) | 0.1 | 0.2 | 0.5 | 1.0 | 2.0 |
+|---|---|---|---|---|---|
+| TPR | 0.81–0.86 | 0.74–0.81 | 0.45–0.52 | 0.07–0.13 | 0.00 |
+| FPR | 0.20–0.26 | 0.12–0.16 | 0.03–0.04 | 0.01 | 0.00 |
+
+- The evidence ranks valid above invalid with AUC 0.83–0.88. The old latent
+  label, even with detach, reached 0.65.
+- Mean evidence is 0.44–0.50 nats for valid actions and about 0 for invalid
+  ones.
+- The head learns P(label | state, action), and the mask blocks an action when
+  that probability is under `valid.threshold`. So the threshold must fall
+  between FPR and TPR at the chosen margin. At margin 0.5 that is about 0.04
+  against 0.5, so **margin 0.5 with threshold 0.15** leaves roughly 3.5× on
+  each side. At B3's 1-nat margin, valid actions would sit near 0.1 and B3's
+  0.02 threshold barely clears the false positives.
+
+Caveat: this margin and threshold were picked with the rules as a measuring
+stick. That is two scalars chosen offline; the rules never enter training or
+acting. B2's world model had never seen an invalid action, so the AUC was
+measured while it learned them. A run trained from scratch sees invalid
+actions from the start, during the 50k-update warm-up.
+
+Rerun as B3-fix:
+`--agent.valid.learned True --agent.valid.detach True --agent.valid.label obs
+--agent.valid.margin 0.5 --agent.valid.threshold 0.15`.

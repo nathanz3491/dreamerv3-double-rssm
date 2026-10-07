@@ -65,6 +65,7 @@ defaults:
     eval_eps: 1
     report_batches: 1
     from_checkpoint: ''
+    from_checkpoint_regex: ''
     episode_timeout: 180
     actor_addr: 'localhost:{auto}'
     replay_addr: 'localhost:{auto}'
@@ -122,7 +123,14 @@ defaults:
     # exempt_basic False (v2) learns the mask for NOOP, moves and DO too;
     # reference random (v2) compares each action with a random other action
     # instead of assuming action 0 is NOOP.
-    valid: {input: False, mask: False, threshold: 0.1, learned: False, explore: 0.01, evidence: 1.0, warmup: 50000, exempt_basic: True, reference: noop}
+    # detach True stops the mask head's loss reaching the world model; label obs
+    # judges "did something" by decoded observations against what really came
+    # next, with a margin in nats of reconstruction error -- the fix for B3
+    # (latent labels with the head's gradient in the world model fed back on
+    # themselves).
+    # rule_mix is for label calibration only: that fraction of acting steps is
+    # masked by the rules so the check sees valid and invalid special actions.
+    valid: {input: False, mask: False, threshold: 0.1, learned: False, explore: 0.01, evidence: 1.0, warmup: 50000, exempt_basic: True, reference: noop, detach: False, label: latent, margin: 0.5, rule_mix: 0.0}
     validhead: {layers: 2, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
     # --- two-level agent (docs/design-manager.md; needs env.craftax.goals_obs
     # and the map model). A manager actor-critic picks one of 13 tech-tree goals

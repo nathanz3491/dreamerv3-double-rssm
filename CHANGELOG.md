@@ -5,6 +5,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Learned action mask (B3) labels.** B3 scored 5.60 achievements against
+  B2's 7.60, because its labels came from latent predictions the head's own
+  loss was reshaping (87% disagreed with the rules). There are two new
+  options. `valid.detach` stops the head's gradient reaching the world model.
+  `valid.label obs` labels "did something" when the decoded real-action
+  prediction explains the real next observation better than NOOP's by more
+  than `valid.margin` nats. Calibrated on B2's world model: AUC 0.83-0.88
+  against 0.65 for the latent label; margin 0.5 with threshold 0.15 separates
+  valid actions (TPR ~0.5) from invalid ones (FPR ~0.04). Defaults are
+  unchanged (`label latent`), so old runs reproduce. The metrics
+  `feas/evidence_auc` and `feas/tpr_*`/`fpr_*` are added. The calibration-only
+  option `valid.rule_mix` masks that share of acting steps by the rules, so the
+  check sees both valid and invalid actions.
+- `run.from_checkpoint_regex` was read by the run scripts but missing from
+  `configs.yaml`, so `--run.from_checkpoint` crashed.
+
 ### Changed
 - **Honest RSSM-2 targets are now built from the observation vector and the
   agent's own actions only** (`craftax_map.ObservedTargets`); the env's honest

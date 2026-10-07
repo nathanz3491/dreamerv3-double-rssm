@@ -209,6 +209,20 @@ class Agent(embodied.jax.Agent):
     self._exempt_basic = bool(config.valid.exempt_basic)
     self._valid_reference = str(config.valid.reference)
     assert self._valid_reference in ('noop', 'random'), self._valid_reference
+    # Fix after B3 (docs/entropy-and-action-suppression.md). B3's labels came
+    # from the world model's own latent predictions while the head's loss
+    # trained that same world model: it learned to pull the two predictions
+    # apart, evidence climbed to 13.8 nats, 87% of "did something" labels were
+    # wrong, and the run fell ~2 achievements below B2.
+    #   detach  the head's loss no longer reaches the world model
+    #   label   obs: compare DECODED observations, grounded in what really
+    #           came next -- the action did something if the real next
+    #           observation is explained clearly better after it than after
+    #           the reference action: err_ref - err_real > margin nats.
+    self._valid_detach = bool(config.valid.detach)
+    self._valid_label = str(config.valid.label)
+    assert self._valid_label in ('latent', 'obs'), self._valid_label
+    self._valid_margin = float(config.valid.margin)
     #   warmup   an untrained world model judges almost nothing as having an
     #            effect (0.2-0.5% positive labels in the first few thousand
     #            steps). Masking on those labels would teach the head that
@@ -222,6 +236,7 @@ class Agent(embodied.jax.Agent):
       self._valid_explore = float(config.valid.explore)
       self._valid_evidence = float(config.valid.evidence)
       self._valid_warmup = int(config.valid.warmup)
+      self._valid_rule_mix = float(config.valid.rule_mix)
       self.feasclock = Counter(name='feasclock')
 
     scalar = elements.Space(np.float32, ())
@@ -566,7 +581,14 @@ class Agent(embodied.jax.Agent):
     if self._valid_learned:
       allowed = self._dream_valid(self.feat2tensor(feat), 1)
       explore = jax.random.uniform(nj.seed(), (allowed.shape[0], 1))
-      policy = self._masked(policy, allowed | (explore < self._valid_explore))
+      allowed = allowed | (explore < self._valid_explore)
+      if self._valid_rule_mix:
+        # Label calibration only (never in a comparison run): some steps act
+        # behind the rules, so batches hold valid AND invalid special actions.
+        mix = jax.random.uniform(nj.seed(), (allowed.shape[0], 1))
+        allowed = jnp.where(mix < self._valid_rule_mix, obs['valid'] > 0.5,
+                            allowed)
+      policy = self._masked(policy, allowed)
     elif self._valid_mask:
       policy = self._masked(policy, obs['valid'] > 0.5)
     act = sample(policy)
@@ -630,7 +652,7 @@ class Agent(embodied.jax.Agent):
     logits = policy['action'].logits + jnp.where(allowed, 0.0, -1e4)
     return {**policy, 'action': jouts.Categorical(logits)}
 
-  def _feas_learned(self, inp, repfeat, prevact, reset, rules, training):
+  def _feas_learned(self, inp, repfeat, prevact, reset, obs, training):
     """B3: train the effect head on the world model's own counterfactual.
 
     The action taken at step t-1 (prevact[:, t]) moved the agent from the
@@ -654,11 +676,29 @@ class Agent(embodied.jax.Agent):
       ref = jnp.zeros_like(act)
     _, (noop, _) = self.dyn.imagine(state, {'action': ref}, 1,
                                     training, single=True)
-    dist = self.dyn._dist
-    post = dist(sg(flat(repfeat['logit'][:, 1:])))
-    evidence = sg(f32(post.kl(dist(sg(noop['logit'])))
-                      - post.kl(dist(sg(real['logit'])))))
-    label = f32(evidence > self._valid_evidence).reshape((B, T - 1))
+    rules = obs.get('valid')
+    if self._valid_label == 'obs':
+      def err(feat):
+        # Decode the prior's most likely state, so sampling noise does not
+        # differ between the two predictions being compared.
+        logit = sg(f32(feat['logit']))
+        stoch = jax.nn.one_hot(jnp.argmax(logit, -1), logit.shape[-1])
+        fd = {'deter': sg(feat['deter']).reshape((B, T - 1, -1)),
+              'stoch': nn.cast(stoch).reshape((B, T - 1, *stoch.shape[1:]))}
+        _, _, rec = self.dec({}, fd, reset[:, 1:], training)
+        return sum(f32(out.loss(sg(f32(obs[k][:, 1:]))))
+                   for k, out in rec.items())
+      # Absolute nats, not relative: a real effect (one new tile, one item)
+      # is a few nats inside a ~100-nat reconstruction error, so a relative
+      # margin almost never fired and labels came out at chance.
+      evidence = (sg(err(noop)) - sg(err(real))).reshape(-1)
+      label = f32(evidence > self._valid_margin).reshape((B, T - 1))
+    else:
+      dist = self.dyn._dist
+      post = dist(sg(flat(repfeat['logit'][:, 1:])))
+      evidence = sg(f32(post.kl(dist(sg(noop['logit'])))
+                        - post.kl(dist(sg(real['logit'])))))
+      label = f32(evidence > self._valid_evidence).reshape((B, T - 1))
     act = act.reshape((B, T - 1))
     # Only real transitions (not across an episode start) and actions that
     # can differ from NOOP at all.
@@ -682,6 +722,23 @@ class Agent(embodied.jax.Agent):
       tp = (label * truth * special).sum()
       mets['feas/label_precision'] = tp / jnp.maximum((label * special).sum(), 1)
       mets['feas/label_recall'] = tp / jnp.maximum((truth * special).sum(), 1)
+      # Threshold-free: how well the evidence ranks rule-valid special
+      # actions above invalid ones (0.5 = chance), and its mean on each side.
+      ev = evidence.reshape(-1)
+      pos, neg = (truth * special).reshape(-1), ((1 - truth) * special).reshape(-1)
+      pairs = pos[:, None] * neg[None, :]
+      wins = f32(ev[:, None] > ev[None, :]) * pairs
+      mets['feas/evidence_auc'] = wins.sum() / jnp.maximum(pairs.sum(), 1)
+      mets['feas/evidence_valid'] = (ev * pos).sum() / jnp.maximum(pos.sum(), 1)
+      mets['feas/evidence_invalid'] = (ev * neg).sum() / jnp.maximum(neg.sum(), 1)
+      mets['feas/valid_rate'] = pos.sum() / jnp.maximum(special.sum(), 1)
+      # The mask blocks an action when the head's P(effect) < threshold, so
+      # what matters per margin is how often valid actions get labelled
+      # (must stay well above threshold) and invalid ones (well below).
+      for m in (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 4.0):
+        hit = f32(ev > m)
+        mets[f'feas/tpr_{m:g}'] = (hit * pos).sum() / jnp.maximum(pos.sum(), 1)
+        mets[f'feas/fpr_{m:g}'] = (hit * neg).sum() / jnp.maximum(neg.sum(), 1)
     return loss, mets
 
   def _dream_valid(self, x, bdims):
@@ -1216,7 +1273,8 @@ class Agent(embodied.jax.Agent):
       losses['rewcause'] = rc * sg(weight) * sg(mask)
     if self._valid_learned:
       losses['feas'], mets = self._feas_learned(
-          inp, repfeat, prevact, reset, obs.get('valid'), training)
+          sg(inp) if self._valid_detach else inp, repfeat, prevact, reset,
+          obs, training)
       metrics.update(mets)
     elif self._valid_mask:
       # Named 'feas', not 'valid': with valid.input the decoder already owns
