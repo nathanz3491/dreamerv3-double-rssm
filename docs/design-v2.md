@@ -1,7 +1,7 @@
 # v2: the two-level agent with almost no game knowledge
 
-**Status:** built and debug-tested (small model, 3.5k steps, both modes
-below). Not queued. Diagram: [`architecture-v2.svg`](architecture-v2.svg).
+**Status:** training since 2026-10-07 (`~/logdir/v2`, 1.1M steps) after a
+CPU smoke test of this exact configuration. Diagram: [`architecture-v2.svg`](architecture-v2.svg).
 
 ## Why
 

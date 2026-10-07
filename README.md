@@ -195,7 +195,7 @@ instead of reading it from the game's rules (`--agent.valid.learned True`). It
 scored 5.60, below B2's 7.60, because its labels fed back on themselves. B3-fix
 detaches the mask head and labels from decoded observations:
 `--agent.valid.detach True --agent.valid.label obs --agent.valid.margin 0.5
---agent.valid.threshold 0.15`. It is training now. By 254k steps it blocked
+--agent.valid.threshold 0.15`. It was stopped at 298k steps: by 254k it blocked
 over half of the valid crafting actions, those whose effect the world model
 had not learned yet, so the learned mask is set aside. Details are in
 [`docs/entropy-and-action-suppression.md`](docs/entropy-and-action-suppression.md).
@@ -203,7 +203,7 @@ had not learned yet, so the learned mask is set aside. Details are in
 v2 ([`docs/design-v2.md`](docs/design-v2.md)) is the two-level agent with
 learned goals, curiosity instead of reward potentials, and RSSM-2 as a memory.
 It keeps B2's rule-based action mask, the only game knowledge left. It is
-built, not queued.
+training (from 2026-10-07).
 
 
 The map model helps, and the tech-tree gate has opened for the first time:
