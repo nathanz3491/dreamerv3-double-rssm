@@ -58,6 +58,23 @@ head, `explore`, normalised separately:
 - the bottom actor learns from game + 0.5 × goal + 0.2 × explore;
 - the manager's goal values are game + 0.2 × explore.
 
+**Curiosity was nearly off in the first v2 run.** Each stream's return is
+divided by its spread (95th minus 5th percentile), but never by less than 1.
+That floor suits the sparse game reward. Curiosity returns span only ~0.02, so
+they were never scaled up. At 313k steps the actor's normalised advantages
+were game 0.017, goal 0.028 and explore 0.0027. After the weights, curiosity
+was ~2% of the signal. The manager added the raw explore value, which was
+just as faint.
+
+**v2-cur** (queued after v2; the curiosity changes only):
+`--agent.curiosity.normalize True --agent.curiosity.weight 0.1
+--agent.curiosity.mgr_weight 0.1`.
+- The explore stream gets its own floor (`retlimit`, 1e-3), so it is divided
+  by its real spread.
+- The manager's explore value is put in the same units.
+- The weight drops to 0.1: at 0.2, curiosity would push about as hard as game
+  and goal together; at 0.1 it is about a fifth of the signal.
+
 ### RSSM-2 memory
 - **Input per 8-step tick:** RSSM-1's mean latent, plus the 43-way action
   one-hots summed over the window (raw actions), plus the step count.

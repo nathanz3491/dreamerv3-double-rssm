@@ -5,6 +5,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`curiosity.normalize` / `curiosity.retlimit`** turn curiosity on
+  properly. In v2's first run the explore stream shared the game's return
+  floor of 1. Its returns span only ~0.02, so they were never rescaled, and
+  curiosity carried ~2% of the actor's signal. The manager's explore value was
+  just as faint. With `normalize True` the stream is divided by its own spread
+  (floor `retlimit`, 1e-3), and the manager's explore value is put in the same
+  units. v2-cur (weights 0.1/0.1) is queued after v2. The default (`False`)
+  reproduces v2.
+
 ### Changed
 - **v2 keeps B2's rule-based action mask** (`valid.mask True`, env
   `valid_obs True`) instead of the learned one. B3 scored 5.60 against B2's

@@ -351,7 +351,17 @@ class Agent(embodied.jax.Agent):
           for i in range(int(cc.members))]
       self._curio_weight = float(cc.weight)
       self._curio_mgr = float(cc.mgr_weight)
-      self.eretnorm = embodied.jax.Normalize(**config.retnorm, name='eretnorm')
+      # retlimit: the floor under the explore stream's return spread. The
+      # game's floor of 1 keeps a sparse reward from being blown up into
+      # noise, but curiosity returns span ~0.02, so under that floor they were
+      # never rescaled and curiosity carried ~2% of the actor's signal (v2's
+      # first run). normalize also puts the manager's explore value on the
+      # same footing: in units of its own spread, not raw.
+      self._curio_norm = bool(cc.normalize)
+      eret = dict(config.retnorm)
+      if self._curio_norm:
+        eret['limit'] = float(cc.retlimit)
+      self.eretnorm = embodied.jax.Normalize(**eret, name='eretnorm')
       self.evalnorm = embodied.jax.Normalize(**config.valnorm, name='evalnorm')
       self.eadvnorm = embodied.jax.Normalize(**config.advnorm, name='eadvnorm')
 
@@ -1148,7 +1158,12 @@ class Agent(embodied.jax.Agent):
     if self._curio:
       # v2: the manager also values where a goal leads somewhere new.
       eoff, escale = self.evalnorm.stats()
-      q = q + self._curio_mgr * (f32(heads['explore'].pred()) * escale + eoff)
+      qe = f32(heads['explore'].pred()) * escale + eoff
+      if self._curio_norm:
+        # Divided by rscale below, like the game value: rescale so the
+        # explore part ends up divided by its own spread instead.
+        qe = qe * rscale / self.eretnorm.stats()[1]
+      q = q + self._curio_mgr * qe
     dist = self._mgr_dist(self._mgr_input(base, deter2, flags[:, idx]), 2,
                           reached[:, idx])
     probs = jax.nn.softmax(f32(dist.logits), -1)

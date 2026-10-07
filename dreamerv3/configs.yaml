@@ -163,8 +163,11 @@ defaults:
     manager: {enabled: False, every: 8, goal_reward: 1.0, reach_bonus: 1.0, mgr_bonus: 0.5, reach_threshold: 0.6, actent: 1e-3, critic: separate, hold: 0, goal_weight: 0.5, goals: named, codes: 16, code_dim: 64, code_window: 8, code_reach: 0.3, code_beta: 0.25, code_decay: 0.99}
     # v2 -- curiosity replaces the reward hints: `members` networks predict the
     # next latent; their disagreement is a third reward stream (weight for the
-    # bottom actor, mgr_weight for the manager's goal values).
-    curiosity: {enabled: False, members: 5, layers: 2, units: 512, weight: 0.2, mgr_weight: 0.2}
+    # bottom actor, mgr_weight for the manager's goal values). normalize True
+    # scales the explore stream by its own return spread, floored at retlimit
+    # instead of the game's 1 (False reproduces v2's first run, where
+    # curiosity stayed ~2% of the actor's signal).
+    curiosity: {enabled: False, members: 5, layers: 2, units: 512, weight: 0.2, mgr_weight: 0.2, normalize: False, retlimit: 1e-3}
     memhead: {layers: 2, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in}
     gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}
     # --- two-RSSM map model (design-map-model.md) ---------------------------
