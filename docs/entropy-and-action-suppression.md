@@ -389,3 +389,37 @@ actions from the start, during the 50k-update warm-up.
 Rerun as B3-fix:
 `--agent.valid.learned True --agent.valid.detach True --agent.valid.label obs
 --agent.valid.margin 0.5 --agent.valid.threshold 0.15`.
+
+### B3-fix in training: the mask locks out what it has not learned (2026-10-07)
+
+At 254k steps B3-fix's labels do far fewer false "possible" calls than B3's,
+but the mask blocks too much:
+
+| at 254k steps | B2 (rules) | B3 | B3-fix |
+|---|---|---|---|
+| episode score, last 50 | 5.44 | 3.74 | 3.84 |
+| mask allows rule-valid special actions (recall) | 99.8% | 92.9% | 44.8% |
+| mask allows invalid ones (false positive) | 0.1% | 52.1% | 4.0% |
+
+Recall has been flat at about 45% ever since the mask came on (~110k steps).
+
+Here is how often each action was pressed when the rules said it was
+possible, over the last 40% of the replay:
+
+| action | B2 | B3-fix |
+|---|---|---|
+| PLACE_TABLE | 45% | 1.3% |
+| MAKE_WOOD_PICKAXE | 100% | 0.1% |
+| PLACE_PLANT | 6.2% | 1.3% |
+
+**Why the calibration missed it.** The label asks whether the world model
+predicts that the action changes something. That cannot tell "does nothing"
+apart from "the world model has not learned this effect yet". B2's world model
+already knew what a table placement looks like. A model trained from scratch
+had not learned it when the mask came on. The mask then blocked the action,
+the world model rarely saw it, the label stayed 0, and the block held.
+Tuning the margin cannot fix that.
+
+**Decision:** v2 keeps B2's rule mask. A way out, not built: block an action
+only when a world-model ensemble agrees on its outcome, so that an effect not
+yet learned stays pressable until the model knows it.

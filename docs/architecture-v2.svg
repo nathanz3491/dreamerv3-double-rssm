@@ -36,17 +36,18 @@
 
   <!-- (1) effect head -->
   <rect x="30" y="205" width="270" height="270" rx="10" fill="#e8f1fc" stroke="#2a78d6" stroke-width="2"/>
-  <text x="45" y="230" font-size="14" font-weight="700" fill="#184f95">(1) EFFECT HEAD</text>
-  <text x="45" y="249" font-size="12" font-weight="700" fill="#2a78d6">replaces: hand-written action rules</text>
-  <text x="45" y="276" font-size="13" fill="#1d1d1b"><tspan font-weight="700">In:</tspan> feat (5120)</text>
-  <text x="45" y="298" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Out:</tspan> 43 probabilities —</text>
-  <text x="45" y="316" font-size="13" fill="#1d1d1b">"does action X do anything here?"</text>
-  <text x="45" y="342" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Used for:</tspan> actions under 2% are</text>
-  <text x="45" y="360" font-size="13" fill="#1d1d1b">blocked (1% of steps try anyway)</text>
-  <text x="45" y="386" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Learns from:</tspan> after each real step,</text>
-  <text x="45" y="404" font-size="13" fill="#1d1d1b">did this action explain what</text>
-  <text x="45" y="422" font-size="13" fill="#1d1d1b">happened better than a random</text>
-  <text x="45" y="440" font-size="13" fill="#1d1d1b">other action would have?</text>
+  <text x="45" y="230" font-size="14" font-weight="700" fill="#184f95">(1) ACTION MASK (B2)</text>
+  <text x="45" y="249" font-size="12" font-weight="700" fill="#2a78d6">kept: the game's action rules</text>
+  <text x="45" y="276" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Acting:</tspan> obs['valid'] from the</text>
+  <text x="45" y="294" font-size="13" fill="#1d1d1b">rules (craftax_valid) blocks</text>
+  <text x="45" y="312" font-size="13" fill="#1d1d1b">impossible actions</text>
+  <text x="45" y="338" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Imagining:</tspan> a head on feat</text>
+  <text x="45" y="356" font-size="13" fill="#1d1d1b">(5120) predicts those 43 flags;</text>
+  <text x="45" y="374" font-size="13" fill="#1d1d1b">under 10% is blocked</text>
+  <text x="45" y="400" font-size="13" fill="#1d1d1b">The learned mask (B3, B3-fix)</text>
+  <text x="45" y="418" font-size="13" fill="#1d1d1b">failed: it blocked crafting it</text>
+  <text x="45" y="436" font-size="13" fill="#1d1d1b">had not yet learned the effect of.</text>
+  <text x="45" y="458" font-size="12" font-weight="700" fill="#b4441f">Game knowledge — see footer</text>
 
   <!-- (2) goal network -->
   <rect x="320" y="205" width="270" height="270" rx="10" fill="#e8f7f0" stroke="#1baf7a" stroke-width="2"/>
@@ -105,7 +106,7 @@
   <text x="415" y="612" font-size="13" fill="#1d1d1b"><tspan font-weight="700">In:</tspan> feat + slow state (4) + goal code</text>
   <text x="415" y="630" font-size="13" fill="#1d1d1b">+ steps since the goal was set</text>
   <text x="415" y="656" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Out:</tspan> 43 action probabilities,</text>
-  <text x="415" y="674" font-size="13" fill="#1d1d1b">masked by the effect head (1) → action</text>
+  <text x="415" y="674" font-size="13" fill="#1d1d1b">masked by the action rules (1) → action</text>
   <text x="415" y="700" font-size="13" fill="#1d1d1b"><tspan font-weight="700">Learns from:</tspan> game + 0.5×goal (2) +</text>
   <text x="415" y="718" font-size="13" fill="#1d1d1b">w×curiosity (3)</text>
 
@@ -142,9 +143,9 @@
 
   <!-- footer: what is removed -->
   <rect x="30" y="860" width="1140" height="128" rx="10" fill="#fff" stroke="#e4e3df"/>
-  <text x="45" y="886" font-size="14" font-weight="700" fill="#0b0b0b">Removed from v1.x (game knowledge)</text>
-  <text x="45" y="910" font-size="13" fill="#1d1d1b">• action rules (craftax_valid) → (1)    • 13 hand-picked goals, reached-checks, progress formula → (2)</text>
+  <text x="45" y="886" font-size="14" font-weight="700" fill="#0b0b0b">Removed from v1.x (game knowledge) — except the action rules (1), which v2 keeps</text>
+  <text x="45" y="910" font-size="13" fill="#1d1d1b">• 13 hand-picked goals, reached-checks, progress formula → (2)</text>
   <text x="45" y="932" font-size="13" fill="#1d1d1b">• tech-tree potential + survival potential (reward hints) → (3)    • map labels: block groupings, movement rules, spawn point → (4)</text>
-  <text x="45" y="954" font-size="13" fill="#1d1d1b">• hand-computed movement vectors into RSSM-2 → raw actions (4)    • "actions 0–5 always allowed", "action 0 = NOOP" → (1)</text>
-  <text x="45" y="976" font-size="12" fill="#52514e">What remains: the raw observation, Craftax's reward and generic learning — the same footing as ITC, Simulus and DreamerV3.</text>
+  <text x="45" y="954" font-size="13" fill="#1d1d1b">• hand-computed movement vectors into RSSM-2 → raw actions (4)</text>
+  <text x="45" y="976" font-size="12" fill="#52514e">What remains beyond the raw observation and Craftax's reward: the action rules. ITC, Simulus and DreamerV3 use none, so v2 is not strictly comparable to them.</text>
 </svg>

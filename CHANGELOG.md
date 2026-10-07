@@ -5,6 +5,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **v2 keeps B2's rule-based action mask** (`valid.mask True`, env
+  `valid_obs True`) instead of the learned one. B3 scored 5.60 against B2's
+  7.60. B3-fix, at 254k steps, allowed only 45% of the rule-valid special
+  actions: it pressed PLACE_TABLE in 1.3% of the states where it was possible
+  (B2: 45%) and MAKE_WOOD_PICKAXE in 0.1% (B2: 100%). Its label cannot tell
+  "does nothing" from "the world model has not learned this effect yet", and
+  the mask then starves the world model of exactly those examples. The rules
+  are now v2's only game knowledge. `docs/design-v2.md` and
+  `docs/architecture-v2.svg` are updated.
+
 ### Fixed
 - **Learned action mask (B3) labels.** B3 scored 5.60 achievements against
   B2's 7.60, because its labels came from latent predictions the head's own
