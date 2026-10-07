@@ -39,6 +39,7 @@ RUNS = [
     ('mgr', 'manager v1: B2 + goal manager', '#8a5cd6', 8),
     ('mgr2', 'manager v1.1: + reach bonuses', '#d6336c', 9),
     ('mgr3', 'manager v1.2: + shared two-headed critic', '#e8a33d', 10),
+    ('mgr4', 'manager v1.3: + survival goals & potential', '#0b8f8f', 11),
 ]
 
 plt.rcParams.update({

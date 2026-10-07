@@ -1,7 +1,7 @@
 {
- "subtitle": "13 finished runs, 1.1M env steps each, size50m, one training seed per run. Scored with tools/death_eval.py on the same fixed evaluation worlds. Updated 2026-10-06.",
- "summary": "Every number is the mean episode-final achievement count over the evaluation episodes, and each unlock rate is the share of episodes in which that achievement fired. Every run was scored on the same fixed evaluation worlds; re-scoring two old checkpoints with today's code reproduced them exactly.\nThe two-level agent sets the record. Manager v1.2 -- B2 plus a manager that picks a tech-tree goal and holds it until reached (or 32 steps), with one critic shared by both levels: a game-reward head judges both, a goal-reward head only the bottom actor -- reaches 9.73 achievements, against 8.53 for v1.1, 7.60 for B2 and 7.13 for v1. It is the first run to make the stone pickaxe regularly (23%), and it mines coal (10%), makes both wood tools far more often (wood sword 57%, B2 20%) and places a table in every episode. v1.1 (8.53), which pays both levels when a goal is reached, places the furnace and stone in 67% of episodes and makes a stone sword (23%) and arrows (10%); v1, whose manager never learned to choose, stays below B2.\nExperiment B before it: masking impossible actions (B2) 7.60 against 5.87 for the same model without it; validity flags as an input (B1) 6.90. The non-cheating model (Honest map) matches the privileged control (5.87 vs 5.93).\nEvery map run except the hand-written-rewards one unlocks WAKE_UP (sleep, then wake) in 80-98% of episodes; vanilla never does.\nSurvival is still unsolved and v1.2 dies earliest (221 steps): it does more, and half its deaths are mobs or lava. Thirst is the first meter to run out in about half of every manager run's deaths. In normalized return v1.2 reaches 3.9% of the 226-point maximum (v1.1 3.4%, B2 3.0%), against 7.09% for the best published 1M-step agent (ITC). The masking and the manager's goals use game knowledge at test time, which the published agents do not.",
- "table_note": "eps = evaluation episodes. ach. = mean episode-final achievements; w/o wake = the same minus WAKE_UP. life = mean lifespan in steps. Rates are % of episodes. 'bug' = imag_shift True, which corrupted the policy gradient (fixed 2026-09-20). map_survive was re-evaluated on 2026-09-28 and reproduced its original 2.30. One training seed per run, so the run-to-run spread is unknown. 'Map + potential (fixed)' is the old 5.80 record; 'Control' adds the recipe and death fixes with the privileged map; 'Honest map' has the same fixes with observation-only targets. 'B1' and 'B2' are experiment B on the honest-map configuration: validity flags as an encoder input, and impossible actions masked in training. 'mgr v1' and 'mgr v1.1' are B2 plus the two-level agent (docs/design-manager.md): v1 pays the manager the game reward only; v1.1 also pays both levels when the goal is reached and masks goals that already hold; v1.2 shares one two-headed critic between both levels and holds each goal until reached or 32 steps.",
+ "subtitle": "14 finished runs, 1.1M env steps each, size50m, one training seed per run. Scored with tools/death_eval.py on the same fixed evaluation worlds. Updated 2026-10-07.",
+ "summary": "Every number is the mean episode-final achievement count over the evaluation episodes, and each unlock rate is the share of episodes in which that achievement fired. Every run was scored on the same fixed evaluation worlds; re-scoring two old checkpoints with today's code reproduced them exactly.\nThe two-level agent sets the record. Manager v1.2 -- B2 plus a manager that picks a tech-tree goal and holds it until reached (or 32 steps), with one critic shared by both levels: a game-reward head judges both, a goal-reward head only the bottom actor -- reaches 9.73 achievements, against 8.53 for v1.1, 7.60 for B2 and 7.13 for v1. It is the first run to make the stone pickaxe regularly (23%), and it mines coal (10%), makes both wood tools far more often (wood sword 57%, B2 20%) and places a table in every episode. v1.1 (8.53), which pays both levels when a goal is reached, places the furnace and stone in 67% of episodes and makes a stone sword (23%) and arrows (10%); v1, whose manager never learned to choose, stays below B2. Manager v1.3 adds survival goals (drink, eat) and a survival potential to v1.2: it ties on achievements (9.67) but lives 73 steps longer (294 vs 221), dies to mobs far less (5 of 30 deaths vs 14), drinks more (80%) and reaches the dungeon for the first time (3%) -- while giving up the stone tools; hunger becomes its main killer (16 of 30).\nExperiment B before it: masking impossible actions (B2) 7.60 against 5.87 for the same model without it; validity flags as an input (B1) 6.90. The non-cheating model (Honest map) matches the privileged control (5.87 vs 5.93).\nEvery map run except the hand-written-rewards one unlocks WAKE_UP (sleep, then wake) in 80-98% of episodes; vanilla never does.\nSurvival is still unsolved: hunger now kills v1.3 and thirst kills v1.2. Normalized return, measured with Craftax's unshaped reward over the 30 evaluation episodes (not estimated): 3.91% for both v1.2 and v1.3 (mean return 8.83 of 226), B2 about 3.0%, against 7.09% for the best published 1M-step agent (ITC). The masking and the manager's goals use game knowledge at test time, which the published agents do not; v2, built but not yet run, replaces every piece with a learned one.",
+ "table_note": "eps = evaluation episodes. ach. = mean episode-final achievements; w/o wake = the same minus WAKE_UP. life = mean lifespan in steps. Rates are % of episodes. 'bug' = imag_shift True, which corrupted the policy gradient (fixed 2026-09-20). map_survive was re-evaluated on 2026-09-28 and reproduced its original 2.30. One training seed per run, so the run-to-run spread is unknown. 'Map + potential (fixed)' is the old 5.80 record; 'Control' adds the recipe and death fixes with the privileged map; 'Honest map' has the same fixes with observation-only targets. 'B1' and 'B2' are experiment B on the honest-map configuration: validity flags as an encoder input, and impossible actions masked in training. 'mgr v1' and 'mgr v1.1' are B2 plus the two-level agent (docs/design-manager.md): v1 pays the manager the game reward only; v1.1 also pays both levels when the goal is reached and masks goals that already hold; v1.2 shares one two-headed critic between both levels and holds each goal until reached or 32 steps; v1.3 adds survival goals and a survival potential to v1.2.",
  "spine": [
   "COLLECT_WOOD",
   "PLACE_TABLE",
@@ -123,11 +123,11 @@
   },
   {
    "heading": "4. Survival is still unsolved",
-   "body": "Lifespans stay at or below the random band, except B1 (311, mean pulled up by a few long episodes; median 265). The better runs die earlier: B2 246, v1.2 221 steps, with half of v1.2's deaths to mobs or lava -- the more it does, the more it is exposed -- and thirst first to run out in most of the rest. Manager v1.3 targets this with survival goals and a survival potential."
+   "body": "Lifespans stay near the random band. v1.3's survival goals and potential add 73 steps over v1.2 (294 vs 221) and cut mob and lava deaths from 14 to 5 of 30, but buy no extra score: it trades the stone tools for breadth (furnace and placed stone 83%, first dungeon entries) and starves instead (hunger first in 16 of 30). Eating is the next survival target."
   },
   {
    "heading": "5. What to run next",
-   "body": "Training now: manager v1.3 (v1.2 plus survival goals and a survival potential, aimed at the thirst deaths). Queued: B3 (B2 with the action mask learned instead of transcribed from the rules, so no game rules at test time). Then the best manager version with B3's learned mask, and second seeds of the leaders, since every comparison here is single-seed."
+   "body": "Training now: B3 (B2 with the action mask learned instead of transcribed from the rules). Built and not yet run: v2, the two-level agent with every piece of game knowledge replaced by a learned part (learned mask, a learned goal codebook, curiosity instead of reward hints, RSSM-2 trained as a memory instead of on map labels) -- the version comparable with the published agents. Second seeds of the leaders are still missing; every comparison here is single-seed."
   }
  ],
  "runs": [
@@ -1219,6 +1219,90 @@
    },
    "final": true,
    "wake_up": 0.83
+  },
+  {
+   "id": "mgr4",
+   "label": "Manager v1.3: + survival",
+   "short": "mgr v1.3",
+   "episodes": 30,
+   "achievements": 9.67,
+   "lifespan": 294.5,
+   "causes": {
+    "drink": 9,
+    "food": 16,
+    "mob / lava": 5
+   },
+   "rates": {
+    "COLLECT_WOOD": 1.0,
+    "PLACE_TABLE": 0.97,
+    "EAT_COW": 0.0,
+    "COLLECT_SAPLING": 0.97,
+    "COLLECT_DRINK": 0.8,
+    "MAKE_WOOD_PICKAXE": 0.83,
+    "MAKE_WOOD_SWORD": 0.4,
+    "PLACE_PLANT": 0.97,
+    "DEFEAT_ZOMBIE": 0.13,
+    "COLLECT_STONE": 0.83,
+    "PLACE_STONE": 0.83,
+    "EAT_PLANT": 0.0,
+    "DEFEAT_SKELETON": 0.03,
+    "MAKE_STONE_PICKAXE": 0.0,
+    "MAKE_STONE_SWORD": 0.0,
+    "WAKE_UP": 0.87,
+    "PLACE_FURNACE": 0.83,
+    "COLLECT_COAL": 0.13,
+    "COLLECT_IRON": 0.0,
+    "COLLECT_DIAMOND": 0.0,
+    "MAKE_IRON_PICKAXE": 0.0,
+    "MAKE_IRON_SWORD": 0.0,
+    "MAKE_ARROW": 0.03,
+    "MAKE_TORCH": 0.0,
+    "PLACE_TORCH": 0.0,
+    "COLLECT_SAPPHIRE": 0.0,
+    "COLLECT_RUBY": 0.0,
+    "MAKE_DIAMOND_PICKAXE": 0.0,
+    "MAKE_DIAMOND_SWORD": 0.0,
+    "MAKE_IRON_ARMOUR": 0.0,
+    "MAKE_DIAMOND_ARMOUR": 0.0,
+    "ENTER_GNOMISH_MINES": 0.0,
+    "ENTER_DUNGEON": 0.03,
+    "ENTER_SEWERS": 0.0,
+    "ENTER_VAULT": 0.0,
+    "ENTER_TROLL_MINES": 0.0,
+    "ENTER_FIRE_REALM": 0.0,
+    "ENTER_ICE_REALM": 0.0,
+    "ENTER_GRAVEYARD": 0.0,
+    "DEFEAT_GNOME_WARRIOR": 0.0,
+    "DEFEAT_GNOME_ARCHER": 0.0,
+    "DEFEAT_ORC_SOLIDER": 0.0,
+    "DEFEAT_ORC_MAGE": 0.0,
+    "DEFEAT_LIZARD": 0.0,
+    "DEFEAT_KOBOLD": 0.0,
+    "DEFEAT_KNIGHT": 0.0,
+    "DEFEAT_ARCHER": 0.0,
+    "DEFEAT_TROLL": 0.0,
+    "DEFEAT_DEEP_THING": 0.0,
+    "DEFEAT_PIGMAN": 0.0,
+    "DEFEAT_FIRE_ELEMENTAL": 0.0,
+    "DEFEAT_FROST_TROLL": 0.0,
+    "DEFEAT_ICE_ELEMENTAL": 0.0,
+    "DAMAGE_NECROMANCER": 0.0,
+    "DEFEAT_NECROMANCER": 0.0,
+    "EAT_BAT": 0.0,
+    "EAT_SNAIL": 0.0,
+    "FIND_BOW": 0.0,
+    "FIRE_BOW": 0.0,
+    "LEARN_FIREBALL": 0.0,
+    "CAST_FIREBALL": 0.0,
+    "LEARN_ICEBALL": 0.0,
+    "CAST_ICEBALL": 0.0,
+    "OPEN_CHEST": 0.0,
+    "DRINK_POTION": 0.0,
+    "ENCHANT_SWORD": 0.0,
+    "ENCHANT_ARMOUR": 0.0
+   },
+   "final": true,
+   "wake_up": 0.87
   }
  ]
 }

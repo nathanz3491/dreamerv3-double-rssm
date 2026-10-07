@@ -278,3 +278,26 @@ B2 has almost none.
   poor, the actor's goal reward is noise.
 - The score itself, against B2's curve (same settings except the manager and
   the replay value loss).
+
+## v1.3 result: same score, longer lives
+
+`mgr4`, 1.1M steps, on the same 30 evaluation worlds. Normalized return is
+measured with Craftax's unshaped reward (env `survival none` at evaluation;
+the policy never reads the reward):
+
+| run | achievements | **normalized return** | lifespan | stone pickaxe / sword | furnace | drink | dungeon | deaths: mob-lava / thirst / hunger |
+|---|---|---|---|---|---|---|---|---|
+| v1.2 | 9.73 | **3.91%** | 221 | 23% / 37% | 60% | 57% | 0% | 14 / 14 / 2 |
+| v1.3 | 9.67 | **3.91%** | **294** | 0% / 0% | **83%** | **80%** | **3%** | 5 / 9 / **16** |
+
+- **The survival additions work on lifespan:** +73 steps, and mob and lava
+  deaths fall from 14 to 5 of 30.
+- **They buy no score.** v1.3 trades the stone tools for breadth: more
+  furnaces and placed stone, and the first dungeon entries (worth 3 each).
+- **Hunger replaces thirst** as the main killer (16 of 30). Eating, from cows
+  or plants, is the next survival target.
+- **Both return exactly "points − 0.9":** every evaluation episode ends at 0
+  health, and that health loss costs 0.9 under Craftax's reward. So the
+  earlier estimate (3.9%) was right.
+- **During training,** v1.3 led the manager runs to ~400k steps, trailed v1.2
+  by up to 0.8 achievements between 500k and 800k, and closed to 0.25 by 1M.

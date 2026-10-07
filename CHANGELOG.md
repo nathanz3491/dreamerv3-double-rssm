@@ -87,6 +87,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ingredient lists; both recipes consume wood, stone, coal and iron.
 
 ### Added
+- Manager v1.3 in the comparison report and the training-curve figure, and
+  normalized return now *measured*: each run is evaluated with Craftax's
+  unshaped reward (env `survival none`) over the 30 worlds, instead of being
+  estimated from achievements.
+  - v1.2 and v1.3 both score 3.91% (mean return 8.83).
+  - v1.3 ties v1.2 on achievements (9.67 vs 9.73), lives 73 steps longer,
+    dies to mobs far less (5 vs 14 of 30) and reaches the dungeon (3%), but
+    gives up the stone tools. Hunger becomes its main killer.
 - v2, the two-level agent without game knowledge (`docs/design-v2.md`,
   `docs/architecture-v2.svg`). It is built and debug-tested but not run yet.
   Each piece is a flag, and the defaults keep every earlier run reproducible:
