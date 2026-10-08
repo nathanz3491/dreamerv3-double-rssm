@@ -10,8 +10,19 @@ No development session ran on 2026-07-24 through 2026-07-29 (six consecutive idl
 
 No development session ran today (2026-07-30). Working tree is clean and matches the `417222d` commit — no new commits, no uncommitted changes, and no file modifications anywhere in `mcAI/` (including `craftax/`, still pinned at `c3c2e0d`) since 2026-07-29 05:02.
 
+## Today (2026-10-07, discovered on 2026-10-09 run)
+
+No files changed on 2026-10-08 or 2026-10-09. Self-committed 2026-10-07 work (tree clean at `6b1ddab`):
+
+- **`4d47c70` - manager v1.3 scored** (9.67 vs v1.2's 9.73 achievements; +73 steps alive, fewer mob deaths, hunger now the main killer). Normalized return measured with the unshaped reward: v1.2 and v1.3 both 3.91% (mean return 8.83 of 226).
+- **`f008cd9` - learned action-mask labels fixed** (`valid.detach`, `valid.label obs`, `evidence_auc`/`tpr`/`fpr` metrics, `valid.rule_mix`, missing `run.from_checkpoint_regex` default). B3 had scored 5.60 vs B2's 7.60 because 87% of its labels disagreed with the rules.
+- **`e6d03c6`/`f110445` - B3-fix killed at 298k steps** (allowed 45% of rule-valid special actions; mask starved the world model). v2 keeps B2's rule mask. v2 training.
+- **`6b1ddab` - `curiosity.normalize`** so the explore stream is scaled (was ~2% of actor signal); default reproduces v2, `v2-cur` uses weights 0.1/0.1.
+
+Housekeeping: README/CHANGELOG/docs already updated by the sessions; no drift found.
 ## Tomorrow
 
+- **Check v2 / v2-cur results** (training since 2026-10-07): score with `tools/death_eval.py` vs v1.2 (9.73, 3.91% normalized) on the same 30 worlds. B3-fix is a negative result; the learned mask needs a label that separates 'no effect' from 'not learned yet'.
 - On the GPU box, confirm the achievement schema still matches the installed Craftax build:
   `cd dreamerv3/dreamerv3 && python -c "from craftax_features import validate_against_craftax as v; v(); print('schema OK')"`
 - Run the smoke test of `--configs craftax size50m` (transfer-guard fix should unblock it).
@@ -261,8 +272,19 @@ A full-day session (09:58–17:08) iterated the manager three times, all self-co
 
 All five dreamerv3 commits landed during the day itself (no overnight uncommitted diff this time); `git status` is clean on `fix/spine-recipe-costs`.
 
+## Today (2026-10-07, discovered on 2026-10-09 run)
+
+No files changed on 2026-10-08 or 2026-10-09. Self-committed 2026-10-07 work (tree clean at `6b1ddab`):
+
+- **`4d47c70` - manager v1.3 scored** (9.67 vs v1.2's 9.73 achievements; +73 steps alive, fewer mob deaths, hunger now the main killer). Normalized return measured with the unshaped reward: v1.2 and v1.3 both 3.91% (mean return 8.83 of 226).
+- **`f008cd9` - learned action-mask labels fixed** (`valid.detach`, `valid.label obs`, `evidence_auc`/`tpr`/`fpr` metrics, `valid.rule_mix`, missing `run.from_checkpoint_regex` default). B3 had scored 5.60 vs B2's 7.60 because 87% of its labels disagreed with the rules.
+- **`e6d03c6`/`f110445` - B3-fix killed at 298k steps** (allowed 45% of rule-valid special actions; mask starved the world model). v2 keeps B2's rule mask. v2 training.
+- **`6b1ddab` - `curiosity.normalize`** so the explore stream is scaled (was ~2% of actor signal); default reproduces v2, `v2-cur` uses weights 0.1/0.1.
+
+Housekeeping: README/CHANGELOG/docs already updated by the sessions; no drift found.
 ## Tomorrow
 
+- **Check v2 / v2-cur results** (training since 2026-10-07): score with `tools/death_eval.py` vs v1.2 (9.73, 3.91% normalized) on the same 30 worlds. B3-fix is a negative result; the learned mask needs a label that separates 'no effect' from 'not learned yet'.
 - **Train manager v1.3** (`--env.craftax.survival potential+meters --env.craftax.goals_survival True` on top of v1.2's flags) — success is episodes reaching 4+ tech stages *and* drinking 4+ times, which B2 has almost none of.
 - **Re-sync `../localplay/`'s `dreamerv3/`/`embodied/` subtrees** with today's v1.3 tip (`f463ab2`) — the 2026-10-04 bulk resync landed one commit behind.
 - **Watch the restarted `localplay/b2` (`valid.mask`) run** now that the obs-bound bug is fixed — this is the experiment that originally crashed at ~306k steps on 2026-10-02.
@@ -298,8 +320,19 @@ Two commits made by the session itself after the 05:16 HANDOFF run (tree clean a
 
 Housekeeping: README/CHANGELOG already updated by the session; no further doc drift found.
 
+## Today (2026-10-07, discovered on 2026-10-09 run)
+
+No files changed on 2026-10-08 or 2026-10-09. Self-committed 2026-10-07 work (tree clean at `6b1ddab`):
+
+- **`4d47c70` - manager v1.3 scored** (9.67 vs v1.2's 9.73 achievements; +73 steps alive, fewer mob deaths, hunger now the main killer). Normalized return measured with the unshaped reward: v1.2 and v1.3 both 3.91% (mean return 8.83 of 226).
+- **`f008cd9` - learned action-mask labels fixed** (`valid.detach`, `valid.label obs`, `evidence_auc`/`tpr`/`fpr` metrics, `valid.rule_mix`, missing `run.from_checkpoint_regex` default). B3 had scored 5.60 vs B2's 7.60 because 87% of its labels disagreed with the rules.
+- **`e6d03c6`/`f110445` - B3-fix killed at 298k steps** (allowed 45% of rule-valid special actions; mask starved the world model). v2 keeps B2's rule mask. v2 training.
+- **`6b1ddab` - `curiosity.normalize`** so the explore stream is scaled (was ~2% of actor signal); default reproduces v2, `v2-cur` uses weights 0.1/0.1.
+
+Housekeeping: README/CHANGELOG/docs already updated by the sessions; no drift found.
 ## Tomorrow
 
+- **Check v2 / v2-cur results** (training since 2026-10-07): score with `tools/death_eval.py` vs v1.2 (9.73, 3.91% normalized) on the same 30 worlds. B3-fix is a negative result; the learned mask needs a label that separates 'no effect' from 'not learned yet'.
 - **Train manager v1.2 and v1.3** — both are built and tested but still unscored; v1.3's survival potential + DRINK/EAT goals are the most direct answer yet to the drink-vs-tech tradeoff v1.1 still shows (thirst kills 16/30 episodes).
 - **Train Experiment B3** (`--agent.valid.learned True`) and compare its `feas` head's agreement with the game oracle (`feas/label_precision`, `feas/label_recall`) against B2's hand-transcribed mask — if B3 matches B2, the published-baseline-knowledge caveat on the Status headline can be dropped for the mask (the manager's goal set would still use it).
 - Once a manager version trains with B3's learned mask, re-run `tools/action_suppression.py` against it — Experiment A's frontier-suppression numbers were all measured against the hand-transcribed mask or no mask at all.
