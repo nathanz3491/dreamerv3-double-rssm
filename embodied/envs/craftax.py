@@ -249,6 +249,17 @@ class Craftax(embodied.Env):
         'reset': elements.Space(bool),
     }
 
+  def reseed(self, seed):
+    """Build the next world (and its rollout) from `seed` alone.
+
+    reset and every step draw from one key stream, so without this the world
+    an episode starts in depends on how many steps earlier episodes took --
+    two agents with the same seed would meet different worlds after their
+    first episode. Evaluation reseeds before each episode.
+    """
+    with self._jax.transfer_guard('allow'):
+      self._key = self._jax.random.PRNGKey(int(seed))
+
   def step(self, action):
     if action['reset'] or self._done:
       return self._reset()
@@ -261,6 +272,7 @@ class Craftax(embodied.Env):
           subkey, self._state, act)
       self._done = bool(done)
       reward = float(reward)
+      self.raw_reward = reward           # Craftax's own, before any shaping
       obs = np.asarray(obs, np.float32)
       # Craftax's is_game_over (hence `done`) fires on death, boss-defeat AND
       # timeout, and its `discount` is 0 for all three. For correct value
@@ -308,6 +320,15 @@ class Craftax(embodied.Env):
         int(np.asarray(state.achievements).sum()),
         tuple(int(np.asarray(f).sum()) for f in fields))
 
+  def _potential(self, state):
+    """PHI(s) for the potential shaping modes. Caller holds the guard."""
+    phi = self._P.potential(state, self._ach_names, self._phi_scale)
+    if self._survival == 'potential+meters':
+      # In achievement units already: not divided by phi_scale.
+      phi += self._P.survival_potential(
+          state, self._ach_names, **self._meter_kw)
+    return phi
+
   def _survival_reward(self, state, action, is_terminal):
     """Shaping reward. Caller already holds the transfer guard.
 
@@ -318,11 +339,7 @@ class Craftax(embodied.Env):
     if self._survival == 'none':
       return 0.0
     if self._survival in ('potential', 'potential+meters'):
-      phi = self._P.potential(state, self._ach_names, self._phi_scale)
-      if self._survival == 'potential+meters':
-        # In achievement units already: not divided by phi_scale.
-        phi += self._P.survival_potential(
-            state, self._ach_names, **self._meter_kw)
+      phi = self._potential(state)
       bonus = self._P.shaped(
           self._prev_phi, phi, self._phi_gamma, terminal=is_terminal)
       self._prev_phi = phi
@@ -375,7 +392,15 @@ class Craftax(embodied.Env):
       self._key = key
       obs, self._state = self._reset_fn(subkey)
       obs = np.asarray(obs, np.float32)
+      # PHI of the start state, so the first real step is shaped like every
+      # other: gamma * PHI(s1) - PHI(s0). Leaving it unset paid that step
+      # nothing, which over an episode telescopes to -gamma * PHI(s1) -- a
+      # sum that depends on the first action instead of being a constant.
+      self._prev_phi = (
+          self._potential(self._state)
+          if self._survival in ('potential', 'potential+meters') else None)
     self._done = False
+    self.raw_reward = 0.0
     self._episode += 1
     self._length = 0
     self._reward = 0.0
@@ -384,7 +409,6 @@ class Craftax(embodied.Env):
     self._prev_hostiles = None
     self._prev_sig = None
     self._idle_for = 0
-    self._prev_phi = None          # first step of an episode shapes to zero
     return self._obs(obs, 0.0, self._state, is_first=True)
 
   # --- achievement featurization ---------------------------------------------

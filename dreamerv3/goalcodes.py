@@ -89,23 +89,27 @@ class GoalBook(nj.Module):
 
   def update(self, z, idx, valid):
     """EMA towards the encodings assigned to each code; revive dead codes."""
+    # A batch with no valid change (every window crosses an episode start)
+    # carries no evidence: the book stays exactly as it was.
+    has = valid.sum() > 0
     onehot = jax.nn.one_hot(idx, self.codes) * valid[:, None]
     n = jnp.maximum(valid.sum(), 1.0)
     share = self.decay * self.share.read() + (1 - self.decay) * onehot.sum(0) / n
     total = self.decay * self.total.read() + (1 - self.decay) * (
         onehot.T @ sg(z)) / n
     emb = _unit(total / jnp.maximum(share, 1e-6)[:, None])
-    # Dead codes jump onto a random valid recent change.
-    probs = valid / jnp.maximum(valid.sum(), 1.0)
+    # Dead codes jump onto a random VALID recent change (uniform only as a
+    # placeholder when there is none -- that case is discarded below).
+    probs = jnp.where(has, valid / n, 1.0 / valid.shape[0])
     pick = jax.random.choice(nj.seed(), z.shape[0], (self.codes,), p=probs)
-    dead = share < self.dead
+    dead = (share < self.dead) & has
     fresh = sg(z)[pick]
     emb = jnp.where(dead[:, None], fresh, emb)
     share = jnp.where(dead, 1.0 / self.codes, share)
     total = jnp.where(dead[:, None], fresh / self.codes, total)
-    self.emb.write(emb)
-    self.share.write(share)
-    self.total.write(total)
+    self.emb.write(jnp.where(has, emb, self.emb.read()))
+    self.share.write(jnp.where(has, share, self.share.read()))
+    self.total.write(jnp.where(has, total, self.total.read()))
     return dead.sum()
 
 

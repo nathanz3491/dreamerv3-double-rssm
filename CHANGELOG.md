@@ -28,6 +28,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Tests: `dreamerv3/test_mapmodel_step.py` covers all 43 actions, a reset
     mid-window, the batch path matching the online path, window timing,
     causality under future perturbation, and a resumed chunk.
+- **Audit round 2** (`docs/audit-2026-10-11.md`). Tests in
+  `dreamerv3/test_audit_fixes.py`.
+  - **Fixed evaluation worlds.** Reset and every env step drew from one key
+    stream, so from the second episode on an evaluation world depended on how
+    long the agent's earlier episodes ran. `death_eval.py` now reseeds each
+    episode (`env.reseed(seed + i)`) and prints a world hash that must match
+    across compared runs. Past 30-episode comparisons were therefore paired
+    only on the first world.
+  - The first step of each episode is now shaped: the start-state potential is
+    set at reset (`craftax.py`).
+  - The RSSM-2 movement sum drops the reset step's action, which belongs to
+    the previous episode.
+  - v2: a goal set before the replay window now restarts at the window's
+    first step with a matching step count (`agent.goal_start`). The goal
+    codebook skips batches with no valid change, and revives dead codes only
+    onto valid ones.
+  - `death_eval.py`:
+    - `--greedy` now really takes the argmax action and goal, through the new
+      `policy(mode='greedy')`;
+    - endings are split into death, timeout and cutoff, and only deaths get a
+      cause;
+    - raw Craftax return and shaped return are reported separately, with the
+      normalised return.
+  - `report()` now includes its loss metrics (it ran `mets.update(mets)`).
 
 ### Added
 - **v2, v2-cur and B3 in the comparison report.** On the 30 evaluation worlds:

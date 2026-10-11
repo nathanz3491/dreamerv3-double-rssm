@@ -156,6 +156,11 @@ python -m pytest dreamerv3/test_craftax_map.py -q
 > [`docs/rssm2-step-alignment.md`](docs/rssm2-step-alignment.md). B2, honest
 > map, v1.2 and v2 are being rerun with the fixes. Vanilla DreamerV3 is
 > unaffected.
+>
+> A second audit found that evaluation worlds were only identical across runs
+> for the first episode. Later worlds depended on how long earlier episodes
+> ran. The tool now reseeds every episode, and every run is to be re-scored.
+> All findings are in [`docs/audit-2026-10-11.md`](docs/audit-2026-10-11.md).
 
 **Current best: 9.73 achievements per episode** (manager v1.2: B2 plus a
 manager that picks a tech-tree goal and holds it until reached, with one

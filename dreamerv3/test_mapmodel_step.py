@@ -95,6 +95,15 @@ def test_reset_mid_window_clears_the_old_state_at_once():
   assert float(carry['count'][0, 0]) == 1.0
 
 
+def test_reset_step_drops_the_previous_episodes_last_action():
+  carry = initial(1, count=4.0)
+  feat = jnp.zeros((1, F), f32)
+  carry, _, _ = step(carry, feat, jnp.full((1, M), 9.0), jnp.array([True]))
+  np.testing.assert_array_equal(np.asarray(f32(carry['movesum'])), 0.0)
+  carry, _, _ = step(carry, feat, jnp.ones((1, M), f32), jnp.array([False]))
+  np.testing.assert_array_equal(np.asarray(f32(carry['movesum'])), 1.0)
+
+
 def test_new_episode_does_not_depend_on_the_old_one():
   feats, moves, resets = trajectory(B=2, T=24, resets_at=((0, 0), (1, 0)))
   dirty = initial(2, deter2=np.full((2, D), 5.0), count=6.0)

@@ -220,7 +220,7 @@ def max_potential(scale=1.0):
 
 
 def shaped(prev_phi, phi, gamma, terminal=False):
-  """F = gamma * PHI(s') - PHI(s). Returns 0.0 on the first step of an episode.
+  """F = gamma * PHI(s') - PHI(s); 0.0 if PHI(s) is unknown (None).
 
   Potential-based, so it cannot change the optimal policy -- it only moves
   credit earlier in time. That guarantee (Ng, Harada & Russell 1999) requires

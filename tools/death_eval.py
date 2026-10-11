@@ -16,10 +16,19 @@ Run from the dreamerv3 repo root:
       --agent.mapmodel.enabled True --agent.mapmodel.to_actor True
 Extra flags are passed through to the config exactly as for main.py, so the
 agent is rebuilt with the same architecture the checkpoint was trained with.
+
+Fixed worlds: episode i is built from seed `--seed + i` alone (env.reseed), so
+every agent meets the same 30 worlds however long its earlier episodes ran.
+The printed world hash (of each episode's first observation) must match across
+the runs being compared. Endings are split into deaths, Craftax timeouts and
+the evaluator's own --max-steps cutoff; only deaths get a cause.
 """
+
+MAX_RETURN = 226.0     # Craftax's maximum return: the normalised-return base
 
 import argparse
 import collections
+import hashlib
 import sys
 
 import elements
@@ -52,7 +61,9 @@ def main():
   ap.add_argument('--episodes', type=int, default=30)
   ap.add_argument('--max-steps', type=int, default=1200)
   ap.add_argument('--greedy', action='store_true',
-                  help='eval mode; default is the training policy')
+                  help='argmax action and goal; default samples like training')
+  ap.add_argument('--seed', type=int, default=0,
+                  help='episode i is built from seed + i')
   known, rest = ap.parse_known_args()
 
   config = build(rest + [f'--logdir={known.logdir}'])
@@ -64,9 +75,10 @@ def main():
   cp.agent = agent
   cp.load(keys=['agent'])
 
-  mode = 'eval' if known.greedy else 'train'
+  mode = 'greedy' if known.greedy else 'train'
   carry = agent.init_policy(batch_size=1)
-  rows, causes = [], collections.Counter()
+  rows, causes, endings = [], collections.Counter(), collections.Counter()
+  hashes = []
   try:
     from craftax.craftax.constants import Achievement
     # By index, not iteration order: Craftax's Achievement enum is not
@@ -77,12 +89,16 @@ def main():
     names = None
 
   for ep in range(known.episodes):
+    env.reseed(known.seed + ep)
     obs = env.step({'action': np.zeros((), np.int32), 'reset': np.ones((), bool)})
+    hashes.append(hashlib.sha1(
+        np.ascontiguousarray(obs['vector']).tobytes()).hexdigest()[:10])
     carry = agent.init_policy(batch_size=1)
     first_zero, step = {}, 0
     restores, prev_meters, prev_pos = {}, None, None
     ach_trace = []
-    moved, reward_trace = 0, 0.0
+    moved, reward_trace, raw_trace = 0, 0.0, 0.0
+    ended = 'cutoff'                    # the evaluator's --max-steps, unless
     while step < known.max_steps:
       batched = {k: np.asarray(v)[None] for k, v in obs.items()
                  if not k.startswith('log/')}
@@ -118,7 +134,9 @@ def main():
       moved += int(pos != prev_pos)
       prev_pos = pos
       reward_trace += float(obs['reward'])
+      raw_trace += float(env.raw_reward)
       if bool(obs['is_last']):
+        ended = 'death' if bool(obs['is_terminal']) else 'timeout'
         break
 
     with jax.transfer_guard('allow'):
@@ -130,27 +148,38 @@ def main():
       # Read the bitmap off the state, not obs['ach']: the latter counts unlock
       # EVENTS per step, this is what the agent ended the episode holding.
       unlocked = np.asarray(st.achievements, bool).reshape(-1)
-    if first_zero:
-      cause = min(first_zero, key=first_zero.get)
-      causes[f'{cause} ran out first'] += 1
-    else:
-      causes['no necessity hit zero -> mob damage or fall/lava'] += 1
+    endings[ended] += 1
+    if ended == 'death':                 # only a real death has a cause
+      if first_zero:
+        cause = min(first_zero, key=first_zero.get)
+        causes[f'{cause} ran out first'] += 1
+      else:
+        causes['no necessity hit zero -> mob damage or fall/lava'] += 1
     rows.append(dict(
-        steps=step, health=hp, **terminal,
+        steps=step, health=hp, ended=ended, raw=raw_trace, **terminal,
         ach=int(unlocked.sum()), unlocked=unlocked,
         ach_perstep=float(np.mean(ach_trace)) if ach_trace else 0.0,
         restores=dict(restores), moved=moved, reward=reward_trace,
         zero=dict(first_zero)))
-    print(f'  ep {ep + 1:>3}/{known.episodes}  {step:>4} steps  '
-          f'{rows[-1]["ach"]} ach  hp {hp:.0f}  '
+    print(f'  ep {ep + 1:>3}/{known.episodes}  world {hashes[-1]}  '
+          f'{step:>4} steps  {ended:<7}  {rows[-1]["ach"]} ach  hp {hp:.0f}  '
           f'food {rows[-1]["food"]:.0f} drink {rows[-1]["drink"]:.0f} '
           f'energy {rows[-1]["energy"]:.0f}', flush=True)
 
   L = np.array([r['steps'] for r in rows])
   print(f'\n=== {known.episodes} episodes, {"GREEDY" if known.greedy else "TRAINING"} '
         f'policy from {known.logdir} ===')
+  print(f'worlds     seeds {known.seed}..{known.seed + known.episodes - 1}   '
+        f'hash {hashlib.sha1("".join(hashes).encode()).hexdigest()[:12]}'
+        f'   (must match across compared runs)')
+  print('endings    ' + '   '.join(f'{k} {endings[k]}' for k in (
+      'death', 'timeout', 'cutoff')) + '   (a cutoff lifespan is a lower bound)')
   print(f'lifespan   mean {L.mean():6.1f}   median {np.median(L):6.1f}'
         f'   min {L.min()}   max {L.max()}')
+  raw = np.mean([r['raw'] for r in rows])
+  print(f'return     raw {raw:.2f} = {100 * raw / MAX_RETURN:.2f}% normalised'
+        f'   shaped {np.mean([r["reward"] for r in rows]):.2f}'
+        '   (raw = Craftax reward, no shaping)')
   print(f'achieve    final {np.mean([r["ach"] for r in rows]):.2f}'
         f'   per-step mean {np.mean([r["ach_perstep"] for r in rows]):.2f}'
         f'   (the latter matches epstats/log/achievements/avg)')
@@ -196,7 +225,7 @@ def main():
   print(f'  moved on {np.mean([r["moved"] for r in rows]) / steps:.0%} of steps'
         f'   mean shaped return {np.mean([r["reward"] for r in rows]):.2f}')
 
-  print('\ncause of death:')
+  print(f'\ncause of death ({endings["death"]} deaths):')
   for cause, n in causes.most_common():
     print(f'  {n:>3}  {cause}')
   print('\nreference: neglect ceiling (do nothing) = 333 steps; '

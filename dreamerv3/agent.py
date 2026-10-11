@@ -23,6 +23,17 @@ f32 = jnp.float32
 i32 = jnp.int32
 sg = lambda xs, skip=False: xs if skip else jax.lax.stop_gradient(xs)
 sample = lambda xs: jax.tree.map(lambda x: x.sample(nj.seed()), xs)
+
+
+def goal_start(tpos, gphase):
+  """Where in the replay window the held goal was set, and its step count.
+
+  ``tpos`` (1, K) window positions, ``gphase`` (B, K) steps since the goal was
+  set. A goal set before the window began restarts at position 0 with the
+  count measured from there, so start state and count always agree.
+  """
+  src = jnp.maximum(tpos - gphase, 0)
+  return src, (tpos - src).astype(gphase.dtype)
 prefix = lambda xs, p: {f'{p}/{k}': v for k, v in xs.items()}
 concat = lambda xs, a: jax.tree.map(lambda *x: jnp.concatenate(x, a), *xs)
 isimage = lambda s: s.dtype == np.uint8 and len(s.shape) == 3
@@ -576,6 +587,9 @@ class Agent(embodied.jax.Agent):
     return self.init_policy(batch_size)
 
   def policy(self, carry, obs, mode='train'):
+    # mode is static (traced once per value). 'greedy' takes the most likely
+    # action and goal everywhere the agent acts; every other mode samples.
+    self._greedy = (mode == 'greedy')
     (enc_carry, dyn_carry, dec_carry, map_carry, prevact) = carry
     kw = dict(training=False, single=True)
     reset = obs['is_first']
@@ -608,7 +622,7 @@ class Agent(embodied.jax.Agent):
       policy = self._masked(policy, allowed)
     elif self._valid_mask:
       policy = self._masked(policy, obs['valid'] > 0.5)
-    act = sample(policy)
+    act = jax.tree.map(self._choose, policy)
     out = {}
     out['finite'] = elements.tree.flatdict(jax.tree.map(
         lambda x: jnp.isfinite(x).all(range(1, x.ndim)),
@@ -652,6 +666,12 @@ class Agent(embodied.jax.Agent):
                               count=map_carry['count'])
       out.update(elements.tree.flatdict(entries))
     return carry, act, out
+
+  def _choose(self, dist):
+    """An acting-time draw: the argmax under policy(mode='greedy')."""
+    if getattr(self, '_greedy', False):
+      return dist.pred()
+    return dist.sample(nj.seed())
 
   def _masked(self, policy, valid):
     """Policy with impossible actions removed: zero probability, no gradient.
@@ -828,7 +848,7 @@ class Agent(embodied.jax.Agent):
     hit = hit & (prev['gphase'] > 0)
     decide = reset | hit | (prev['gphase'] >= self._hold)
     x = self._mgr_input(ainp, carry['deter2'], flags)
-    pick = self._mgr_dist(x, 1, flags).sample(nj.seed())
+    pick = self._choose(self._mgr_dist(x, 1, flags))
     phase = jnp.where(decide, 0, prev['gphase'])
     goal = jnp.where(decide, pick, prev['goal'])
     gstart = jnp.where(decide[:, None], feat1, f32(prev['gstart']))
@@ -848,7 +868,7 @@ class Agent(embodied.jax.Agent):
     flags = obs['goalreach'] > 0.5
     reached = (obs['goalphi'] >= 1.0 - 1e-3) & (jnp.arange(self._goals) > 0)
     x = self._mgr_input(ainp, carry['deter2'], flags)
-    pick = self._mgr_dist(x, 1, reached).sample(nj.seed())
+    pick = self._choose(self._mgr_dist(x, 1, reached))
     if self._shared:
       # v1.2: hold the goal until the observation shows it reached, or for
       # `hold` steps; gphase counts steps since it was set.
@@ -1218,7 +1238,9 @@ class Agent(embodied.jax.Agent):
     # tick-1 steps and then fed into the new episode's first update.
     prev = jnp.where(reset[:, None], 0.0, f32(carry['deter2']))
     featsum = f32(carry['featsum']) * keep + f32(feat1)
-    movesum = f32(carry['movesum']) * keep + f32(move)
+    # On a reset step the action is the previous episode's last one: it moved
+    # the old agent, not this one, so it stays out of the new window.
+    movesum = (f32(carry['movesum']) + f32(move)) * keep
     count = f32(carry['count']) * keep + 1.0
     n = f32(carry['n']) * keep + 1.0
     # n < count only in the first window of a resumed chunk (_map_truncate).
@@ -1493,12 +1515,16 @@ class Agent(embodied.jax.Agent):
       goal0 = obs['goal'][:, -K:].reshape((B * K,))
       phase0 = obs['gphase'][:, -K:].reshape((B * K,))
       # Where the latent stood when that goal was set: gphase steps back in
-      # this replay window, or the window's first step if it began earlier.
+      # this replay window. A goal set before the window began is restarted
+      # at the window's first step -- its start state AND its step count, so
+      # the progress, the reached test and the hold limit all measure from
+      # the same state (clamping only the state used to mismatch the count).
       f1 = f32(sg(self.feat2tensor(repfeat)))
       tpos = jnp.arange(T - K, T)[None, :]
-      src = jnp.maximum(tpos - obs['gphase'][:, -K:], 0)
+      src, phase0 = goal_start(tpos, obs['gphase'][:, -K:])
       gstart0 = jnp.take_along_axis(f1, src[..., None], 1).reshape(
           (B * K, -1))
+      phase0 = phase0.reshape((B * K,))
       imgfeat, imgact, goals, phases, grew, hits = self._imagine_learned(
           starts, first, frozen, start2, goal0, phase0, gstart0, H, training)
       flags = jnp.zeros((B * K, H + 1, self._goals), bool)
@@ -1679,7 +1705,7 @@ class Agent(embodied.jax.Agent):
     # Train metrics
     _, (new_carry, entries, outs, mets) = self.loss(
         carry, obs, prevact, training=False)
-    mets.update(mets)
+    metrics.update(mets)
 
     # Grad norms
     if self.config.report_gradnorms:
