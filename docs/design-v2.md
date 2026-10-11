@@ -1,7 +1,7 @@
 # v2: the two-level agent with almost no game knowledge
 
-**Status:** training since 2026-10-07 (`~/logdir/v2`, 1.1M steps) after a
-CPU smoke test of this exact configuration. Diagram: [`architecture-v2.svg`](architecture-v2.svg).
+**Status:** trained (1.1M steps, `~/logdir/v2`) and evaluated; v2-cur too
+(see Results). Diagram: [`architecture-v2.svg`](architecture-v2.svg).
 
 ## Why
 
@@ -122,3 +122,29 @@ movement rules.
 ## Expectation
 Below v1.2 at first, since the goal list and potentials were worth a lot. Success means beating
 vanilla DreamerV3 clearly; reaching ITC's 7.09% is the stretch goal.
+
+## Results (2026-10-10, 30 evaluation worlds, one seed each)
+
+| run | achievements | lifespan | normalized return | stone pickaxe |
+|---|---|---|---|---|
+| vanilla DreamerV3 | 4.44 | 262 | ~2% | 0% |
+| B2 (rule mask) | 7.60 | 246 | ~3.0% | 0% |
+| v1.2 | 9.73 | 221 | 3.91% | 23% |
+| **v2** | **6.90** | 273 | **2.65%** | 0% |
+| **v2-cur** | **7.00** | 255 | **2.70%** | 0% |
+
+Normalized return is the mean unshaped Craftax return divided by 226.
+
+- **v2 clearly beats vanilla,** by about 2.5 achievements, but stays 0.6
+  below B2 and 2.7 below v1.2. The hand-written goals and potentials were
+  worth about that much. The stretch goal (ITC 7.09%) is far off.
+- **Neither v2 run ever makes a stone tool.** Both stop at the wood tier: wood
+  pickaxe 40-43%, stone collected and placed and furnace 23%. v1.2 made the
+  stone pickaxe in 23% of episodes.
+- **Curiosity, once it counts (v2-cur), changes little.** Same score and a
+  slower start (5.05 vs 5.58 at 200-300k steps). The manager reached its goals
+  20% of the time at the end, against 39% for v2.
+- **Memory is used fully.** The actor's gate on RSSM-2 reached ~1.0 in both
+  runs.
+- **Both were still climbing at 1.1M steps** (~+0.3 per 100k), where B2 had
+  flattened.

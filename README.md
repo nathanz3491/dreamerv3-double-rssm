@@ -202,8 +202,12 @@ had not learned yet, so the learned mask is set aside. Details are in
 
 v2 ([`docs/design-v2.md`](docs/design-v2.md)) is the two-level agent with
 learned goals, curiosity instead of reward potentials, and RSSM-2 as a memory.
-It keeps B2's rule-based action mask, the only game knowledge left. It is
-training (from 2026-10-07).
+It keeps B2's rule-based action mask, the only game knowledge left. On the 30
+evaluation worlds it scores **6.90** achievements, and **7.00** for v2-cur
+(curiosity actually switched on). That is about 3 above vanilla, 0.6 below B2
+and 2.7 below v1.2. The real normalized return is 2.65% for v2 and 2.70% for
+v2-cur, against 3.91% for v1.2 and ITC's 7.09%. See
+[`docs/comparison-report.pdf`](docs/comparison-report.pdf).
 
 
 The map model helps, and the tech-tree gate has opened for the first time:

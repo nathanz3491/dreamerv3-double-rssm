@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **v2, v2-cur and B3 in the comparison report.** On the 30 evaluation worlds:
+  - v2 scores 6.90 achievements, a real normalized return of 2.65%.
+  - v2-cur scores 7.00, a normalized return of 2.70%.
+  - B3 scores 5.60.
+  - For comparison: B2 7.60 and v1.2 9.73 (3.91%).
+
+  Neither v2 run makes a stone tool. The training-curve plot adds the three
+  runs and greys out the older context runs. When the summary and the table
+  no longer fit on one page, the report moves the table to its own page.
 - **`curiosity.normalize` / `curiosity.retlimit`** turn curiosity on
   properly. In v2's first run the explore stream shared the game's return
   floor of 1. Its returns span only ~0.02, so they were never rescaled, and

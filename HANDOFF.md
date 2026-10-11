@@ -339,3 +339,24 @@ Housekeeping: README/CHANGELOG/docs already updated by the sessions; no drift fo
 - **Re-sync `../localplay/`'s `dreamerv3`/`embodied` subtrees**, still one commit behind this repo's tip since the 2026-10-04 bulk resync (predates v1.3, B3, and today's v1.1 scoring).
 - Second seeds of the leaders (v1.1, B2, honest map) — every comparison in `docs/eval_results.json` is still single-seed, so the size of any gap, including v1.1's 0.9-achievement lead over B2, is unconfirmed.
 - Carry forward unresolved from earlier entries: the `tomain`→`main` merge/push decision (`fix/spine-recipe-costs` now 18+ commits ahead of `tomain`, unpushed to `origin`); the Stage 0-2 offline-validation gate for the map model, still unconfirmed as ever having run; the rewcause/iron-pickaxe holdout probe (untouched since July); deciding whether `imag_length=50` has an actual ceiling between 30 and 50.
+
+---
+
+## Yesterday (state before this session)
+
+Tree clean at `1da09fc`; v2 and v2-cur had been training since 2026-10-07 and `B3-fix` was stopped. Open: v2's evaluation score, B3's learned-mask result, and the carry-forward merge/validation decisions below.
+
+## Today (2026-10-10, discovered on 2026-10-11 run)
+
+No files changed on 2026-10-11. A morning session on 2026-10-10 (09:47-09:49) left this diff uncommitted; committed in this run:
+
+- **v2, v2-cur and B3 scored on the 30 evaluation worlds** (`docs/eval_results.json`): v2 6.90 achievements (2.65% normalized return), v2-cur 7.00 (2.70%), B3 5.60. For reference: vanilla 4.44, B2 7.60, v1.2 9.73 (3.91%). Neither v2 run ever makes a stone pickaxe (both stop at wood tier); v2 beats vanilla by ~2.5 but trails B2 by 0.6 and v1.2 by 2.7. Curiosity actually switched on (v2-cur) changes little and starts slower. The actor's RSSM-2 gate reaches ~1.0 in both (memory fully used). Both were still climbing at 1.1M steps (~+0.3 per 100k).
+- `docs/design-v2.md` gained a Results section and its status line now reads trained/evaluated; `README.md` v2 paragraph updated with the scores; `CHANGELOG.md` has the new entry.
+- `docs/curves/expB3.json` added; `tools/plot_training_curves.py` plots B3, v2 and v2-cur and greys out older context runs; `tools/make_comparison_report.py` moves the table to its own page when summary + table overflow one page; `docs/comparison-report.pdf` and `docs/training-curves.{png,pdf}` regenerated.
+
+## Tomorrow
+
+- v2 and v2-cur plateau at the wood tier, so the blocker is stone-tool crafting. Re-run `tools/action_suppression.py` on the v2 checkpoint to see whether the frontier keys are suppressed (as found for B2 on 2026-10-01).
+- Since both were still climbing at 1.1M steps, consider continuing v2 training rather than restarting.
+- Second seeds of the leaders (v1.1, B2, honest map, now v2) — all comparisons are single-seed.
+- Carry forward unchanged: `tomain`→`main` merge/push decision (`fix/spine-recipe-costs` many commits ahead, unpushed), the Stage 0-2 offline-validation gate, the rewcause iron-pickaxe probe, the `imag_length` 30-50 ceiling, and re-syncing `../localplay/`.

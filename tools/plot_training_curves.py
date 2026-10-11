@@ -32,14 +32,17 @@ RUNS = [
     ('map_noshift', 'map model (fixed)', None, 1),
     ('priv_map', 'control: privileged map + fixes', None, 1),
     ('vanilla', 'vanilla DreamerV3', '#52514e', 3),
-    ('map_pot_fixed', 'map + potential (old record)', '#e87ba4', 4),
-    ('honest_map', 'honest map', '#eb6834', 5),
-    ('expB_input', 'B1: validity flags as input', '#1baf7a', 6),
+    ('map_pot_fixed', 'map + potential (old record)', None, 1),
+    ('honest_map', 'honest map', None, 1),
+    ('expB_input', 'B1: validity flags as input', None, 1),
     ('expB_mask', 'B2: impossible actions masked', '#2a78d6', 7),
-    ('mgr', 'manager v1: B2 + goal manager', '#8a5cd6', 8),
+    ('mgr', 'manager v1: B2 + goal manager', None, 1),
     ('mgr2', 'manager v1.1: + reach bonuses', '#d6336c', 9),
     ('mgr3', 'manager v1.2: + shared two-headed critic', '#e8a33d', 10),
     ('mgr4', 'manager v1.3: + survival goals & potential', '#0b8f8f', 11),
+    ('expB3', 'B3: learned action mask', None, 2),
+    ('v2', 'v2: learned goals, memory, rule mask', '#7a5230', 12),
+    ('v2cur', 'v2-cur: v2 + curiosity on', '#6d9b1e', 13),
 ]
 
 plt.rcParams.update({

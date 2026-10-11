@@ -86,6 +86,13 @@ def main():
     # Height follows the row count, so the note below never collides with a
     # table that has grown by a run.
     th = 0.0235 * (len(rows) + 1)
+    if y - 0.05 - th < 0.12:
+      # The summary and the table no longer fit on one page: the table and
+      # its note move to a page of their own.
+      pdf.savefig(fig)
+      plt.close(fig)
+      fig = page(pdf, 'Every run, side by side', data['subtitle'])
+      y = 0.90
     ax = fig.add_axes([0.07, y - 0.02 - th, 0.86, th])
     ax.axis('off')
     tab = ax.table(cellText=rows, colLabels=cols, loc='upper left',
