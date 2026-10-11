@@ -5,6 +5,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **RSSM-2: training no longer sees what acting cannot, and episodes no
+  longer leak** (found in an outside code review; details in
+  `docs/rssm2-step-alignment.md`). Every run with RSSM-2 so far (honest map,
+  B1, B2, B3, v1.x, v2) predates these fixes.
+  - `mapmodel.action_deltas` clipped the action to 0..4, so DO, SLEEP and every
+    crafting action (5-42) counted as a step DOWN in RSSM-2's movement input
+    (map mode only; v2's memory mode uses raw one-hots).
+  - On an episode reset mid-window, the acting step kept the old episode's
+    RSSM-2 state until the window closed, then fed it into the new episode's
+    first update. It is now cleared at once.
+  - The batch path pooled fixed 8-step windows and gave every step its own
+    window's result, so imagination starts and the manager saw up to 7 steps
+    of their future. Acting saw only the last closed window, which could be up
+    to 7 steps stale. Windows also followed the replay chunk rather than the
+    episode start, and a reset inside a window was missed.
+
+    Training now scans the acting step (`Agent._map_step`) over the batch, so
+    both paths read identical states. Windows count from the episode start;
+    the replay context stores the window step (`map/count`).
+  - Tests: `dreamerv3/test_mapmodel_step.py` covers all 43 actions, a reset
+    mid-window, the batch path matching the online path, window timing,
+    causality under future perturbation, and a resumed chunk.
+
 ### Added
 - **v2, v2-cur and B3 in the comparison report.** On the 30 evaluation worlds:
   - v2 scores 6.90 achievements, a real normalized return of 2.65%.

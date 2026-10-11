@@ -19,7 +19,6 @@ Gradient isolation is enforced by callers, not here: ``agent.py`` stop-gradients
 map on the way out (so policy gradients never reach RSSM-2).
 """
 
-import einops
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -59,7 +58,10 @@ class MapModel(nj.Module):
     """
     import elements
     import numpy as np
-    return dict(deter2=elements.Space(np.float32, (self.deter,)))
+    # count: the step within the current window, so a chunk that resumes
+    # mid-window closes its first window on the same step the actor did.
+    return dict(deter2=elements.Space(np.float32, (self.deter,)),
+                count=elements.Space(np.float32, (1,)))
 
   def truncate(self, entries, carry=None):
     return jax.tree.map(lambda x: x[:, -1], entries)
@@ -79,21 +81,14 @@ class MapModel(nj.Module):
     update = jax.nn.sigmoid(update - 1)
     return update * cand + (1 - update) * deter
 
-  def observe(self, carry, ticks, reset):
-    """Roll the map model over T2 ticks.
+  def tick(self, deter2, x):
+    """One window closes: (B, D2), (B, F) -> (B, D2).
 
-    ``ticks``  (B, T2, F)  aggregated RSSM-1 features + movement per window
-    ``reset``  (B, T2)     episode/level boundaries -- the map does not survive
-                           either, since each Craftax level is its own 48x48 map
+    The only recurrence. Acting and training both call it from the same
+    per-step function in agent.py, once per closed window, so the state the
+    actor reads online is exactly the state the batch path trains on.
     """
-    deter = carry['deter2']
-    outs = []
-    for t in range(ticks.shape[1]):
-      deter = nn.mask(deter, ~reset[:, t])
-      deter = self._gru(deter, ticks[:, t])
-      outs.append(deter)
-    deter2 = jnp.stack(outs, 1)
-    return dict(deter2=deter), dict(deter2=deter2), deter2
+    return self._gru(deter2, x)
 
   # --- decoding -------------------------------------------------------------
   def decode(self, deter2):
@@ -123,7 +118,7 @@ class MapModel(nj.Module):
   def loss(self, deter2, map_target, pos_target, weight=None):
     """BCE over OBSERVED cells + cross-entropy over position.
 
-    ``weight`` is (B, T2, C, C) or (B, T2, C, C, P). For terrain planes it is
+    ``weight`` is (B, T, C, C) or (B, T, C, C, P). For terrain planes it is
     the fraction of each coarse cell the agent has actually observed
     (``obs['mapknown']``), so cells it has never seen contribute no gradient.
 
@@ -132,7 +127,7 @@ class MapModel(nj.Module):
     agent had no way to observe teaches Craftax's world generator rather than
     inference, and leaves no held-out set: every cell the model was scored on, it
     had also studied. Prediction of the unseen is preserved instead by HINDSIGHT
-    (``last_in_segment``) -- an early tick is graded against what the agent went
+    (``segment_last``) -- an early tick is graded against what the agent went
     on to discover, so every label is still something it saw with its own eyes.
 
     Normalised by weight mass and rescaled by the cell count rather than summed
@@ -162,60 +157,23 @@ class MapModel(nj.Module):
 
 
 # --- helpers used by agent.py -------------------------------------------------
-def aggregate(feat1, moves, tick):
-  """(B, T, F), (B, T, 2) -> (B, T2, F + 2 + 1) tick inputs, T2 = T // tick.
-
-  Mean-pools RSSM-1 features over each window and sums the movement deltas.
-  ``tick`` must divide ``batch_length`` (8 divides 64) so the reshape is exact.
-  """
-  B, T = feat1.shape[0], feat1.shape[1]
-  assert T % tick == 0, (T, tick)
-  T2 = T // tick
-  feat = einops.reduce(feat1[:, :T2 * tick], 'b (t k) f -> b t f', 'mean', k=tick)
-  move = einops.reduce(moves[:, :T2 * tick], 'b (t k) d -> b t d', 'sum', k=tick)
-  steps = jnp.full((B, T2, 1), tick, f32)
-  return nn.cast(jnp.concatenate([f32(feat), f32(move), steps], -1))
-
-
-def last_of_window(x, tick):
-  """(B, T, ...) -> (B, T2, ...) taking the final entry of each tick window."""
-  T2 = x.shape[1] // tick
-  return x[:, tick - 1: T2 * tick: tick]
-
-
-def any_in_window(x, tick):
-  """(B, T, ...) -> (B, T2, ...): was this true anywhere in the tick window?"""
-  T2 = x.shape[1] // tick
-  return x[:, :T2 * tick].reshape(x.shape[0], T2, tick, *x.shape[2:]).any(2)
-
-
-def last_in_segment(x, starts):
-  """(B, T2, ...) -> each tick carries the value at the LAST tick of its episode.
+def segment_last(x, reset):
+  """(B, T, ...), (B, T) -> each step carries the value at the LAST step of its
+  episode segment within the batch.
 
   This is the hindsight target. The map mosaic only grows within an episode, so
-  the final one holds everything the agent ever saw; grading tick j against it
-  asks the model to predict terrain it has not reached yet, and marks the answer
-  once the agent actually gets there. Every label remains an observation -- just
-  a later one than the tick being graded.
-
-  Without this the target at tick j is the mosaic as of tick j, i.e. exactly what
-  the model has already been shown, which trains a memory rather than a
-  predictor. ``starts`` is (B, T2), True where a new episode begins at that tick;
-  segments never borrow across an episode boundary.
+  the last one holds everything the agent saw; grading step t against it asks
+  the model to predict terrain it has not reached yet, and marks the answer once
+  the agent gets there. Every label remains an observation -- just a later one.
+  ``reset`` is True where a new episode begins; segments never borrow across it.
   """
-  T2 = x.shape[1]
+  T = x.shape[1]
   shape = (-1,) + (1,) * (x.ndim - 2)
-  outs = [None] * T2
-  outs[T2 - 1] = x[:, T2 - 1]
-  for j in range(T2 - 2, -1, -1):
-    outs[j] = jnp.where(starts[:, j + 1].reshape(shape), x[:, j], outs[j + 1])
+  outs = [None] * T
+  outs[T - 1] = x[:, T - 1]
+  for t in range(T - 2, -1, -1):
+    outs[t] = jnp.where(reset[:, t + 1].reshape(shape), x[:, t], outs[t + 1])
   return jnp.stack(outs, 1)
-
-
-def repeat_ticks(x, tick, T):
-  """(B, T2, ...) -> (B, T, ...): hold each tick's value until the next one."""
-  out = jnp.repeat(x, tick, axis=1)
-  return out[:, :T]
 
 
 def crop_egocentric(map12, cells, size=9):
@@ -274,6 +232,9 @@ def action_deltas(actions):
 
   Used both for RSSM-2's tick input and for dead-reckoning the agent's position
   through imagination, where the map is frozen but the crop must still slide.
+  Only LEFT/RIGHT/UP/DOWN (1-4) move. This once clipped the index to 0..4,
+  which sent DO, SLEEP and every crafting action (5-42) to DOWN.
   """
-  idx = jnp.clip(actions.astype(jnp.int32), 0, 4)
+  a = actions.astype(jnp.int32)
+  idx = jnp.where((a >= 1) & (a <= 4), a, 0)
   return jnp.asarray(_DELTAS)[idx]

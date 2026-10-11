@@ -527,15 +527,21 @@ class Agent(embodied.jax.Agent):
         jax.tree.map(zeros, self.act_space))
 
   def _map_truncate(self, entries, carry):
-    """Resume RSSM-2 from the replay context at a mid-episode chunk boundary."""
+    """Resume RSSM-2 from the replay context at a mid-episode chunk boundary.
+
+    deter2 and the window step (count) come back exactly, so the first window
+    closes on the same step it did while acting. The partial feature and move
+    sums of that window are not stored (5120 floats a step), so _map_step
+    averages the steps it does have and rescales the move sum -- an
+    approximation confined to the first window of each chunk.
+    """
     if not self._use_map:
       return {}
     out = {**carry, 'deter2': nn.cast(entries['deter2'][:, -1])}
-    # The accumulators restart: a chunk boundary falls mid-window and partial
-    # sums are not stored, so at most tick-1 steps of aggregation are lost.
-    for key in ('featsum', 'movesum', 'count'):
-      if key in out:
-        out[key] = jnp.zeros_like(out[key])
+    if 'count' in entries:
+      out['count'] = nn.cast(entries['count'][:, -1])
+    for key in ('featsum', 'movesum', 'n'):
+      out[key] = jnp.zeros_like(out[key])
     return out
 
   def _map_initial(self, batch_size):
@@ -550,7 +556,8 @@ class Agent(embodied.jax.Agent):
     carry['featsum'] = jnp.zeros((batch_size, self._feat1_dim), f32)
     carry['movesum'] = jnp.zeros(
         (batch_size, self._n_act if self._map_memory else 2), f32)
-    carry['count'] = jnp.zeros((batch_size, 1), f32)
+    carry['count'] = jnp.zeros((batch_size, 1), f32)   # step within window
+    carry['n'] = jnp.zeros((batch_size, 1), f32)       # steps summed so far
     if self._use_mgr:
       # The manager's current goal and the step within its segment. They ride
       # in the map carry because the manager ticks with RSSM-2.
@@ -641,7 +648,8 @@ class Agent(embodied.jax.Agent):
     if self.config.replay_context:
       entries = dict(enc=enc_entry, dyn=dyn_entry, dec=dec_entry)
       if self._use_map:
-        entries['map'] = dict(deter2=map_carry['deter2'])
+        entries['map'] = dict(deter2=map_carry['deter2'],
+                              count=map_carry['count'])
       out.update(elements.tree.flatdict(entries))
     return carry, act, out
 
@@ -1191,34 +1199,50 @@ class Agent(embodied.jax.Agent):
       return jax.nn.one_hot(actions, self._n_act)
     return mapmod.action_deltas(actions)
 
-  def _map_act(self, carry, feat, prevact, reset):
-    """One acting step of RSSM-2: accumulate, tick on window close, crop.
+  def _map_step(self, carry, feat1, move, reset):
+    """One env step of RSSM-2, shared by acting and training.
 
-    Branchless on purpose -- the GRU runs every step and its result is discarded
-    until the window closes. A 1024-unit GRU on a single step is far cheaper
-    than a host-side branch in the acting loop.
+    Accumulate this step's features and movement; when the window's `tick`
+    steps are in, run the GRU once. Windows count from the episode start. The
+    state a step sees is the last CLOSED window -- possibly including the step
+    itself, never a later one. Training scans this same function over the
+    batch, so it learns on exactly the states the actor reads online.
+
+    Branchless on purpose: the GRU runs every step and its result is kept only
+    where a window closes. Returns (carry, closed, tick input).
     """
     tick = self._map_tick
-    keep = nn.cast(~reset)[:, None]
-    feat1 = f32(sg(self.feat2tensor(feat)))
-    move = f32(self._map_moves(prevact['action']))
-    featsum = f32(carry['featsum']) * f32(keep) + feat1
-    movesum = f32(carry['movesum']) * f32(keep) + move
-    count = f32(carry['count']) * f32(keep) + 1.0
-
-    inp = nn.cast(jnp.concatenate(
-        [featsum / tick, movesum, jnp.full_like(count, tick)], -1))
-    _, _, deter2 = self.mapmodel.observe(
-        dict(deter2=carry['deter2']), inp[:, None], reset[:, None])
-    closed = (count >= tick)
-    deter2 = nn.cast(jnp.where(closed, f32(deter2[:, 0]), f32(carry['deter2'])))
-    zero = lambda x: jnp.where(closed, jnp.zeros_like(x), x)
-    carry = nn.cast(dict(
+    keep = f32(~reset)[:, None]
+    # A new episode starts from an empty state at once, not when its first
+    # window closes -- otherwise the old episode's state is read for up to
+    # tick-1 steps and then fed into the new episode's first update.
+    prev = jnp.where(reset[:, None], 0.0, f32(carry['deter2']))
+    featsum = f32(carry['featsum']) * keep + f32(feat1)
+    movesum = f32(carry['movesum']) * keep + f32(move)
+    count = f32(carry['count']) * keep + 1.0
+    n = f32(carry['n']) * keep + 1.0
+    # n < count only in the first window of a resumed chunk (_map_truncate).
+    inp = jnp.concatenate(
+        [featsum / n, movesum * (count / n), jnp.full_like(count, tick)], -1)
+    new = f32(self.mapmodel.tick(nn.cast(prev), nn.cast(inp)))
+    closed = count[:, 0] >= tick
+    deter2 = jnp.where(closed[:, None], new, prev)
+    zero = lambda x: jnp.where(closed[:, None], jnp.zeros_like(x), x)
+    # The framework compiles the policy carry in the compute dtype (bf16);
+    # counts up to `tick` are exact there.
+    carry = {**carry, **nn.cast(dict(
         deter2=deter2, featsum=zero(featsum), movesum=zero(movesum),
-        count=zero(count)))
+        count=zero(count), n=zero(n)))}
+    return carry, closed, inp
+
+  def _map_act(self, carry, feat, prevact, reset):
+    """One acting step of RSSM-2, then the actor's view of it."""
+    feat1 = sg(self.feat2tensor(feat))
+    move = self._map_moves(prevact['action'])
+    carry, _, _ = self._map_step(carry, feat1, move, reset)
     if not self._map_to_actor:
       return carry, None
-    mapfeat, _ = self.mapfeat(deter2)
+    mapfeat, _ = self.mapfeat(carry['deter2'])
     return carry, mapfeat[:, 0]
 
   def train(self, carry, data):
@@ -1347,41 +1371,51 @@ class Agent(embodied.jax.Agent):
       # the very gradient competition the two-model split exists to prevent.
       feat1 = sg(self.feat2tensor(repfeat))
       moves = self._map_moves(prevact['action'])
-      ticks = mapmod.aggregate(feat1, moves, tick)
-      treset = mapmod.last_of_window(reset, tick)
-      new_carry, _, deter2 = self.mapmodel.observe(map_carry, ticks, treset)
-      # Keep the acting accumulators alongside deter2 so the carry keeps its
-      # shape across train steps (observe only knows about deter2).
-      map_carry = {**map_carry, **new_carry}
-      # (B, T2, D2) -> (B, T, D2): every step carries the state of the tick it
-      # belongs to, which is what both the actor path and replay_context need.
-      deter2_step = mapmod.repeat_ticks(deter2, tick, T)
-      map_entries = dict(deter2=deter2_step)
+      # The acting step, scanned over the batch: each step carries the state
+      # of the last closed window, exactly as the actor saw it online. (This
+      # used to pool fixed 8-step windows and hand every step its own window's
+      # result, so a step saw up to 7 steps of its future.)
+      keys = ('deter2', 'featsum', 'movesum', 'count', 'n')
+      mc = nn.cast({k: map_carry[k] for k in keys})   # as _map_step returns
+
+      def mapstep(c, xs):
+        c, closed, inp = self._map_step(c, *xs)
+        return c, (c['deter2'], c['count'], closed, inp)
+
+      mc, (deter2_step, count_step, closed, tickin) = nj.scan(
+          mapstep, mc, (feat1, moves, reset), axis=1)
+      map_carry = {**map_carry, **mc}
+      map_entries = dict(deter2=deter2_step, count=count_step)
+      wclose = f32(closed)                                    # (B, T)
+      nclose = jnp.maximum(wclose.sum(), 1.0)
     if self._use_map and self._map_memory:
-      # v2 memory: from RSSM-2's state at tick j, predict RSSM-1's mean latent
-      # over tick j+h (what is coming) and reconstruct the observation at the
-      # end of tick j-h (what was seen), within one episode. No map labels.
-      T2 = deter2.shape[1]
-      featw = f32(ticks[..., :self._feat1_dim])                # (B, T2, F)
-      vecw = f32(mapmod.last_of_window(obs['vector'], tick))  # (B, T2, V)
-      cs = jnp.cumsum(f32(mapmod.any_in_window(reset, tick)), 1)
-      futs, recs = self.memfut(deter2, 2), self.memrec(deter2, 2)
+      # v2 memory: from RSSM-2's state where a window closes, predict RSSM-1's
+      # mean latent over the window h ticks later (what is coming) and
+      # reconstruct the observation at the close h ticks earlier (what was
+      # seen), within one episode. Windows count from the episode start, so
+      # the close h ticks away is exactly h*tick steps away.
+      featw = f32(tickin[..., :self._feat1_dim])              # window means
+      vec = f32(obs['vector'])
+      cs = jnp.cumsum(f32(reset), 1)
+      futs, recs = self.memfut(deter2_step, 2), self.memrec(deter2_step, 2)
       fl, fn, rl, rn = 0.0, 0.0, 0.0, 0.0
       for h in self._mem_ahead:
-        if h >= T2:
+        d = h * tick
+        if d >= T:
           continue
-        ok = f32((cs[:, h:] - cs[:, :-h]) == 0)                # (B, T2-h)
+        ok = wclose[:, :-d] * wclose[:, d:] * f32(cs[:, d:] == cs[:, :-d])
         lh = futs[f'h{h}'].loss(
-            sg(jnp.concatenate([featw[:, h:], featw[:, -h:]], 1)))
-        fl = fl + (lh[:, :-h] * ok).sum()
+            sg(jnp.concatenate([featw[:, d:], featw[:, -d:]], 1)))
+        fl = fl + (lh[:, :-d] * ok).sum()
         fn = fn + ok.sum()
       for h in self._mem_back:
-        if h >= T2:
+        d = h * tick
+        if d >= T:
           continue
-        ok = f32((cs[:, h:] - cs[:, :-h]) == 0)
+        ok = wclose[:, d:] * wclose[:, :-d] * f32(cs[:, d:] == cs[:, :-d])
         lh = recs[f'h{h}'].loss(
-            sg(jnp.concatenate([vecw[:, :h], vecw[:, :-h]], 1)))
-        rl = rl + (lh[:, h:] * ok).sum()
+            sg(jnp.concatenate([vec[:, :d], vec[:, :-d]], 1)))
+        rl = rl + (lh[:, d:] * ok).sum()
         rn = rn + ok.sum()
       fut = fl / jnp.maximum(fn, 1.0)
       rec = rl / jnp.maximum(rn, 1.0)
@@ -1391,47 +1425,47 @@ class Agent(embodied.jax.Agent):
       metrics['memory/recall'] = rec
       metrics['memory/gate'] = self.mapmodel.gate()
     elif self._use_map:
-      mtgt = mapmod.last_of_window(obs['map12'], tick)
-      ptgt = mapmod.last_of_window(obs['mappos'], tick)
+      mtgt, ptgt = obs['map12'], obs['mappos']
       # Cells the agent has not observed weigh zero, so no gradient is ever
       # taken from terrain it could not have seen. Absent only on runs whose
       # env predates the key, which fall back to the old all-cells behaviour.
-      wtgt = (mapmod.last_of_window(obs['mapknown'], tick)
-              if 'mapknown' in obs else None)
+      wtgt = obs['mapknown'] if 'mapknown' in obs else None
       mweight = None
       if wtgt is not None:
         # Only TERRAIN is static, so only terrain may be graded against later
         # evidence, and only terrain is unknown until seen. The mob planes mean
         # "visible right now" and P_SEEN is the agent's own visitation record:
-        # both are facts about tick j, known everywhere (outside the window the
+        # both are facts about step t, known everywhere (outside the window the
         # honest answer is "no mob visible", "not seen"), so they keep the
         # causal target at full weight. Hindsighting them would ask the model
         # where cows will wander and where it will walk; masking P_SEEN would
         # leave it unable to say "I have not seen this cell" -- the one thing
         # the actor needs to tell real terrain from a guess.
-        # Position is not hindsighted either: where the agent stands at tick j
-        # is a fact about tick j.
+        # Position is not hindsighted either: where the agent stands at step t
+        # is a fact about step t.
         P = mtgt.shape[-1]
         terrain = jnp.arange(P) < cmap.P_MOB_PASSIVE          # planes 0..12
         if self.config.mapmodel.hindsight:
-          starts = mapmod.any_in_window(reset, tick)
-          mtgt = jnp.where(terrain, mapmod.last_in_segment(mtgt, starts), mtgt)
-          wtgt = mapmod.last_in_segment(wtgt, starts)
+          mtgt = jnp.where(terrain, mapmod.segment_last(mtgt, reset), mtgt)
+          wtgt = mapmod.segment_last(wtgt, reset)
         mweight = jnp.where(terrain, wtgt[..., None], 1.0)
       mloss, ploss = self.mapmodel.loss(
-          deter2, sg(mtgt), sg(ptgt), None if mweight is None else sg(mweight))
-      # Broadcast (B, T2) back to (B, T) so the shape assert below holds;
-      # divide by tick so repeating does not inflate the loss magnitude.
-      losses['map'] = mapmod.repeat_ticks(mloss, tick, T) / tick
-      losses['mappos'] = mapmod.repeat_ticks(ploss, tick, T) / tick
-      metrics['map/bce'] = mloss.mean()                 # per tick, over all cells
-      metrics['map/bce_cell'] = mloss.mean() / (
+          deter2_step, sg(mtgt), sg(ptgt),
+          None if mweight is None else sg(mweight))
+      # Graded where a window closes -- the state that just took in the
+      # window, against the map as of that step -- about one step in `tick`,
+      # so the mean over (B, T) keeps the old per-tick / tick scale.
+      losses['map'] = mloss * wclose
+      losses['mappos'] = ploss * wclose
+      mean = lambda x: (f32(x) * wclose).sum() / nclose
+      metrics['map/bce'] = mean(mloss)                  # per tick, over all cells
+      metrics['map/bce_cell'] = mean(mloss) / (
           self._map_coarse ** 2 * int(self.config.mapmodel.planes))
-      metrics['map/posce'] = ploss.mean()                # chance = ln(144) = 4.97
+      metrics['map/posce'] = mean(ploss)                # chance = ln(144) = 4.97
       if wtgt is not None:
         metrics['map/observed'] = wtgt.mean()   # share of cells carrying signal
-      metrics['map/posacc'] = (
-          self.mapmodel.decode(deter2)[1].argmax(-1) == ptgt).mean()
+      metrics['map/posacc'] = mean(
+          self.mapmodel.decode(deter2_step)[1].argmax(-1) == ptgt)
       metrics['map/gate'] = self.mapmodel.gate()
 
     B, T = reset.shape

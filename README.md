@@ -149,6 +149,14 @@ python -m pytest dreamerv3/test_craftax_map.py -q
 
 ## Status
 
+> **2026-10-11:** every RSSM-2 result below predates three fixes. Non-movement
+> actions counted as a step down. A new episode inherited the old episode's
+> RSSM-2 state. Training saw up to 7 steps of the future that acting never
+> saw. Details are in
+> [`docs/rssm2-step-alignment.md`](docs/rssm2-step-alignment.md). B2, honest
+> map, v1.2 and v2 are being rerun with the fixes. Vanilla DreamerV3 is
+> unaffected.
+
 **Current best: 9.73 achievements per episode** (manager v1.2: B2 plus a
 manager that picks a tech-tree goal and holds it until reached, with one
 two-headed critic shared by both levels), against 8.53 for v1.1, 7.60 for B2
