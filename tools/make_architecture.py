@@ -136,12 +136,12 @@ def build():
   box(40, 741, 390, 46, 'env', 'is_first · is_last · is_terminal', [])
   label(52, 778, 'timeout is not terminal — value bootstraps through it', 12,
         color=DIM)
-  box(40, 802, 390, 150, 'map', 'RSSM-2 targets — training only, never inputs', [
+  box(40, 802, 390, 150, 'map', 'RSSM-2 targets — from obs vector + own actions', [
       'map12 12×12×16  mosaic of own lit 9×11 windows',
       'mapknown 12×12  share of cell observed → loss weight',
       'mapseen 12×12  visit recency (decay 0.99)',
-      'mappos 0..143  coarse cell (fixed spawn ⇒ dead-reckonable)',
-      'unseen cells: no gradient; scored only by map_eval'],
+      'mappos 0..143  dead-reckoned from the fixed spawn',
+      'never reads game state (ObservedTargets); unseen = 0'],
       fill='#f6fcf8')
   box(40, 967, 390, 62, 'note', 'ablation switch', [
       'env.craftax.map_privileged True → full-map targets (old runs)'])

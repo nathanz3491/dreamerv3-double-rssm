@@ -1,0 +1,177 @@
+[
+ {
+  "run": "expB_mask",
+  "episodes": 507,
+  "funnel": {
+   "COLLECT_WOOD": {
+    "all": 0.9763313609467456,
+    "given_previous": NaN
+   },
+   "PLACE_TABLE": {
+    "all": 0.9092702169625246,
+    "given_previous": 0.9313131313131313
+   },
+   "MAKE_WOOD_PICKAXE": {
+    "all": 0.5641025641025641,
+    "given_previous": 0.6203904555314533
+   },
+   "COLLECT_STONE": {
+    "all": 0.4911242603550296,
+    "given_previous": 0.8706293706293706
+   },
+   "PLACE_FURNACE": {
+    "all": 0.45956607495069035,
+    "given_previous": 0.9357429718875502
+   },
+   "MAKE_STONE_PICKAXE": {
+    "all": 0.03155818540433925,
+    "given_previous": 0.060085836909871244
+   },
+   "COLLECT_IRON": {
+    "all": 0.0019723865877712033,
+    "given_previous": 0.0625
+   },
+   "ENTER_DUNGEON": {
+    "all": 0.01972386587771203
+   }
+  },
+  "stone_pickaxe": {
+   "episodes": 249,
+   "held_both": 0.7349397590361446,
+   "both_at_table": 0.22088353413654618,
+   "made": 0.0642570281124498
+  },
+  "deaths": {
+   "lifespan_mean": 285.05128205128204,
+   "lifespan_median": 275.0,
+   "causes": {
+    "food ran out": 0.24260355029585798,
+    "drink ran out": 0.4516765285996055,
+    "health lost, no meter at zero": 0.3057199211045365
+   },
+   "at_death": {
+    "sleeping": 0.04930966469428008,
+    "lava": 0.03944773175542406,
+    "hostile": 0.6094674556213018,
+    "below surface": 0.01972386587771203
+   }
+  }
+ },
+ {
+  "run": "expB_input",
+  "episodes": 556,
+  "funnel": {
+   "COLLECT_WOOD": {
+    "all": 0.9748201438848921,
+    "given_previous": NaN
+   },
+   "PLACE_TABLE": {
+    "all": 0.8669064748201439,
+    "given_previous": 0.8892988929889298
+   },
+   "MAKE_WOOD_PICKAXE": {
+    "all": 0.420863309352518,
+    "given_previous": 0.4854771784232365
+   },
+   "COLLECT_STONE": {
+    "all": 0.2068345323741007,
+    "given_previous": 0.49145299145299143
+   },
+   "PLACE_FURNACE": {
+    "all": 0.09172661870503597,
+    "given_previous": 0.4434782608695652
+   },
+   "MAKE_STONE_PICKAXE": {
+    "all": 0.0,
+    "given_previous": 0.0
+   },
+   "COLLECT_IRON": {
+    "all": 0.0,
+    "given_previous": NaN
+   },
+   "ENTER_DUNGEON": {
+    "all": 0.0
+   }
+  },
+  "stone_pickaxe": {
+   "episodes": 115,
+   "held_both": 0.782608695652174,
+   "both_at_table": 0.2956521739130435,
+   "made": 0.0
+  },
+  "deaths": {
+   "lifespan_mean": 269.3093525179856,
+   "lifespan_median": 266.0,
+   "causes": {
+    "food ran out": 0.2931654676258993,
+    "health lost, no meter at zero": 0.3273381294964029,
+    "drink ran out": 0.37410071942446044,
+    "energy ran out": 0.00539568345323741
+   },
+   "at_death": {
+    "sleeping": 0.050359712230215826,
+    "lava": 0.0035971223021582736,
+    "hostile": 0.6492805755395683,
+    "below surface": 0.0
+   }
+  }
+ },
+ {
+  "run": "honest_map",
+  "episodes": 547,
+  "funnel": {
+   "COLLECT_WOOD": {
+    "all": 0.9634369287020109,
+    "given_previous": NaN
+   },
+   "PLACE_TABLE": {
+    "all": 0.7751371115173674,
+    "given_previous": 0.8045540796963947
+   },
+   "MAKE_WOOD_PICKAXE": {
+    "all": 0.29981718464351004,
+    "given_previous": 0.3867924528301887
+   },
+   "COLLECT_STONE": {
+    "all": 0.08775137111517367,
+    "given_previous": 0.2926829268292683
+   },
+   "PLACE_FURNACE": {
+    "all": 0.005484460694698354,
+    "given_previous": 0.0625
+   },
+   "MAKE_STONE_PICKAXE": {
+    "all": 0.0,
+    "given_previous": 0.0
+   },
+   "COLLECT_IRON": {
+    "all": 0.0,
+    "given_previous": NaN
+   },
+   "ENTER_DUNGEON": {
+    "all": 0.0
+   }
+  },
+  "stone_pickaxe": {
+   "episodes": 48,
+   "held_both": 0.9375,
+   "both_at_table": 0.3541666666666667,
+   "made": 0.0
+  },
+  "deaths": {
+   "lifespan_mean": 274.44424131627056,
+   "lifespan_median": 266.0,
+   "causes": {
+    "health lost, no meter at zero": 0.3656307129798903,
+    "drink ran out": 0.34186471663619744,
+    "food ran out": 0.29250457038391225
+   },
+   "at_death": {
+    "sleeping": 0.04936014625228519,
+    "lava": 0.0018281535648994515,
+    "hostile": 0.6270566727605119,
+    "below surface": 0.0
+   }
+  }
+ }
+]

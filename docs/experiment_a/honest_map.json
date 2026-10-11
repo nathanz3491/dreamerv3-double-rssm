@@ -1,0 +1,160 @@
+{
+ "logdir": "/home/bygpu/logdir/honest_map",
+ "checkpoint": "/home/bygpu/logdir/honest_map/ckpt/20260929T004558F938623",
+ "steps": 4929,
+ "episodes": 20,
+ "valid_mass": 0.393739253282547,
+ "pressed_with_effect": 0.39095151146277135,
+ "entropy_conditional": 0.09860891054615742,
+ "entropy_marginal": 0.6878865158305817,
+ "mutual_information": 0.5892776052844243,
+ "entropy_within_valid": 0.10549393861094469,
+ "valid_actions_mean": 4.618583891255833,
+ "top_no_effect_presses": {
+  "DO": 0.18604179346723473,
+  "DOWN": 0.05437208358693447,
+  "PLACE_TABLE": 0.04057618178129438,
+  "DRINK_POTION_YELLOW": 0.03854737269222966,
+  "PLACE_PLANT": 0.03773584905660377,
+  "NOOP": 0.03164942178940962,
+  "RIGHT": 0.024954351795496044,
+  "DESCEND": 0.024142828159870157
+ },
+ "situations": {
+  "other": {
+   "share": 0.4700750659362954,
+   "entropy": 0.10664468990684156,
+   "valid_mass": 0.3754676282405853,
+   "pressed_with_effect": 0.37030643072939146
+  },
+  "open ground": {
+   "share": 0.4339622641509434,
+   "entropy": 0.09558883843512307,
+   "valid_mass": 0.3886624276638031,
+   "pressed_with_effect": 0.38803179055633474
+  },
+  "facing tree": {
+   "share": 0.05802393994725096,
+   "entropy": 0.06810396202624294,
+   "valid_mass": 0.41832709312438965,
+   "pressed_with_effect": 0.4160839160839161
+  },
+  "facing water, thirsty": {
+   "share": 0.01927368634611483,
+   "entropy": 0.06710362078380204,
+   "valid_mass": 0.7048584222793579,
+   "pressed_with_effect": 0.7052631578947368
+  },
+  "at table with wood": {
+   "share": 0.017650639074863056,
+   "entropy": 0.09032569236411417,
+   "valid_mass": 0.5120102167129517,
+   "pressed_with_effect": 0.5057471264367817
+  },
+  "facing stone, has pickaxe": {
+   "share": 0.002434570906877663,
+   "entropy": 0.0672209854508307,
+   "valid_mass": 0.8571334481239319,
+   "pressed_with_effect": 0.9166666666666666
+  }
+ },
+ "opportunities": {
+  "MAKE_WOOD_PICKAXE @ table with wood": {
+   "states": 34,
+   "prob": 0.15590447187423706,
+   "median_rank": 39.0,
+   "pressed": 0.14705882352941177
+  },
+  "MAKE_WOOD_SWORD @ table with wood": {
+   "states": 80,
+   "prob": 0.01404155045747757,
+   "median_rank": 38.0,
+   "pressed": 0.0125
+  },
+  "DO @ facing tree": {
+   "states": 274,
+   "prob": 0.3000869154930115,
+   "median_rank": 3.0,
+   "pressed": 0.3102189781021898
+  },
+  "DO @ facing water, thirsty": {
+   "states": 83,
+   "prob": 0.5088614225387573,
+   "median_rank": 1.0,
+   "pressed": 0.46987951807228917
+  },
+  "DO @ facing stone, has pickaxe": {
+   "states": 12,
+   "prob": 0.6742718815803528,
+   "median_rank": 1.0,
+   "pressed": 0.75
+  }
+ },
+ "suppression": {
+  "DO": {
+   "valid_share": 0.19537431527693244,
+   "prob_when_valid": 0.2975476086139679,
+   "prob_when_invalid": 0.23232236504554749
+  },
+  "PLACE_TABLE": {
+   "valid_share": 0.17569486711300467,
+   "prob_when_valid": 0.03510180860757828,
+   "prob_when_invalid": 0.05047571286559105
+  },
+  "MAKE_WOOD_PICKAXE": {
+   "valid_share": 0.006897950902820044,
+   "prob_when_valid": 0.15590447187423706,
+   "prob_when_invalid": 0.006323498208075762
+  },
+  "MAKE_WOOD_SWORD": {
+   "valid_share": 0.016230472712517752,
+   "prob_when_valid": 0.01404155045747757,
+   "prob_when_invalid": 0.013099424540996552
+  },
+  "PLACE_STONE": {
+   "valid_share": 0.026983160884560764,
+   "prob_when_valid": 1.7094782378990203e-05,
+   "prob_when_invalid": 0.002672193804755807
+  },
+  "PLACE_FURNACE": {
+   "valid_share": 0.026983160884560764,
+   "prob_when_valid": 4.631169304047944e-06,
+   "prob_when_invalid": 0.0012587577803060412
+  },
+  "MAKE_STONE_PICKAXE": {
+   "valid_share": 0.003448975451410022,
+   "prob_when_valid": 4.51349769718945e-05,
+   "prob_when_invalid": 0.0069169593043625355
+  },
+  "MAKE_STONE_SWORD": {
+   "valid_share": 0.003448975451410022,
+   "prob_when_valid": 5.8013277737245517e-08,
+   "prob_when_invalid": 0.0012262018863111734
+  },
+  "PLACE_PLANT": {
+   "valid_share": 0.2353418543315074,
+   "prob_when_valid": 0.03265484794974327,
+   "prob_when_invalid": 0.048755720257759094
+  },
+  "SLEEP": {
+   "valid_share": 0.5301278149726111,
+   "prob_when_valid": 0.014925125986337662,
+   "prob_when_invalid": 0.017926786094903946
+  },
+  "DRINK_POTION_GREEN": {
+   "valid_share": 0.0,
+   "prob_when_valid": null,
+   "prob_when_invalid": 0.004816796630620956
+  },
+  "LEVEL_UP_INTELLIGENCE": {
+   "valid_share": 0.0,
+   "prob_when_valid": null,
+   "prob_when_invalid": 9.337234587292187e-06
+  },
+  "MAKE_DIAMOND_ARMOUR": {
+   "valid_share": 0.0,
+   "prob_when_valid": null,
+   "prob_when_invalid": 0.009899217635393143
+  }
+ }
+}

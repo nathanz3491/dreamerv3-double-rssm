@@ -131,6 +131,16 @@ which heads see the map, every stop-gradient — is
 [`.pdf`](docs/architecture.pdf), regenerated with
 `python tools/make_architecture.py`.
 
+**Disk.** A finished 1.1M-step run takes ~1.4 GB: ~0.8 GB of replay and a
+~0.7 GB checkpoint. The latents the agent caches in replay for
+`replay_context` (`dyn/`, `map/`, ...) used to be ~90% of a run's 9.3 GB. They
+barely compress and nothing after training reads them, so
+`replay.save_skip` keeps them in memory but off disk, and a resumed run gets
+zeros back that are refreshed as it trains. To shrink a run that predates
+this: `python tools/strip_replay.py ~/logdir/<run>`. It refuses a run that is
+still training or stopped short of its `run.steps`; after stripping, that run
+can no longer be resumed.
+
 Tests (pure numpy, no GPU):
 
 ```bash
@@ -139,10 +149,85 @@ python -m pytest dreamerv3/test_craftax_map.py -q
 
 ## Status
 
+**Current best: 9.73 achievements per episode** (manager v1.2: B2 plus a
+manager that picks a tech-tree goal and holds it until reached, with one
+two-headed critic shared by both levels), against 8.53 for v1.1, 7.60 for B2
+and 4.44 for vanilla DreamerV3. **Normalized return, measured with Craftax's
+unshaped reward: 3.91%** (mean return 8.83 of 226 over 30 evaluation episodes;
+B2 about 3.0%; best published 1M-step agent, ITC, 7.09%). It is the first run
+to make the stone pickaxe regularly (23% of episodes). Manager v1.3 (v1.2 plus
+survival goals and a survival potential) ties it at 3.91% and lives 73 steps
+longer. The
+masking and the manager's goals use game knowledge at test time, which the
+published agents do not. Every run, compared on the same evaluation worlds with
+each achievement's unlock rate:
+[`docs/comparison-report.pdf`](docs/comparison-report.pdf); all training
+curves: [`docs/training-curves.png`](docs/training-curves.png).
+
+What holds B2 back, measured step by step from its replay and shown in its
+own episodes: [`docs/b2-casebook.pdf`](docs/b2-casebook.pdf)
+(`tools/episode_cases.py` on the box, then `tools/make_casebook.py` from an
+environment with Craftax installed). In short, it spends wood as fast as it
+gets it: it builds a table the moment it holds two logs (2.2 tables per
+episode), and a stone-pickaxe chance lasts one step before its only log goes
+into the wood sword. 41% of episodes never drink.
+
+Next: a two-level agent. A manager picks a tech-tree goal every 8 steps
+from RSSM-2's slow state, and the actor pursues it
+([`docs/design-manager.md`](docs/design-manager.md)). v1 scored 7.5
+achievements/episode against B2's 7.9, with the manager still choosing goals
+uniformly after 900k steps — it was never trained, since most goals can't be
+reached within 8 steps. v1.1-v1.3 (2026-10-04) fixed that in turn: v1.1 pays
+both levels the first time a goal is reached per segment/episode; v1.2 shares
+one two-headed critic between manager and actor so the manager takes the
+exact gradient over all 13 goals instead of a noisy sampled advantage, and
+holds a goal until reached or 32 steps; v1.3 adds a survival potential plus
+DRINK/EAT goals, since B2's episodes either survive (7 drinks, little tech)
+or progress (5 tech stages, ~2 drinks, dead of thirst near step 330) but
+never both. Enable with `--env.craftax.goals_obs True
+--agent.manager.enabled True --agent.manager.critic shared
+--agent.manager.hold 32 --env.craftax.survival potential+meters
+--env.craftax.goals_survival True` on top of the B2 flags. v1.1, v1.2 and v1.3
+are trained and scored above.
+
+Experiment B3 learns the action mask from the world model's own counterfactual
+instead of reading it from the game's rules (`--agent.valid.learned True`). It
+scored 5.60, below B2's 7.60, because its labels fed back on themselves. B3-fix
+detaches the mask head and labels from decoded observations:
+`--agent.valid.detach True --agent.valid.label obs --agent.valid.margin 0.5
+--agent.valid.threshold 0.15`. It was stopped at 298k steps: by 254k it blocked
+over half of the valid crafting actions, those whose effect the world model
+had not learned yet, so the learned mask is set aside. Details are in
+[`docs/entropy-and-action-suppression.md`](docs/entropy-and-action-suppression.md).
+
+v2 ([`docs/design-v2.md`](docs/design-v2.md)) is the two-level agent with
+learned goals, curiosity instead of reward potentials, and RSSM-2 as a memory.
+It keeps B2's rule-based action mask, the only game knowledge left. On the 30
+evaluation worlds it scores **6.90** achievements, and **7.00** for v2-cur
+(curiosity actually switched on). That is about 3 above vanilla, 0.6 below B2
+and 2.7 below v1.2. The real normalized return is 2.65% for v2 and 2.70% for
+v2-cur, against 3.91% for v1.2 and ITC's 7.09%. See
+[`docs/comparison-report.pdf`](docs/comparison-report.pdf).
+
+
 The map model helps, and the tech-tree gate has opened for the first time:
 **map + potential shaping reaches 5.80 achievements/episode at 1.1M steps**,
 against 4.44 for vanilla DreamerV3. Full writeup, every number sourced from
 `tools/death_eval.py`: [`docs/raising-achievements.md`](docs/raising-achievements.md).
+
+**2026-09-28, re-scored against every finished run:** the 5.80 headline needs
+two caveats. The newest run (recipe + death fixes, privileged map) scores
+highest of all (**5.93**) but **never crafts a pickaxe** (0/30 episodes vs.
+9/30 for the 5.80 run) — the total went up while the tech tree got shallower.
+And **every map run's lead over vanilla is `WAKE_UP` (sleep)**: 83-98% unlock
+rate vs. 0% for vanilla; strip it out and the fixed map model scores 4.20
+against vanilla's 4.44. Only the potential shaping adds real tech-tree
+progress on top. Full table and method:
+[`docs/comparison-report.pdf`](docs/comparison-report.pdf) /
+[`docs/eval_results.json`](docs/eval_results.json), from
+`tools/make_comparison_report.py`. The honest (non-privileged) map run was
+still training as of this report (an out-of-memory restart) and isn't in it
+yet.
 
 | metric | value | chance |
 |---|---|---|
@@ -152,6 +237,31 @@ against 4.44 for vanilla DreamerV3. Full writeup, every number sourced from
 `map/gate` — whether the actor is genuinely reading the map rather than
 ignoring a decorative channel — rose monotonically 0.095 → 0.526 over 1.1M
 steps with no reversal.
+
+These map numbers come from the **privileged** runs, trained against the true
+map on every cell, and "chance" is not a fair floor: most planes are nearly
+always empty. Scored with `tools/map_eval.py` against a per-plane prior, that
+model beats the prior on cells it saw but is confidently *worse* than the prior
+on cells it never saw. Current runs train only on what the agent observed
+(`ObservedTargets`); their numbers will replace these.
+
+How to read policy entropy — skill versus suppressed valid actions, the metrics
+that separate them, and the experiments planned:
+[`docs/entropy-and-action-suppression.md`](docs/entropy-and-action-suppression.md).
+
+**2026-10-01:** the honest (non-privileged) map run finished training —
+**5.87 achievements/episode, against the privileged control's 5.93** — and,
+unlike the control, **crafts a pickaxe in 20% of episodes**, ruling out the
+recipe/death fixes as the reason the control never crafts one.
+**Experiment A** (`tools/action_suppression.py`) then answered why directly:
+scored against a game-oracle validity function, every checkpoint spends only
+36–40% of its action probability on actions that do anything, and the
+control pressed a craftable wood pickaxe in 0 of 150 valid states while its
+wood sword got 21.5% — action-support suppression at the exact frontier key,
+not an unreached-state problem. **Experiment B** (`craftax_valid.py`, two
+training arms — feed the validity flags to the encoder, or mask invalid
+actions to zero probability/gradient during training) is built and tested
+but **not yet trained**.
 
 ### Known limitation (fixed; kept for the ablation)
 

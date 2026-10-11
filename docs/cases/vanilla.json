@@ -1,0 +1,128 @@
+{
+ "run": "vanilla",
+ "episodes": 575,
+ "stone_pickaxe": {
+  "chance_steps": 26,
+  "chance_episodes": 8,
+  "pressed_when_possible": 0.038461538461538464,
+  "wood_pickaxe_pressed_when_possible": 0.14691151919866444,
+  "instead": {
+   "DO": 0.23076923076923078,
+   "PLACE_PLANT": 0.15384615384615385,
+   "MAKE_WOOD_PICKAXE": 0.15384615384615385,
+   "RIGHT": 0.11538461538461539,
+   "DOWN": 0.11538461538461539,
+   "LEFT": 0.038461538461538464,
+   "MAKE_STONE_PICKAXE": 0.038461538461538464,
+   "MAKE_WOOD_SWORD": 0.038461538461538464
+  },
+  "stranded_episodes": 10,
+  "stranded_table_in_view": 0.1,
+  "stranded_closest_table": 2.0,
+  "sinks": {
+   "stone": {
+    "MAKE_STONE_PICKAXE": 1.0
+   },
+   "wood": {
+    "PLACE_TABLE": 0.8886597938144329,
+    "MAKE_WOOD_PICKAXE": 0.09072164948453608,
+    "MAKE_WOOD_SWORD": 0.01958762886597938,
+    "MAKE_STONE_PICKAXE": 0.0010309278350515464
+   }
+  },
+  "chances": 11,
+  "chance_length_median": 2.0,
+  "chance_ended": {
+   "walked away": 0.7272727272727273,
+   "made it": 0.09090909090909091,
+   "ingredient spent on MAKE_WOOD_SWORD": 0.09090909090909091,
+   "episode ended": 0.09090909090909091
+  }
+ },
+ "wood_pickaxe": {
+  "tables": {
+   "per_episode": 0.7495652173913043,
+   "episodes_with_two_or_more": 0.16869565217391305,
+   "wood_held_when_placing": {
+    "4": 29,
+    "2": 273,
+    "3": 116,
+    "6": 2,
+    "5": 10,
+    "7": 1
+   },
+   "repeats_with_a_table_in_view": 0.12403100775193798
+  },
+  "episodes": 214,
+  "wood_left_after_table": {
+   "0": 179,
+   "1": 29,
+   "2": 5,
+   "3": 1
+  },
+  "zero_wood_after_table": 0.8364485981308412,
+  "got_wood_again": 0.7149532710280374,
+  "had_a_later_chance": 0.27102803738317754
+ },
+ "survival": {
+  "drinks_per_episode": 1.8904347826086956,
+  "meals_per_episode": 0.05565217391304348,
+  "episodes_never_drinking": 0.4469565217391304,
+  "never_drinking_dry_at_step": 189.0,
+  "never_drinking_lifespan": 240.0,
+  "drinking_lifespan": 284.0,
+  "thirst_episodes": 276,
+  "water_in_view_when_drink_hit_zero": 0.40942028985507245,
+  "water_within_3": 0.2971014492753623,
+  "mob_adjacent_last10": {
+   "moves": 0.3871308016877637,
+   "NOOP": 0.12728551336146274,
+   "DO aimed elsewhere": 0.10618846694796062,
+   "ENCHANT_BOW": 0.06188466947960619,
+   "MAKE_WOOD_SWORD": 0.03375527426160337,
+   "PLACE_PLANT": 0.02707454289732771,
+   "MAKE_WOOD_PICKAXE": 0.026019690576652602,
+   "DRINK_POTION_BLUE": 0.020745428973277073,
+   "ENCHANT_ARMOUR": 0.01969057665260197,
+   "attacks it (DO facing the mob)": 0.017580872011251757,
+   "DRINK_POTION_CYAN": 0.016526019690576654,
+   "DRINK_POTION_GREEN": 0.016526019690576654,
+   "MAKE_STONE_PICKAXE": 0.016526019690576654,
+   "PLACE_TABLE": 0.014064697609001406,
+   "ENCHANT_SWORD": 0.011954992967651195,
+   "MAKE_ARROW": 0.011251758087201125,
+   "CAST_ICEBALL": 0.010548523206751054,
+   "ASCEND": 0.010548523206751054,
+   "LEVEL_UP_STRENGTH": 0.009845288326300985,
+   "MAKE_STONE_SWORD": 0.009845288326300985,
+   "CAST_FIREBALL": 0.008438818565400843,
+   "LEVEL_UP_INTELLIGENCE": 0.007383966244725738,
+   "DRINK_POTION_RED": 0.007383966244725738,
+   "MAKE_TORCH": 0.005977496483825597,
+   "PLACE_TORCH": 0.0031645569620253164,
+   "MAKE_DIAMOND_ARMOUR": 0.0024613220815752463,
+   "REST": 0.0024613220815752463,
+   "LEVEL_UP_DEXTERITY": 0.0024613220815752463,
+   "MAKE_IRON_ARMOUR": 0.0017580872011251757,
+   "PLACE_FURNACE": 0.0017580872011251757,
+   "SHOOT_ARROW": 0.0010548523206751054,
+   "MAKE_DIAMOND_SWORD": 0.0007032348804500703
+  }
+ },
+ "wasted": {
+  "do_target": {
+   "grass": 0.6353124546904452,
+   "plant": 0.12306075105118168,
+   "tree": 0.05792373495722778,
+   "water": 0.056763810352327096,
+   "sand": 0.03990865593736407,
+   "stone": 0.030194287371320863,
+   "path": 0.02504712193707409,
+   "a mob": 0.016166449180803247,
+   "table": 0.009351892127011744,
+   "coal": 0.0023560968537045092
+  },
+  "do_share": 0.1843353690315511,
+  "blocked_streaks_per_1000_steps": 0.10022584223116088
+ }
+}

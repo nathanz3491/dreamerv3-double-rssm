@@ -181,6 +181,39 @@ def potential(state, ach_names=None, scale=1.0):
   return total / scale
 
 
+def survival_potential(state, ach_names, w0=0.75, kappa=1.0, ach_ref=10.0):
+  """PHI_surv(s) = w(s) * (u(food) + u(drink)), in achievement units.
+
+  B2 runs in two modes and never both: episodes that drink live 400+ steps
+  with middling tech; episodes that climb the tech tree drink ~2 times and die
+  of thirst near step 300. Craftax pays for the first drink only and death
+  lands ~200 steps after the last one -- far past the 15-step imagination --
+  so thirst never cost anything the agent could feel. Under this potential it
+  costs every step the meter drains, and a drink pays at once.
+
+    u(m) = 1 - (1 - m/9)^2   steep when empty, flat when full: a 1 -> 5
+                         refill pays three times a 5 -> 9 one, so the pull is
+                         toward water when thirsty, not toward camping at it.
+                         (sqrt was the first choice; it gives only 1.6x.)
+    w(s) = w0 * (1 + kappa * T + n / ach_ref)
+         T  tech progress, PHI_tech / its maximum, in [0, 1]
+         n  achievements unlocked this episode
+         The more the agent has built, the more staying alive is worth -- and
+         since PHI is zeroed on death, the more a death hands back.
+
+  Both factors are functions of the state, so this stays potential-based.
+  w0 = 0.75 makes a full 1 -> 9 drink refill worth ~+0.6 of an achievement at
+  the start of an episode. That is between B2's +1 for the first drink only
+  and the old 'shaped' survival terms that collapsed a run to 2.3
+  achievements.
+  """
+  u = lambda m: 1.0 - (1.0 - min(max(float(np.asarray(m)), 0.0), 9.0) / 9.0) ** 2
+  meters = u(state.player_food) + u(state.player_drink)
+  tech = potential(state, ach_names) / max_potential()
+  n = float(np.asarray(state.achievements, bool).sum())
+  return w0 * (1.0 + kappa * tech + n / ach_ref) * meters
+
+
 def max_potential(scale=1.0):
   """Ceiling of PHI, for sizing `scale` against Craftax's own rewards."""
   return (sum(TIER_WEIGHT.values()) + sum(CAPABILITY.values())) / scale

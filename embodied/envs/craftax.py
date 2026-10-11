@@ -41,10 +41,12 @@ class Craftax(embodied.Env):
 
   def __init__(self, task='symbolic', size=None, seed=0, logs=False,
                mapmodel=False, seen_decay=0.99, map_privileged=False,
+               valid_obs=False, goals_obs=False, goals_survival=False,
                survival='none',
                surv_alive=0.005, surv_death=5.0, surv_restore=0.3,
                surv_threshold=3.0, surv_kill=0.5, surv_idle=1.0,
-               surv_idle_steps=30, phi_scale=4.0, phi_gamma=0.997):
+               surv_idle_steps=30, phi_scale=4.0, phi_gamma=0.997,
+               surv_w0=0.75, surv_kappa=1.0, surv_ach_ref=10.0):
     assert task in ('symbolic',), task  # pixels: add 'Craftax-Pixels-v1' below
     import jax
     from craftax.craftax_env import make_craftax_env_from_name
@@ -63,12 +65,35 @@ class Craftax(embodied.Env):
     # original runs as an ablation -- run it with agent.mapmodel.hindsight False
     # too, since the old targets were never hindsighted. See craftax_map.
     self._map_privileged = bool(map_privileged)
+    # Experiment B: obs['valid'], which of the 43 actions can do anything now,
+    # computed from the observation vector alone (craftax_valid).
+    self._valid_obs = bool(valid_obs)
+    if self._valid_obs:
+      from dreamerv3 import craftax_valid
+      self._V = craftax_valid
+    # Two-level agent: obs['goalphi'], progress toward each manager goal,
+    # computed from the observation vector alone (craftax_goals) -- a training
+    # target for the agent's goal-progress head, never an encoder input -- and
+    # obs['goalreach'], which goals have read as reached at any step of this
+    # episode. The second is the manager's memory of what it has done: its
+    # bonus pays only on a goal's first reach, and the game's own achievement
+    # flags are not in the observation. Built from goalphi alone, so it is
+    # what an observer of the screen could have kept.
+    self._goals_obs = bool(goals_obs)
+    if self._goals_obs:
+      from dreamerv3 import craftax_goals
+      self._G = craftax_goals
+      self._goals_survival = bool(goals_survival)
+      self._n_goals = len(craftax_goals.names(self._goals_survival))
+      self._goalreach = np.zeros(self._n_goals, bool)
     if self._mapmodel:
       from dreamerv3 import craftax_map
       self._M = craftax_map
     self._seen = None
-    self._known = None
     self._prev_level = None
+    self._last_action = 0
+    if self._mapmodel:
+      self._observed = self._M.ObservedTargets(self._seen_decay)
 
     # --- survival shaping ----------------------------------------------------
     # Craftax pays for COLLECT_DRINK and EAT_COW exactly ONCE. Every drink after
@@ -118,17 +143,29 @@ class Craftax(embodied.Env):
     # cannot change the optimal policy, so it cannot invent the cheap optima
     # that made 'shaped' collect HALF the achievements of no shaping at all
     # (1.73 vs 3.49 at 500k). 'shaped' is kept only to reproduce that result.
-    assert survival in ('none', 'shaped', 'potential'), survival
+    # 'potential+meters' adds craftax_potential.survival_potential: food and
+    # drink as a potential whose weight grows with tech progress and with
+    # achievements unlocked, so thirst costs something every step instead of
+    # only at a death ~200 steps later. B2 never both drinks and climbs: its
+    # long episodes drink 7x and stall on tech, its tech episodes drink ~2x and
+    # die of thirst near step 300.
+    assert survival in ('none', 'shaped', 'potential', 'potential+meters'), (
+        survival)
     self._survival = survival
     self._phi_scale = float(phi_scale)
     self._phi_gamma = float(phi_gamma)
     self._prev_phi = None
     self._ach_names = None
-    if survival == 'potential':
+    self._meter_kw = dict(w0=float(surv_w0), kappa=float(surv_kappa),
+                          ach_ref=float(surv_ach_ref))
+    if survival in ('potential', 'potential+meters'):
       from dreamerv3 import craftax_potential
       from craftax.craftax.constants import Achievement
       self._P = craftax_potential
-      self._ach_names = [a.name for a in Achievement]
+      # By index, not iteration order: Craftax's Achievement enum is not
+      # declared in value order (positions 25-66 are shuffled), and the state's
+      # achievements array is indexed by value.
+      self._ach_names = [Achievement(i).name for i in range(len(Achievement))]
     self._surv = dict(
         alive=float(surv_alive),          # per step; 0.1 == 1 point per 10 steps
         death=float(surv_death),          # subtracted once, on death not timeout
@@ -171,7 +208,12 @@ class Craftax(embodied.Env):
   @property
   def obs_space(self):
     spaces = {
-        'vector': elements.Space(np.float32, (self._obs_dim,), 0.0, 1.0),
+        # Not bounded by 1: Craftax divides health, food, drink, energy and mana
+        # by 10, and their maxima grow with attributes (max health 8 + str,
+        # max mana 6 + 3 * int, up to 13 and 21), and XP is unbounded. The old
+        # high=1.0 held only until an agent first levelled up -- which needs
+        # XP, which only a new floor gives -- and then failed the space check.
+        'vector': elements.Space(np.float32, (self._obs_dim,), 0.0, np.inf),
         'ach': elements.Space(np.float32, (self._num_ach,), 0.0, 1.0),
         'reward': elements.Space(np.float32),
         'is_first': elements.Space(bool),
@@ -188,6 +230,13 @@ class Craftax(embodied.Env):
       # Supervision WEIGHT: fraction of each cell's 16 tiles the agent has
       # observed. Cells at 0.0 carry no gradient.
       spaces['mapknown'] = elements.Space(np.float32, (C, C), 0.0, 1.0)
+    if self._valid_obs:
+      spaces['valid'] = elements.Space(np.float32, (self._num_actions,), 0.0, 1.0)
+    if self._goals_obs:
+      spaces['goalphi'] = elements.Space(
+          np.float32, (self._n_goals,), 0.0, 1.0)
+      spaces['goalreach'] = elements.Space(
+          np.float32, (self._n_goals,), 0.0, 1.0)
     if self._logs:
       spaces['log/reward'] = elements.Space(np.float32)
       spaces['log/achievements'] = elements.Space(np.int32)
@@ -206,8 +255,8 @@ class Craftax(embodied.Env):
     with self._jax.transfer_guard('allow'):
       key, subkey = self._jax.random.split(self._key)
       self._key = key
-      act = self._jax.numpy.asarray(
-          int(action['action']), self._jax.numpy.int32)
+      self._last_action = int(action['action'])
+      act = self._jax.numpy.asarray(self._last_action, self._jax.numpy.int32)
       obs, self._state, reward, done, info = self._step_fn(
           subkey, self._state, act)
       self._done = bool(done)
@@ -268,8 +317,12 @@ class Craftax(embodied.Env):
     """
     if self._survival == 'none':
       return 0.0
-    if self._survival == 'potential':
+    if self._survival in ('potential', 'potential+meters'):
       phi = self._P.potential(state, self._ach_names, self._phi_scale)
+      if self._survival == 'potential+meters':
+        # In achievement units already: not divided by phi_scale.
+        phi += self._P.survival_potential(
+            state, self._ach_names, **self._meter_kw)
       bonus = self._P.shaped(
           self._prev_phi, phi, self._phi_gamma, terminal=is_terminal)
       self._prev_phi = phi
@@ -359,7 +412,11 @@ class Craftax(embodied.Env):
         is_terminal=is_terminal,
     )
     if self._mapmodel:
-      obs.update(self._map_targets(state, is_first))
+      obs.update(self._map_targets(state, vector, is_first))
+    if self._valid_obs:
+      obs['valid'] = self._V.valid_actions(vector).astype(np.float32)
+    if self._goals_obs:
+      obs.update(self._goal_obs(vector, is_first))
     if self._logs:
       obs['log/reward'] = np.float32(reward)
       with self._jax.transfer_guard('allow'):
@@ -367,42 +424,42 @@ class Craftax(embodied.Env):
             np.asarray(state.achievements).sum())
     return obs
 
+  def _goal_obs(self, vector, is_first):
+    phi = self._G.progress(vector, self._goals_survival)
+    if is_first:
+      self._goalreach[:] = False
+    self._goalreach |= phi >= 1.0
+    return dict(goalphi=phi, goalreach=self._goalreach.astype(np.float32))
+
   # --- map-model targets (training supervision only) --------------------------
-  def _map_targets(self, state, is_first):
+  def _map_targets(self, state, vector, is_first):
     """Coarse map, coarse position and cumulative visitation for RSSM-2.
 
-    The map is built from ``_known``, a running mosaic of the agent's own lit
-    9x11 windows -- an outside observer watching only the agent's screen could
-    reconstruct it. ``mapknown`` says what fraction of each cell that rests on,
-    and the loss weights by it, so unobserved terrain contributes no gradient.
+    Honest mode (default) hands ``ObservedTargets`` the observation vector and
+    the action just taken -- and nothing else. It never sees ``state``, so no
+    label can contain terrain the agent has not seen or a coordinate it could
+    not have worked out. Privileged mode is the old setup, kept as an ablation:
+    true map on every cell, true coordinates.
 
-    Both the mosaic and the visitation mask are per-episode AND per-level:
-    Craftax has 9 levels, each its own 48x48 map, and v1 models only the level
-    the agent is on (design SS7.1), so descending a ladder resets them.
+    Both are per-episode AND per-level: Craftax has 9 levels, each its own 48x48
+    map, and v1 models only the level the agent is on (design SS7.1).
     """
+    if not self._map_privileged:
+      return self._observed.step(vector, self._last_action, is_first)
     with self._jax.transfer_guard('allow'):
       level = int(state.player_level)
       if is_first or level != self._prev_level:
         self._seen = None
-        self._known = None
       self._prev_level = level
       self._seen = self._M.update_seen(self._seen, state, self._seen_decay)
-      self._known = self._M.update_known(self._known, state)
-      if self._map_privileged:
-        # The old setup, reproduced whole: ground truth everywhere AND every
-        # cell supervised. Emitting the observed fraction here would mask the
-        # unseen cells away again and quietly turn the ablation into a copy of
-        # the honest run.
-        map12 = self._M.coarse_map(state, self._seen)
-        known = np.ones((self._M.COARSE, self._M.COARSE), np.float32)
-      else:
-        map12 = self._M.coarse_map_observed(self._known, state, self._seen)
-        known = self._M.known_fraction(self._known)
+      # Ground truth everywhere AND every cell supervised. Emitting the observed
+      # fraction here would mask unseen cells away again and quietly turn the
+      # ablation into a copy of the honest run.
       return dict(
-          map12=map12,
+          map12=self._M.coarse_map(state, self._seen),
           mappos=self._M.coarse_pos(state),
           mapseen=self._seen.astype(np.float32),
-          mapknown=known,
+          mapknown=np.ones((self._M.COARSE, self._M.COARSE), np.float32),
       )
 
   # --- Phase 4: frontier checkpoint/restore ----------------------------------
@@ -435,7 +492,11 @@ class Craftax(embodied.Env):
     # Must match obs_space exactly -- the agent asserts on the key set, and a
     # restored obs that omits the map targets fails that assert.
     if self._mapmodel:
-      result.update(self._map_targets(state, is_first=True))
+      result.update(self._map_targets(state, obs, is_first=True))
+    if self._valid_obs:
+      result['valid'] = self._V.valid_actions(obs).astype(np.float32)
+    if self._goals_obs:
+      result.update(self._goal_obs(obs, is_first=True))
     if self._logs:
       result['log/reward'] = np.float32(0.0)
       result['log/achievements'] = ach_sum

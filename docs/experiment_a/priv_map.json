@@ -1,0 +1,151 @@
+{
+ "logdir": "/home/bygpu/logdir/priv_map",
+ "checkpoint": "/home/bygpu/logdir/priv_map/ckpt/20260927T225947F545678",
+ "steps": 5373,
+ "episodes": 20,
+ "valid_mass": 0.37235796451568604,
+ "pressed_with_effect": 0.37632607481853714,
+ "entropy_conditional": 0.12940830080431015,
+ "entropy_marginal": 0.7576710460730082,
+ "mutual_information": 0.628262745268698,
+ "entropy_within_valid": 0.11007468761259961,
+ "valid_actions_mean": 4.4092685650474595,
+ "top_no_effect_presses": {
+  "DO": 0.14498418016005957,
+  "SLEEP": 0.06067373906569887,
+  "LEVEL_UP_DEXTERITY": 0.03908431044109436,
+  "PLACE_PLANT": 0.031825795644891124,
+  "MAKE_DIAMOND_ARMOUR": 0.0314535641168807,
+  "DRINK_POTION_CYAN": 0.0297785222408338,
+  "MAKE_STONE_PICKAXE": 0.0281034803647869,
+  "MAKE_IRON_ARMOUR": 0.024753396612693095
+ },
+ "situations": {
+  "open ground": {
+   "share": 0.4939512376698306,
+   "entropy": 0.13574979616170385,
+   "valid_mass": 0.3386552929878235,
+   "pressed_with_effect": 0.3413715146948003
+  },
+  "other": {
+   "share": 0.3508282151498232,
+   "entropy": 0.1130622124030511,
+   "valid_mass": 0.40499311685562134,
+   "pressed_with_effect": 0.4106100795755968
+  },
+  "facing tree": {
+   "share": 0.09417457658663689,
+   "entropy": 0.16411096953390433,
+   "valid_mass": 0.34174996614456177,
+   "pressed_with_effect": 0.34782608695652173
+  },
+  "at table with wood": {
+   "share": 0.03871207891308394,
+   "entropy": 0.1497974403428482,
+   "valid_mass": 0.3831121623516083,
+   "pressed_with_effect": 0.3894230769230769
+  },
+  "facing water, thirsty": {
+   "share": 0.02531174390470873,
+   "entropy": 0.0751076026553702,
+   "valid_mass": 0.7017979621887207,
+   "pressed_with_effect": 0.6985294117647058
+  }
+ },
+ "opportunities": {
+  "MAKE_WOOD_PICKAXE @ table with wood": {
+   "states": 150,
+   "prob": 1.6915673484163563e-07,
+   "median_rank": 32.0,
+   "pressed": 0.0
+  },
+  "MAKE_WOOD_SWORD @ table with wood": {
+   "states": 58,
+   "prob": 0.21518437564373016,
+   "median_rank": 31.0,
+   "pressed": 0.20689655172413793
+  },
+  "DO @ facing tree": {
+   "states": 415,
+   "prob": 0.2474842071533203,
+   "median_rank": 5.0,
+   "pressed": 0.26024096385542167
+  },
+  "DO @ facing water, thirsty": {
+   "states": 111,
+   "prob": 0.4758782982826233,
+   "median_rank": 2.0,
+   "pressed": 0.4954954954954955
+  },
+  "DO @ facing stone, has pickaxe": {
+   "states": 0
+  }
+ },
+ "suppression": {
+  "DO": {
+   "valid_share": 0.2082635399218314,
+   "prob_when_valid": 0.2377396821975708,
+   "prob_when_invalid": 0.17990310490131378
+  },
+  "PLACE_TABLE": {
+   "valid_share": 0.11967243625535083,
+   "prob_when_valid": 0.062153734266757965,
+   "prob_when_invalid": 0.012902921997010708
+  },
+  "MAKE_WOOD_PICKAXE": {
+   "valid_share": 0.027917364600781685,
+   "prob_when_valid": 1.6915673484163563e-07,
+   "prob_when_invalid": 4.185114448773675e-06
+  },
+  "MAKE_WOOD_SWORD": {
+   "valid_share": 0.010794714312302252,
+   "prob_when_valid": 0.21518437564373016,
+   "prob_when_invalid": 0.014332998543977737
+  },
+  "PLACE_STONE": {
+   "valid_share": 0.0,
+   "prob_when_valid": null,
+   "prob_when_invalid": 3.8948768633417785e-05
+  },
+  "PLACE_FURNACE": {
+   "valid_share": 0.0,
+   "prob_when_valid": null,
+   "prob_when_invalid": 9.086507634492591e-05
+  },
+  "MAKE_STONE_PICKAXE": {
+   "valid_share": 0.0,
+   "prob_when_valid": null,
+   "prob_when_invalid": 0.027210881933569908
+  },
+  "MAKE_STONE_SWORD": {
+   "valid_share": 0.0,
+   "prob_when_valid": null,
+   "prob_when_invalid": 1.9956351025030017e-05
+  },
+  "PLACE_PLANT": {
+   "valid_share": 0.3132328308207705,
+   "prob_when_valid": 0.025445442646741867,
+   "prob_when_invalid": 0.05074870213866234
+  },
+  "SLEEP": {
+   "valid_share": 0.495998511073888,
+   "prob_when_valid": 0.01784026436507702,
+   "prob_when_invalid": 0.12120833992958069
+  },
+  "DRINK_POTION_GREEN": {
+   "valid_share": 0.0,
+   "prob_when_valid": null,
+   "prob_when_invalid": 0.00023733466514386237
+  },
+  "LEVEL_UP_INTELLIGENCE": {
+   "valid_share": 0.0,
+   "prob_when_valid": null,
+   "prob_when_invalid": 0.006779301445931196
+  },
+  "MAKE_DIAMOND_ARMOUR": {
+   "valid_share": 0.0,
+   "prob_when_valid": null,
+   "prob_when_invalid": 0.030905406922101974
+  }
+ }
+}

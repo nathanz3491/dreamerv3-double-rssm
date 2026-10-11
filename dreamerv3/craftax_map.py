@@ -4,26 +4,25 @@ Turns a Craftax ``EnvState`` into the supervision RSSM-2 learns from: a 12x12x16
 downsample of the current level, the agent's coarse cell, and a cumulative
 visitation mask.
 
-Two ways to build the map target, and the difference is the whole ballgame:
+Two ways to build the targets, and the difference is the whole ballgame:
 
-  ``coarse_map``           reads the TRUE 48x48 map, including cells the agent
-                           has never observed. Privileged. Kept for evaluation
-                           and for reproducing the original runs as an ablation.
-  ``coarse_map_observed``  reads a mosaic accumulated from the agent's own lit
-                           9x11 windows. An outside observer watching only the
-                           agent's screen could reconstruct it byte for byte.
+  ``coarse_map`` / ``coarse_pos``  read the TRUE state: the whole 48x48 map and
+                           the true coordinates. Privileged. Kept for
+                           evaluation and for reproducing the original runs.
+  ``ObservedTargets``      reads nothing but the agent's own observation vector
+                           and its own actions. Terrain is a mosaic of the lit
+                           9x11 windows it has seen; position is dead-reckoned
+                           from the fixed spawn, judging each move by the tile
+                           the agent could see in front of it.
 
 The second is the default. Supervising unseen cells against ground truth taught
 RSSM-2 Craftax's world generator rather than teaching it to remember and infer,
 and left no held-out set at all -- every cell it was ever scored on, it had also
-studied. Under the mosaic, unobserved cells carry no gradient and become a real
-exam (``tools/map_eval.py``).
-
-``coarse_pos`` stays absolute and is NOT privileged: Craftax spawns the player at
-the map centre every episode (``world_gen.generate_world``), so absolute position
-is the constant (24, 24) plus a displacement the agent can dead-reckon from its
-own actions. The exception is descending a ladder, which teleports; v1 resets the
-map state on a level change, so that frame simply starts over.
+studied. Reading true coordinates was a second, quieter leak: on the surface the
+agent could have worked them out (the spawn is fixed), but after a ladder the
+game teleports it somewhere it cannot know. Under ``ObservedTargets`` unobserved
+cells carry no gradient and become a real exam (``tools/map_eval.py``), and each
+level gets its own frame anchored where the agent arrived.
 
 These are TRAINING TARGETS ONLY. Nothing here is ever fed to the encoder -- the
 agent's observation stays the stock 8268-dim vector. Same posture as
@@ -199,80 +198,6 @@ def update_seen(seen, state, decay=1.0):
 UNKNOWN = -1           # a tile the agent has not observed this episode
 
 
-def _light_of_level(state):
-  light = np.asarray(state.light_map)
-  if light.ndim == 3:
-    light = light[int(state.player_level)]
-  return light
-
-
-def visible_bounds(state):
-  """Tile bounds of the agent's 9x11 window, clipped to the map."""
-  y, x = np.asarray(state.player_position).reshape(2)
-  return (max(0, int(y) - OBS_H // 2), min(MAP_SIZE, int(y) + OBS_H // 2 + 1),
-          max(0, int(x) - OBS_W // 2), min(MAP_SIZE, int(x) + OBS_W // 2 + 1))
-
-
-def update_known(known, state):
-  """Stamp the agent's lit 9x11 window into a running mosaic of known terrain.
-
-  Reading ``state.map`` inside the window is an implementation shortcut, not a
-  leak: the window is exactly what the observation already carries, down to the
-  light mask that Craftax's own renderer applies (``renderer.py``, "Mask out
-  tiles and mobs in darkness"). Tiles outside it are never touched.
-  """
-  if known is None:
-    known = np.full((MAP_SIZE, MAP_SIZE), UNKNOWN, np.int32)
-  y0, y1, x0, x1 = visible_bounds(state)
-  lit = _light_of_level(state)[y0:y1, x0:x1] > 0.05
-  known[y0:y1, x0:x1] = np.where(
-      lit, _blocks_of_level(state)[y0:y1, x0:x1], known[y0:y1, x0:x1])
-  return known
-
-
-def _visible_mobs(state):
-  """Mob counts restricted to what is on screen and lit.
-
-  Mobs move, so unlike terrain they are never accumulated into the mosaic: a cow
-  three rooms away is not something the agent saw, and a cow it saw 200 steps ago
-  is not there now. The P_SEEN recency plane is what carries staleness.
-  """
-  passive, hostile = _mob_counts(state)
-  y0, y1, x0, x1 = visible_bounds(state)
-  vis = np.zeros((MAP_SIZE, MAP_SIZE), bool)
-  vis[y0:y1, x0:x1] = True
-  vis &= _light_of_level(state) > 0.05
-  return passive * vis, hostile * vis
-
-
-def coarse_map_observed(known, state, seen=None):
-  """(12, 12, 16) target built only from terrain the agent has observed.
-
-  Mean planes pool over KNOWN tiles only, so a half-observed cell reports the
-  fraction among what was actually seen rather than being diluted toward zero by
-  the unknown half. ``known_fraction`` says how much of each cell that estimate
-  rests on, and the loss weights by it.
-  """
-  known = np.asarray(known)
-  isknown = known != UNKNOWN
-  out = np.zeros((COARSE, COARSE, N_PLANES), np.float32)
-  seen_tiles = isknown.reshape(COARSE, CELL, COARSE, CELL).sum((1, 3))
-
-  for plane, ids in _MEAN_GROUPS:
-    hits = (np.isin(known, ids) & isknown).reshape(
-        COARSE, CELL, COARSE, CELL).sum((1, 3))
-    out[:, :, plane] = hits / np.maximum(seen_tiles, 1)
-  for plane, ids in _MAX_GROUPS:
-    out[:, :, plane] = _pool_presence(np.isin(known, ids) & isknown)
-
-  passive, hostile = _visible_mobs(state)
-  out[:, :, P_MOB_PASSIVE] = _pool_presence(passive > 0)
-  out[:, :, P_MOB_HOSTILE] = _pool_presence(hostile > 0)
-  if seen is not None:
-    out[:, :, P_SEEN] = np.asarray(seen, np.float32)
-  return out
-
-
 def known_fraction(known):
   """(12, 12) float: what fraction of each cell's 16 tiles has been observed.
 
@@ -281,6 +206,180 @@ def known_fraction(known):
   """
   return (np.asarray(known) != UNKNOWN).reshape(
       COARSE, CELL, COARSE, CELL).mean((1, 3)).astype(np.float32)
+
+
+# --- targets from the observation stream alone --------------------------------
+# Everything below builds RSSM-2's honest targets from two inputs only: the
+# agent's own 8268-dim observation vector and the action it took. It never sees
+# an EnvState, so it cannot read terrain the agent has not seen or coordinates it
+# has not worked out -- "an outside observer watching only the agent's screen
+# could reconstruct every label" is enforced by the function signatures, not
+# argued. test_craftax_map checks the reconstruction against the true state.
+#
+# Layout of Craftax-Symbolic's vector (renderer.render_craftax_symbolic):
+# 9x11 tiles x 83 channels -- [37 block one-hot | 5 item one-hot | 40 mob | 1
+# light], all but the last multiplied by the light mask -- then 51 scalars that
+# end with 8 "special values" (light level, sleeping, resting, spells x2,
+# level/10, level cleared, boss vulnerable).
+N_BLOCK, N_ITEM, N_MOB = 37, 5, 40
+N_TILE = N_BLOCK + N_ITEM + N_MOB + 1
+OBS_LEN = OBS_H * OBS_W * N_TILE + 51
+SPAWN = (MAP_SIZE // 2, MAP_SIZE // 2)   # world_gen.generate_world, every episode
+
+# Blocks a land creature cannot enter: constants.SOLID_BLOCKS plus water and
+# lava (COLLISION_LAND_CREATURE). Checked against the installed Craftax by
+# test_blocked_set_matches_craftax.
+SOLID_IDS = (4, 5, 8, 9, 10, 11, 12, 15, 16, 17, 19, 20, 21, 22, 23, 24, 28,
+             30, 31, 32, 33, 34, 35)
+_BLOCKED = frozenset(SOLID_IDS) | {3, 14}
+_MOVES = {1: (0, -1), 2: (0, 1), 3: (-1, 0), 4: (1, 0)}   # LEFT RIGHT UP DOWN
+
+
+def decode_view(vec):
+  """Observation vector -> what the agent can see this step.
+
+  Returns ``blocks`` (9, 11) block ids with UNKNOWN where the tile is dark,
+  ``passive`` / ``hostile`` (9, 11) visible-mob masks, and ``level``,
+  ``sleeping``, ``resting`` from the special values. Out-of-bounds tiles are
+  padded dark by the renderer, so they decode as UNKNOWN too.
+  """
+  vec = np.asarray(vec, np.float32).reshape(-1)
+  assert vec.size == OBS_LEN, vec.size
+  tiles = vec[:OBS_H * OBS_W * N_TILE].reshape(OBS_H, OBS_W, N_TILE)
+  lit = tiles[..., -1] > 0.5
+  blocks = np.where(lit, tiles[..., :N_BLOCK].argmax(-1), UNKNOWN)
+  mobs = tiles[..., N_BLOCK + N_ITEM:N_BLOCK + N_ITEM + N_MOB].reshape(
+      OBS_H, OBS_W, 5, 8) > 0.5
+  special = vec[-8:]
+  return dict(
+      blocks=blocks.astype(np.int32),
+      passive=mobs[:, :, 1].any(-1) & lit,                        # class 1
+      hostile=(mobs[:, :, 0].any(-1) | mobs[:, :, 2].any(-1)) & lit,
+      sleeping=bool(special[1] > 0.5),
+      resting=bool(special[2] > 0.5),
+      level=int(round(float(special[5]) * 10)))
+
+
+def reckon(pos, view, action):
+  """Dead-reckon one step, as an observer of the screen would.
+
+  ``view`` is what the agent saw BEFORE acting. Craftax moves the player before
+  any mob updates (game_logic.craftax_step), so whether a move succeeds is
+  decided by the destination tile and whether a mob stands on it -- both
+  adjacent to the centre of the view. A sleeping or resting agent's action is
+  replaced by NOOP. The map is 48x48, a game rule the observer knows. A dark
+  destination cannot be judged and is assumed passable; how often the
+  reconstruction disagrees with the true position is measured in the tests.
+  """
+  a = int(action)
+  if a not in _MOVES or view['sleeping'] or view['resting']:
+    return pos
+  dy, dx = _MOVES[a]
+  y, x = pos[0] + dy, pos[1] + dx
+  if not (0 <= y < MAP_SIZE and 0 <= x < MAP_SIZE):
+    return pos
+  cy, cx = OBS_H // 2 + dy, OBS_W // 2 + dx
+  if int(view['blocks'][cy, cx]) in _BLOCKED:
+    return pos
+  if view['passive'][cy, cx] or view['hostile'][cy, cx]:
+    return pos
+  return (y, x)
+
+
+def _stamp(canvas, window, pos, keep=None):
+  """Write a (9, 11) window into a (48, 48) canvas centred at ``pos``, clipped.
+
+  Where ``keep`` is False the canvas keeps its old value, so a dark tile never
+  erases terrain seen earlier.
+  """
+  y0, x0 = int(pos[0]) - OBS_H // 2, int(pos[1]) - OBS_W // 2
+  dy0, dx0 = max(0, y0), max(0, x0)
+  dy1, dx1 = min(MAP_SIZE, y0 + OBS_H), min(MAP_SIZE, x0 + OBS_W)
+  if dy0 >= dy1 or dx0 >= dx1:
+    return canvas
+  win = window[dy0 - y0:dy1 - y0, dx0 - x0:dx1 - x0]
+  if keep is not None:
+    k = keep[dy0 - y0:dy1 - y0, dx0 - x0:dx1 - x0]
+    win = np.where(k, win, canvas[dy0:dy1, dx0:dx1])
+  canvas[dy0:dy1, dx0:dx1] = win
+  return canvas
+
+
+def seen_at(seen, pos, decay=1.0):
+  """``update_seen`` for a reckoned position instead of an EnvState."""
+  seen = np.zeros((COARSE, COARSE), np.float32) if seen is None else (
+      np.asarray(seen, np.float32) * np.float32(decay))
+  y, x = int(pos[0]), int(pos[1])
+  cy0 = max(0, (y - OBS_H // 2) // CELL)
+  cy1 = min(COARSE - 1, (y + OBS_H // 2) // CELL)
+  cx0 = max(0, (x - OBS_W // 2) // CELL)
+  cx1 = min(COARSE - 1, (x + OBS_W // 2) // CELL)
+  if cy0 <= cy1 and cx0 <= cx1:
+    seen[cy0:cy1 + 1, cx0:cx1 + 1] = 1.0
+  return seen
+
+
+def cell_of(pos):
+  """Coarse cell index in [0, 144) of a (y, x) tile position."""
+  cy = int(np.clip(int(pos[0]) // CELL, 0, COARSE - 1))
+  cx = int(np.clip(int(pos[1]) // CELL, 0, COARSE - 1))
+  return np.int32(cy * COARSE + cx)
+
+
+def _coarse_from(known, passive, hostile, seen):
+  """(12, 12, 16) target from a mosaic and visible-mob maps -- no EnvState."""
+  isknown = known != UNKNOWN
+  out = np.zeros((COARSE, COARSE, N_PLANES), np.float32)
+  seen_tiles = isknown.reshape(COARSE, CELL, COARSE, CELL).sum((1, 3))
+  for plane, ids in _MEAN_GROUPS:
+    hits = (np.isin(known, ids) & isknown).reshape(
+        COARSE, CELL, COARSE, CELL).sum((1, 3))
+    out[:, :, plane] = hits / np.maximum(seen_tiles, 1)
+  for plane, ids in _MAX_GROUPS:
+    out[:, :, plane] = _pool_presence(np.isin(known, ids) & isknown)
+  out[:, :, P_MOB_PASSIVE] = _pool_presence(passive)
+  out[:, :, P_MOB_HOSTILE] = _pool_presence(hostile)
+  out[:, :, P_SEEN] = np.asarray(seen, np.float32)
+  return out
+
+
+class ObservedTargets:
+  """RSSM-2 targets built from (observation vector, action) pairs only.
+
+  Carries the observer's belief across steps: the reckoned position, the
+  terrain mosaic, the visitation record, and the previous view (needed to judge
+  whether the last move succeeded). A new episode or a change of level --
+  visible in the observation -- starts a fresh frame anchored at SPAWN: after a
+  ladder the agent genuinely does not know where on the new level it is, so the
+  frame is its own rather than the game's.
+  """
+
+  def __init__(self, seen_decay=0.99):
+    self.seen_decay = float(seen_decay)
+    self.pos, self.known, self.seen = SPAWN, None, None
+    self.view, self.level = None, None
+
+  def step(self, vec, action, is_first):
+    view = decode_view(vec)
+    if is_first or self.view is None or view['level'] != self.level:
+      self.pos, self.known, self.seen = SPAWN, None, None
+    else:
+      self.pos = reckon(self.pos, self.view, action)
+    self.view, self.level = view, view['level']
+
+    if self.known is None:
+      self.known = np.full((MAP_SIZE, MAP_SIZE), UNKNOWN, np.int32)
+    _stamp(self.known, view['blocks'], self.pos, keep=view['blocks'] != UNKNOWN)
+    self.seen = seen_at(self.seen, self.pos, self.seen_decay)
+    passive = _stamp(np.zeros((MAP_SIZE, MAP_SIZE), bool), view['passive'],
+                     self.pos)
+    hostile = _stamp(np.zeros((MAP_SIZE, MAP_SIZE), bool), view['hostile'],
+                     self.pos)
+    return dict(
+        map12=_coarse_from(self.known, passive, hostile, self.seen),
+        mappos=cell_of(self.pos),
+        mapseen=self.seen.astype(np.float32),
+        mapknown=known_fraction(self.known))
 
 
 def crop_egocentric(map12, cell, size=9):

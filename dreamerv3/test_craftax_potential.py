@@ -21,7 +21,10 @@ def _names():
   if NAMES is None:
     try:
       from craftax.craftax.constants import Achievement
-      NAMES = [a.name for a in Achievement]
+      # By index, not iteration order: Craftax's Achievement enum is not
+      # declared in value order (positions 25-66 are shuffled), and the state's
+      # achievements array is indexed by value.
+      NAMES = [Achievement(i).name for i in range(len(Achievement))]
     except Exception:
       NAMES = [f'ACH_{i}' for i in range(N_ACH)]
       for i, n in enumerate(P.SPINE):     # put the spine somewhere findable
@@ -204,3 +207,56 @@ def test_timeout_keeps_its_potential():
   a, b = phi(_state(wood=1)), phi(_state(wood=2))
   assert P.shaped(a, b, 0.997) == P.shaped(a, b, 0.997, terminal=False)
   assert P.shaped(a, b, 0.997, terminal=True) == -a
+
+
+def test_achievement_names_follow_indices():
+  """Craftax's Achievement enum is not declared in value order; name by index.
+
+  Iterating the enum labelled index 29 (ENTER_DUNGEON) as MAKE_IRON_ARMOUR, and
+  it went unnoticed until a run first unlocked an achievement past index 24.
+  """
+  try:
+    from craftax.craftax.constants import Achievement
+  except Exception:
+    return
+  names = _names()
+  for i in range(len(Achievement)):
+    assert names[i] == Achievement(i).name, (i, names[i], Achievement(i).name)
+
+
+# --- survival potential ----------------------------------------------------
+
+def _fed(food, drink, **kw):
+  s = _state(**kw)
+  s.player_food, s.player_drink = food, drink
+  return s
+
+
+def surv(state):
+  return P.survival_potential(state, _names())
+
+
+def test_drinking_pays_and_draining_costs():
+  assert surv(_fed(5, 6)) > surv(_fed(5, 5)) > surv(_fed(5, 4))
+
+
+def test_a_refill_pays_most_when_the_meter_is_low():
+  low = surv(_fed(5, 5)) - surv(_fed(5, 1))
+  high = surv(_fed(5, 9)) - surv(_fed(5, 5))
+  assert low > 2.5 * high
+
+
+def test_survival_is_worth_more_the_more_was_built():
+  base = surv(_fed(5, 5))
+  assert surv(_fed(5, 5, pickaxe=2, wood=1, stone=1)) > base
+  assert surv(_fed(5, 5, achieved=('PLACE_TABLE', 'MAKE_WOOD_PICKAXE'))) > base
+
+
+def test_full_refill_is_about_half_an_achievement_at_the_start():
+  gain = surv(_fed(9, 9)) - surv(_fed(9, 1))
+  assert 0.5 < gain < 0.7, gain
+
+
+def test_dying_hands_back_the_survival_potential_too():
+  phi = surv(_fed(8, 8, achieved=('PLACE_TABLE',)))
+  assert P.shaped(phi, phi, 0.997, terminal=True) == -phi

@@ -76,7 +76,10 @@ def main():
     obs = env.step({'action': np.zeros((), np.int32),
                     'reset': np.ones((), bool)})
     carry = agent.init_policy(batch_size=1)
-    known = None
+    # The seen/unseen split comes from the same observer the honest training
+    # run uses -- the agent's own view and actions -- whatever mode the
+    # checkpoint was trained in, so the two modes are scored on one mask.
+    observer, last, first = M.ObservedTargets(), 0, True
     step = 0
     while step < known_args.max_steps:
       batched = {k: np.asarray(v)[None] for k, v in obs.items()
@@ -86,14 +89,18 @@ def main():
         raise SystemExit(
             'no map_pred in the probe output -- run with '
             '--agent.mapmodel.enabled True --agent.mapmodel.to_actor True')
-      with jax.transfer_guard('allow'):
-        state = env._state
-        known = M.update_known(known, state)
-        truths.append(M.coarse_map(state))          # ground truth, eval only
-        masks.append(M.known_fraction(known) > 0)
+      seen = observer.step(obs['vector'], last, first)['mapknown'] > 0
+      first = False
+      # Surface only: below it the observer's frame is anchored where the agent
+      # arrived, not at the game's coordinates, so it cannot be laid over the
+      # true map cell for cell.
+      if observer.level == 0:
+        with jax.transfer_guard('allow'):
+          truths.append(M.coarse_map(env._state))   # ground truth, eval only
+        masks.append(seen)
         preds.append(np.asarray(out['map_pred'])[0])
-      obs = env.step({'action': np.int32(np.asarray(act['action'])[0]),
-                      'reset': np.zeros((), bool)})
+      last = int(np.asarray(act['action'])[0])
+      obs = env.step({'action': np.int32(last), 'reset': np.zeros((), bool)})
       step += 1
       if bool(obs['is_last']):
         break

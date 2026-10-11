@@ -39,12 +39,12 @@
 <text x="52" y="761" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">is_first · is_last · is_terminal</text>
 <text x="52" y="778" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">timeout is not terminal — value bootstraps through it</text>
 <rect x="40" y="802" width="390" height="150" rx="7" fill="#f6fcf8" stroke="#2f9e6a" stroke-width="1.4"/>
-<text x="52" y="822" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">RSSM-2 targets — training only, never inputs</text>
+<text x="52" y="822" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">RSSM-2 targets — from obs vector + own actions</text>
 <text x="52" y="840" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">map12 12×12×16  mosaic of own lit 9×11 windows</text>
 <text x="52" y="856" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">mapknown 12×12  share of cell observed → loss weight</text>
 <text x="52" y="872" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">mapseen 12×12  visit recency (decay 0.99)</text>
-<text x="52" y="888" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">mappos 0..143  coarse cell (fixed spawn ⇒ dead-reckonable)</text>
-<text x="52" y="904" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">unseen cells: no gradient; scored only by map_eval</text>
+<text x="52" y="888" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">mappos 0..143  dead-reckoned from the fixed spawn</text>
+<text x="52" y="904" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">never reads game state (ObservedTargets); unseen = 0</text>
 <rect x="40" y="967" width="390" height="62" rx="7" fill="#f8f9fa" stroke="#adb5bd" stroke-width="1.4"/>
 <text x="52" y="987" font-size="13" font-weight="bold" font-style="normal" fill="#212529" text-anchor="start">ablation switch</text>
 <text x="52" y="1005" font-size="12" font-weight="normal" font-style="normal" fill="#495057" text-anchor="start">env.craftax.map_privileged True → full-map targets (old runs)</text>

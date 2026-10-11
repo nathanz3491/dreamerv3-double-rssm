@@ -128,29 +128,6 @@ def test_direction_is_preserved_by_the_crop():
   assert (ys[0], xs[0]) == (2, 4), (ys, xs)           # up from centre (4, 4)
 
 
-# --- observation-only targets -----------------------------------------------
-# The whole "are we cheating" question reduces to one property: the target must
-# not move when ground truth the agent cannot see changes. These assert it
-# rather than arguing it.
-
-def test_mosaic_ignores_terrain_outside_the_window():
-  """The decisive test. Scramble every unseen cell; the target must not budge."""
-  rng = np.random.default_rng(0)
-  blocks = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
-  blocks[22:27, 22:29] = 3                          # water, inside the window
-  a = M.coarse_map_observed(M.update_known(None, _state(blocks)), _state(blocks))
-
-  scrambled = blocks.copy()
-  y0, y1, x0, x1 = M.visible_bounds(_state(blocks))
-  outside = np.ones_like(blocks, bool)
-  outside[y0:y1, x0:x1] = False
-  scrambled[outside] = rng.integers(3, 20, size=int(outside.sum()))
-  b = M.coarse_map_observed(
-      M.update_known(None, _state(scrambled)), _state(scrambled))
-
-  np.testing.assert_array_equal(a, b)
-
-
 def test_privileged_map_does_move_when_unseen_terrain_changes():
   """The contrast: coarse_map reads everything, which is why it is the old one."""
   blocks = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
@@ -159,43 +136,196 @@ def test_privileged_map_does_move_when_unseen_terrain_changes():
   assert not np.array_equal(M.coarse_map(_state(blocks)), M.coarse_map(_state(far)))
 
 
+# --- observation-only targets -----------------------------------------------
+# The "are we cheating" question reduces to one property: every honest label is
+# a function of what the agent saw and did. ObservedTargets takes nothing else,
+# so these tests check that it reads the observation correctly and behaves like
+# an observer should; the Craftax-backed ones at the bottom check it against the
+# real game.
+
+GRASS, STONE, WATER, LAVA = 2, 4, 3, 14
+
+
+def _vec(blocks=None, lit=None, passive=(), hostile=(), level=0,
+         sleeping=False, resting=False):
+  """Build an observation vector the way render_craftax_symbolic lays it out."""
+  blocks = np.full((M.OBS_H, M.OBS_W), GRASS) if blocks is None else blocks
+  lit = np.ones((M.OBS_H, M.OBS_W), bool) if lit is None else lit
+  tiles = np.zeros((M.OBS_H, M.OBS_W, M.N_TILE), np.float32)
+  for y in range(M.OBS_H):
+    for x in range(M.OBS_W):
+      tiles[y, x, blocks[y, x]] = 1.0
+  base = M.N_BLOCK + M.N_ITEM
+  for y, x in passive:
+    tiles[y, x, base + 1 * 8] = 1.0                   # class 1, type 0 (cow)
+  for y, x in hostile:
+    tiles[y, x, base + 0 * 8] = 1.0                   # class 0, type 0 (zombie)
+  tiles[..., :-1] *= lit[..., None]                   # the renderer's light mask
+  tiles[..., -1] = lit
+  stats = np.zeros(51, np.float32)
+  stats[-7], stats[-6], stats[-3] = sleeping, resting, level / 10
+  return np.concatenate([tiles.reshape(-1), stats])
+
+
+CY, CX = M.OBS_H // 2, M.OBS_W // 2                   # the agent, in view
+
+
+def _ahead(block=None, action=2, **kw):
+  """A view with ``block`` directly in the direction of ``action``."""
+  blocks = np.full((M.OBS_H, M.OBS_W), GRASS)
+  dy, dx = M._MOVES[action]
+  if block is not None:
+    blocks[CY + dy, CX + dx] = block
+  return M.decode_view(_vec(blocks, **kw))
+
+
+def test_decode_reads_blocks_mobs_and_flags():
+  blocks = np.full((M.OBS_H, M.OBS_W), GRASS)
+  blocks[0, 0] = WATER
+  lit = np.ones((M.OBS_H, M.OBS_W), bool)
+  lit[8, 10] = False
+  v = M.decode_view(_vec(blocks, lit, passive=[(1, 1)], hostile=[(2, 2)],
+                         level=3, sleeping=True))
+  assert v['blocks'][0, 0] == WATER and v['blocks'][4, 4] == GRASS
+  assert v['blocks'][8, 10] == M.UNKNOWN, 'a dark tile must decode as unknown'
+  assert v['passive'][1, 1] and v['hostile'][2, 2] and not v['passive'][2, 2]
+  assert v['level'] == 3 and v['sleeping'] and not v['resting']
+
+
+def test_reckon_moves_onto_open_ground():
+  assert M.reckon((24, 24), _ahead(None, 2), 2) == (24, 25)
+  assert M.reckon((24, 24), _ahead(None, 3), 3) == (23, 24)
+
+
+def test_reckon_is_blocked_by_what_the_agent_can_see():
+  for block in (STONE, WATER, LAVA):
+    assert M.reckon((24, 24), _ahead(block, 2), 2) == (24, 24), block
+  cow = M.decode_view(_vec(passive=[(CY, CX + 1)]))
+  assert M.reckon((24, 24), cow, 2) == (24, 24)
+
+
+def test_reckon_respects_the_edge_and_sleep():
+  assert M.reckon((24, 47), _ahead(None, 2), 2) == (24, 47)
+  assert M.reckon((24, 24), _ahead(None, 2, sleeping=True), 2) == (24, 24)
+  assert M.reckon((24, 24), _ahead(None, 2), 5) == (24, 24)   # DO is no move
+
+
+def test_builder_never_sees_the_game_state():
+  """Structural: the only way in is (observation vector, action, is_first)."""
+  import inspect
+  params = list(inspect.signature(M.ObservedTargets.step).parameters)
+  assert params == ['self', 'vec', 'action', 'is_first'], params
+
+
 def test_unobserved_cells_carry_no_weight():
-  known = M.update_known(None, _state())
-  frac = M.known_fraction(known)
-  assert frac.max() > 0.0, 'the window it stands in must be observed'
-  assert frac.min() == 0.0, 'the far side of the map must not be'
-  # A 9x11 window cannot cover a 48x48 map.
-  assert frac.mean() < 0.15, frac.mean()
+  t = M.ObservedTargets().step(_vec(), 0, True)
+  assert t['mapknown'].max() > 0.0, 'the window it stands in must be observed'
+  assert t['mapknown'].min() == 0.0, 'the far side of the map must not be'
+  assert t['mapknown'].mean() < 0.15
+  assert t['mappos'] == M.cell_of(M.SPAWN)
 
 
 def test_the_mosaic_accumulates_as_the_agent_walks():
-  known, before = None, None
-  for x in range(10, 40, 4):
-    known = M.update_known(known, _state(pos=(24, x)))
-    now = M.known_fraction(known).sum()
+  obs, before = M.ObservedTargets(), None
+  t = obs.step(_vec(), 0, True)
+  for _ in range(12):
+    t = obs.step(_vec(), 2, False)                    # RIGHT over open grass
+    now = t['mapknown'].sum()
     assert before is None or now >= before, 'coverage must never shrink'
     before = now
-  assert before > M.known_fraction(M.update_known(None, _state())).sum()
+  assert obs.pos == (M.SPAWN[0], M.SPAWN[1] + 12)
 
 
 def test_darkness_hides_tiles_from_the_mosaic():
-  """Craftax zeroes unlit tiles in the observation; the target must match."""
-  blocks = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
-  blocks[24, 26] = 3                                # water, two tiles away
-  lit = _state(blocks)
-  dark = _state(blocks)
-  dark.light_map = np.zeros((M.MAP_SIZE, M.MAP_SIZE), np.float32)
-  a = M.coarse_map_observed(M.update_known(None, lit), lit)
-  b = M.coarse_map_observed(M.update_known(None, dark), dark)
-  assert a[:, :, M.P_WATER].sum() > 0
-  assert b[:, :, M.P_WATER].sum() == 0
-  assert M.known_fraction(M.update_known(None, dark)).sum() == 0
+  blocks = np.full((M.OBS_H, M.OBS_W), GRASS)
+  blocks[CY, CX + 2] = WATER
+  dark = np.zeros((M.OBS_H, M.OBS_W), bool)
+  lit = M.ObservedTargets().step(_vec(blocks), 0, True)
+  unlit = M.ObservedTargets().step(_vec(blocks, dark), 0, True)
+  assert lit['map12'][:, :, M.P_WATER].sum() > 0
+  assert unlit['map12'][:, :, M.P_WATER].sum() == 0
+  assert unlit['mapknown'].sum() == 0
 
 
-def test_mean_planes_pool_over_known_tiles_only():
-  """A half-seen cell reports the fraction among what was seen, not diluted."""
-  blocks = np.full((M.MAP_SIZE, M.MAP_SIZE), 2, np.int32)
-  blocks[20:24, 20:24] = 3                          # one full coarse cell of water
-  st = _state(blocks, pos=(21, 21))
-  obs = M.coarse_map_observed(M.update_known(None, st), st)
-  assert obs[5, 5, M.P_WATER] == 1.0, obs[5, 5, M.P_WATER]
+def test_a_new_level_starts_a_fresh_frame():
+  """After a ladder the agent cannot know where it is; the frame restarts."""
+  obs = M.ObservedTargets()
+  obs.step(_vec(), 0, True)
+  for _ in range(5):
+    obs.step(_vec(), 2, False)
+  t = obs.step(_vec(level=1), 18, False)              # DESCEND
+  assert obs.pos == M.SPAWN
+  assert t['mapknown'].sum() == M.ObservedTargets().step(
+      _vec(), 0, True)['mapknown'].sum()
+
+
+# --- against the real game (skipped where Craftax is not installed) ----------
+def _craftax():
+  try:
+    import jax
+    from craftax.craftax_env import make_craftax_env_from_name
+    from craftax.craftax import constants as C
+  except Exception:
+    return None
+  return jax, make_craftax_env_from_name, C
+
+
+def test_blocked_set_matches_craftax():
+  lib = _craftax()
+  if lib is None:
+    return
+  _, _, C = lib
+  assert set(M.SOLID_IDS) == {int(b) for b in C.SOLID_BLOCKS}
+  assert C.BlockType.WATER.value == WATER and C.BlockType.LAVA.value == LAVA
+  assert len(C.BlockType) == M.N_BLOCK and len(C.ItemType) == M.N_ITEM
+  assert tuple(C.OBS_DIM) == (M.OBS_H, M.OBS_W)
+
+
+def test_observer_tracks_the_true_state_in_the_real_game():
+  """Reckoned position and mosaic vs the truth, over long random rollouts.
+
+  The observer is honest by construction; this measures whether it is also
+  RIGHT -- a label that is honest but wrong is noise. On the surface it should
+  agree with the true position almost always, and every tile it claims to know
+  should match the true map.
+  """
+  lib = _craftax()
+  if lib is None:
+    return
+  jax, make, _ = lib
+  env = make('Craftax-Symbolic-v1', auto_reset=False)
+  params = env.default_params
+  reset = jax.jit(lambda k: env.reset(k, params))
+  step = jax.jit(lambda k, s, a: env.step(k, s, a, params))
+  rng = np.random.default_rng(0)
+  key = jax.random.PRNGKey(0)
+  agree = total = wrong_tiles = checked = 0
+  for _ in range(4):
+    key, k = jax.random.split(key)
+    vec, state = reset(k)
+    obs, first, last = M.ObservedTargets(), True, 0
+    for _ in range(1500):
+      obs.step(np.asarray(vec), last, first)
+      first = False
+      if obs.level == 0:
+        true = tuple(int(v) for v in np.asarray(state.player_position))
+        total += 1
+        if obs.pos == true:
+          agree += 1
+          truth = np.asarray(state.map)[0]
+          known = obs.known != M.UNKNOWN
+          checked += int(known.sum())
+          wrong_tiles += int((obs.known[known] != truth[known]).sum())
+      # Mostly moves, so the reckoner is exercised; some DO so terrain changes.
+      last = int(rng.choice([1, 2, 3, 4, 5], p=[.22, .22, .22, .22, .12]))
+      key, k = jax.random.split(key)
+      vec, state, _, done, _ = step(k, state, last)
+      if bool(done):
+        break
+  rate = agree / max(total, 1)
+  print(f'position agreement {rate:.4f} over {total} surface steps; '
+        f'{wrong_tiles} wrong of {checked} known tiles')
+  assert rate > 0.99, rate
+  # Tiles change after they are seen (trees felled, stone mined elsewhere is
+  # not revisited), so the mosaic can be stale but should rarely be wrong.
+  assert wrong_tiles <= 0.02 * max(checked, 1), (wrong_tiles, checked)

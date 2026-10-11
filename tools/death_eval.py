@@ -69,7 +69,10 @@ def main():
   rows, causes = [], collections.Counter()
   try:
     from craftax.craftax.constants import Achievement
-    names = [a.name for a in Achievement]
+    # By index, not iteration order: Craftax's Achievement enum is not
+    # declared in value order (positions 25-66 are shuffled), and the state's
+    # achievements array is indexed by value.
+    names = [Achievement(i).name for i in range(len(Achievement))]
   except Exception:
     names = None
 

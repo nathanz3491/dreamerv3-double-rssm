@@ -171,6 +171,25 @@ class TestReplay:
       assert len(next(dataset)['step']) == length
 
   @pytest.mark.parametrize('Replay', REPLAYS_UNLIMITED)
+  def test_restore_save_skip(self, tmpdir, Replay):
+    """Skipped keys stay off disk and come back as zeros of the right shape."""
+    elements.UUID.reset(debug=True)
+    replay = Replay(3, 100, directory=tmpdir, chunksize=8, save_wait=True,
+                    save_skip=('dyn/',))
+    for step in range(30):
+      replay.add({'step': step, 'dyn/deter': np.full(4, 7.0, np.float32)})
+    replay.save()
+    for path in elements.Path(tmpdir).glob('*.npz'):
+      assert 'dyn/deter' not in np.load(str(path)).files
+    replay = Replay(3, 100, directory=tmpdir)
+    replay.load()
+    batch = replay.sample(2)
+    assert batch['dyn/deter'].shape == (2, 3, 4)
+    assert batch['dyn/deter'].dtype == np.float32
+    assert (batch['dyn/deter'] == 0).all()
+    assert batch['step'].shape == (2, 3)
+
+  @pytest.mark.parametrize('Replay', REPLAYS_UNLIMITED)
   @pytest.mark.parametrize(
       'length,capacity,chunksize',
       [(1, 1, 128), (3, 10, 128), (5, 100, 128), (5, 25, 2)])
