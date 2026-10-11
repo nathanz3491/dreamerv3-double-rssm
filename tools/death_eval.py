@@ -38,6 +38,41 @@ import numpy as np
 sys.path.insert(0, '.')
 
 
+def from_run(logdir, argv):
+  """The run's own saved config, plus any overriding flags.
+
+  Rebuilds a checkpoint exactly as it was trained, with no flag list to get
+  wrong -- the way old checkpoints are re-scored.
+  """
+  import ruamel.yaml as yaml
+  from dreamerv3 import main as dv3main
+  load = lambda path: yaml.YAML(typ='safe').load(elements.Path(path).read())
+  # This code's defaults first: a run saved before an option existed has no
+  # value for it, and the default is what reproduces its behaviour.
+  base = elements.Config(load(
+      elements.Path(dv3main.__file__).parent / 'configs.yaml')['defaults'])
+  saved = elements.Config(load(elements.Path(logdir) / 'config.yaml')).flat
+  known = base.flat
+  config = base.update({k: v for k, v in saved.items() if k in known})
+  return elements.Flags(config).parse(argv)
+
+
+def unwrap(env):
+  while hasattr(env, 'env'):
+    env = env.env
+  return env
+
+
+def reseed(env, seed):
+  """Next world from `seed` alone; works with older envs lacking reseed()."""
+  env = unwrap(env)
+  if hasattr(env, 'reseed'):
+    env.reseed(seed)
+  else:
+    with jax.transfer_guard('allow'):
+      env._key = jax.random.PRNGKey(int(seed))
+
+
 def build(argv):
   from dreamerv3 import main as dv3main
   configs = elements.Path(dv3main.__file__).parent / 'configs.yaml'
@@ -64,9 +99,15 @@ def main():
                   help='argmax action and goal; default samples like training')
   ap.add_argument('--seed', type=int, default=0,
                   help='episode i is built from seed + i')
+  ap.add_argument('--config-from-run', action='store_true',
+                  help="rebuild from the logdir's config.yaml; other flags "
+                       'override it')
   known, rest = ap.parse_known_args()
 
-  config = build(rest + [f'--logdir={known.logdir}'])
+  if known.config_from_run:
+    config = from_run(known.logdir, rest + [f'--logdir={known.logdir}'])
+  else:
+    config = build(rest + [f'--logdir={known.logdir}'])
   from dreamerv3 import main as dv3main
   agent = dv3main.make_agent(config)
   env = dv3main.make_env(config, 0)
@@ -89,7 +130,7 @@ def main():
     names = None
 
   for ep in range(known.episodes):
-    env.reseed(known.seed + ep)
+    reseed(env, known.seed + ep)
     obs = env.step({'action': np.zeros((), np.int32), 'reset': np.ones((), bool)})
     hashes.append(hashlib.sha1(
         np.ascontiguousarray(obs['vector']).tobytes()).hexdigest()[:10])
@@ -134,7 +175,9 @@ def main():
       moved += int(pos != prev_pos)
       prev_pos = pos
       reward_trace += float(obs['reward'])
-      raw_trace += float(env.raw_reward)
+      # Older envs have no raw_reward; score those with survival none, where
+      # the reward is already raw.
+      raw_trace += float(getattr(unwrap(env), 'raw_reward', obs['reward']))
       if bool(obs['is_last']):
         ended = 'death' if bool(obs['is_terminal']) else 'timeout'
         break

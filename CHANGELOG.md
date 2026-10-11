@@ -54,6 +54,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `report()` now includes its loss metrics (it ran `mets.update(mets)`).
 
 ### Added
+- `tools/death_eval.py --config-from-run` rebuilds a checkpoint from its logdir `config.yaml` (this code's defaults fill options added later); other flags override.
 - **v2, v2-cur and B3 in the comparison report.** On the 30 evaluation worlds:
   - v2 scores 6.90 achievements, a real normalized return of 2.65%.
   - v2-cur scores 7.00, a normalized return of 2.70%.

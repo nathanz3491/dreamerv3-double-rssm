@@ -1,5 +1,25 @@
 # HANDOFF
 
+## Yesterday (state before the 2026-10-12 run)
+
+`9655da9`: v2 / v2-cur / B3 scored (v2 6.90, v2-cur 7.00, B3 5.60 vs vanilla 4.44, B2 7.60, v1.2 9.73). Both v2 runs stop at the wood tier; blocker is stone-tool crafting.
+
+## Today (2026-10-11 work, discovered on 2026-10-12 run)
+
+An outside code review and a follow-up audit landed as two commits after the last HANDOFF (both already committed by the session):
+
+- `95af6c4` **RSSM-2 train/act alignment fixes** (`docs/rssm2-step-alignment.md`): `action_deltas` counted DO/SLEEP/crafting as a step DOWN; a mid-window episode reset leaked the old `deter2` into the new episode; the batch path gave steps up to 7 future steps that acting never saw. Training now scans `Agent._map_step` over the batch; windows count from episode start. Tests in `test_mapmodel_step.py`. **Every RSSM-2 run so far (honest map, B1-B3, v1.x, v2) predates these fixes**, so their scores are not comparable to future runs.
+- `7df2d36` **Audit round 2** (`docs/audit-2026-10-11.md`, tests in `test_audit_fixes.py`): eval worlds were not independent of earlier episode lengths (past 30-episode comparisons were paired only on world 1; `death_eval` now reseeds per episode and prints a world hash); first episode step is now shaped; v2 goal restart / codebook edge fixes; real greedy eval and death/timeout/cutoff split.
+- Uncommitted at run time, committed now: `tools/death_eval.py --config-from-run` (rebuilds a checkpoint from its logdir `config.yaml`, with this code's defaults filling options added later) plus CHANGELOG entry.
+
+## Tomorrow (2026-10-12 onward)
+
+- Re-score the leaders (v1.2, B2, v2, vanilla) with the fixed eval (`death_eval.py --config-from-run`) and compare world hashes; old tables are not trustworthy for ranking.
+- Retrain at least v2 under the alignment fixes; then the stone-tool crafting check (`tools/action_suppression.py`).
+- Carry forward: `tomain`->`main` merge/push decision, Stage 0-2 offline gate, rewcause probe, `imag_length` 30-50 ceiling, re-sync `../localplay/`.
+
+---
+
 ## Yesterday (state before this session)
 
 Phases 0 & 1 of the compositional **reward-cause head** for DreamerV3 (design/rationale in [`REWCAUSE_INTEGRATION.md`](REWCAUSE_INTEGRATION.md)) are in place (`c9a07f1`), the JAX transfer-guard violation in `embodied/envs/craftax.py` is fixed (`70a89b8`), and `embodied/run/rewcause_probe.py` has been reworked and committed (`7f6d285`): checkpoint-dir resolution now handles a `latest` pointer, `collect()` reports a full achievement-reach profile plus mean episode return (not just the held-out target), progress logs live per driver chunk, and the probe budget was lowered (`PROBE_MAX_EPISODES` 300→150, `PROBE_MIN_STATES` 50→30) for a faster read given the iron-tier reachability caveat.
