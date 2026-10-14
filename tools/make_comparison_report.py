@@ -72,14 +72,16 @@ def main():
                data['subtitle'])
     y = wrap(fig, 0.07, 0.90, data['summary'], width=104)
 
-    cols = ['run', 'eps', 'ach.', 'w/o wake', 'life', 'table', 'pickaxe',
-            'sword', 'stone', 'drink']
+    cols = ['run', 'ach. ± SE', 'w/o wake', 'life', 'return', 'table',
+            'pickaxe', 'sword', 'stone', 'drink']
     rows = []
     for r in runs:
       rt = r['rates']
-      rows.append([r['label'], str(r['episodes']), f"{r['achievements']:.2f}",
+      se = f" ± {r['se']:.2f}" if 'se' in r else ''
+      ret = f"{r['ret']:.2f}%" if 'ret' in r else '-'
+      rows.append([r['label'], f"{r['achievements']:.2f}{se}",
                    f"{r['achievements'] - r['wake_up']:.2f}",
-                   f"{r['lifespan']:.0f}" if r.get('lifespan') else '-']
+                   f"{r['lifespan']:.0f}" if r.get('lifespan') else '-', ret]
                   + [f"{100 * rt.get(k, 0):.0f}%" for k in (
                       'PLACE_TABLE', 'MAKE_WOOD_PICKAXE', 'MAKE_WOOD_SWORD',
                       'COLLECT_STONE', 'COLLECT_DRINK')])
@@ -97,8 +99,8 @@ def main():
     ax.axis('off')
     tab = ax.table(cellText=rows, colLabels=cols, loc='upper left',
                    cellLoc='center', colLoc='center',
-                   colWidths=[0.34, 0.05, 0.06, 0.09, 0.06, 0.07, 0.08, 0.07,
-                              0.07, 0.07])
+                   colWidths=[0.31, 0.11, 0.08, 0.05, 0.07, 0.06, 0.07, 0.06,
+                              0.06, 0.06])
     tab.auto_set_font_size(False)
     tab.set_fontsize(8)
     tab.scale(1, 1.55)
@@ -110,7 +112,7 @@ def main():
         cell.set_text_props(ha='left')
       if i == 0:
         cell.set_text_props(weight='bold', color=INK2)
-      if i == len(rows):                         # newest run
+      if i > 0 and runs[i - 1].get('fixed'):     # trained on the fixed code
         cell.set_text_props(weight='bold')
     wrap(fig, 0.07, y - 0.05 - th, data['table_note'], width=125, size=7.5,
          color=MUTED, line=0.012)

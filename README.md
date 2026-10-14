@@ -159,10 +159,32 @@ python -m pytest dreamerv3/test_craftax_map.py -q
 >
 > A second audit found that evaluation worlds were only identical across runs
 > for the first episode. Later worlds depended on how long earlier episodes
-> ran. The tool now reseeds every episode, and every run is to be re-scored.
-> All findings are in [`docs/audit-2026-10-11.md`](docs/audit-2026-10-11.md).
+> ran. The tool now reseeds every episode. All findings are in
+> [`docs/audit-2026-10-11.md`](docs/audit-2026-10-11.md).
 
-**Current best: 9.73 achievements per episode** (manager v1.2: B2 plus a
+**2026-10-14, current numbers.** Every checkpoint was re-scored on the same 30
+fixed worlds, and the four reruns on the fixed code were scored the same way.
+Full table with standard errors:
+[`docs/comparison-report.pdf`](docs/comparison-report.pdf).
+
+Paired over those 30 worlds, on the fixed code:
+
+| comparison | difference (achievements) | holds up? |
+|---|---|---|
+| B2 vs honest map (masking impossible actions) | +2.57 ± 0.48 | yes |
+| v2 vs vanilla DreamerV3 | +2.53 ± 0.44 | yes |
+| v1.2 vs B2 (the manager) | +0.50 ± 0.57 | not established |
+
+- **Scores on the fixed code:** B2 8.27, v1.2 8.77, v2 7.17, vanilla 4.63.
+- **v1.2 dropped** from 9.97 to 8.77 after the fixes. With one training seed,
+  that can't be told apart from seed variation.
+- **Normalized return (raw Craftax reward):** 3.48% for v1.2 fixed, 3.32% for
+  B2, 2.77% for v2 fixed, against ITC's 7.09%.
+- **Two more training seeds** of the fixed B2, v1.2 and v2 are running. The
+  paragraphs below describe the original single-seed runs on the old
+  evaluation protocol.
+
+**Original runs, old protocol: 9.73 achievements per episode** (manager v1.2: B2 plus a
 manager that picks a tech-tree goal and holds it until reached, with one
 two-headed critic shared by both levels), against 8.53 for v1.1, 7.60 for B2
 and 4.44 for vanilla DreamerV3. **Normalized return, measured with Craftax's

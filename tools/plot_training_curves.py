@@ -35,14 +35,18 @@ RUNS = [
     ('map_pot_fixed', 'map + potential (old record)', None, 1),
     ('honest_map', 'honest map', None, 1),
     ('expB_input', 'B1: validity flags as input', None, 1),
-    ('expB_mask', 'B2: impossible actions masked', '#2a78d6', 7),
+    ('expB_mask', 'B2: impossible actions masked', None, 1),
     ('mgr', 'manager v1: B2 + goal manager', None, 1),
     ('mgr2', 'manager v1.1: + reach bonuses', '#d6336c', 9),
-    ('mgr3', 'manager v1.2: + shared two-headed critic', '#e8a33d', 10),
+    ('mgr3', 'manager v1.2: + shared two-headed critic', None, 1),
     ('mgr4', 'manager v1.3: + survival goals & potential', '#0b8f8f', 11),
     ('expB3', 'B3: learned action mask', None, 2),
-    ('v2', 'v2: learned goals, memory, rule mask', '#7a5230', 12),
-    ('v2cur', 'v2-cur: v2 + curiosity on', '#6d9b1e', 13),
+    ('v2', 'v2: learned goals, memory, rule mask', None, 1),
+    ('v2cur', 'v2-cur: v2 + curiosity on', None, 2),
+    ('expB_mask_fix', 'B2, fixed RSSM-2', '#2a78d6', 14),
+    ('mgr3_fix', 'v1.2, fixed RSSM-2', '#e8a33d', 15),
+    ('v2_fix', 'v2, fixed RSSM-2', '#7a5230', 16),
+    ('honest_map_fix', 'honest map, fixed RSSM-2', '#eb6834', 13),
 ]
 
 plt.rcParams.update({

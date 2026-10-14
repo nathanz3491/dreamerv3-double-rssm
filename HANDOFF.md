@@ -380,3 +380,24 @@ No files changed on 2026-10-11. A morning session on 2026-10-10 (09:47-09:49) le
 - Since both were still climbing at 1.1M steps, consider continuing v2 training rather than restarting.
 - Second seeds of the leaders (v1.1, B2, honest map, now v2) — all comparisons are single-seed.
 - Carry forward unchanged: `tomain`→`main` merge/push decision (`fix/spine-recipe-costs` many commits ahead, unpushed), the Stage 0-2 offline-validation gate, the rewcause iron-pickaxe probe, the `imag_length` 30-50 ceiling, and re-syncing `../localplay/`.
+
+---
+
+## Yesterday (state before this session, 2026-10-15 run)
+
+Tree clean at `6bc2108` on `fix/spine-recipe-costs` (2026-10-11 audit fixes in; fixed-code reruns of honest map, B2, v1.2, v2 trained; earlier score tables predate the fixes). Open: re-score everything on fixed eval worlds, extra seeds, `tomain`->`main` decision.
+
+## Today (2026-10-14 evening work, discovered on this 2026-10-15 run)
+
+No files changed on 2026-10-15, but a session on 2026-10-14 (~22:28-22:30) left this diff uncommitted; committed in this run:
+
+- **All 17 old checkpoints re-scored plus the four fixed-code reruns, on the same 30 fixed worlds** (one world hash across all runs; 21 runs total). `docs/eval_results.json`, `docs/comparison-report.pdf` and `docs/training-curves.{png,pdf}` regenerated; new `docs/curves/{expB_mask_fix,honest_map_fix,mgr3_fix,v2_fix}.json`.
+- Tables now show score ± standard error over worlds plus raw normalized return. Holds up on fixed code: action mask (B2 vs honest map +2.57 ± 0.48) and v2 over vanilla (+2.53 ± 0.44). Not established: manager over B2 (+0.50 ± 0.57), order among v1.1/v1.2/v1.3, curiosity. v1.2 fell 9.97 -> 8.77 after the fixes; B2 8.27, v2 7.17, vanilla 4.63. Best normalized return 3.48% (v1.2 fixed) vs ITC 7.09%.
+- `tools/make_comparison_report.py` and `tools/plot_training_curves.py` updated for the fixed runs; `README.md` and `CHANGELOG.md` carry the new numbers.
+- Two more training seeds of fixed B2, v1.2, v2 are reportedly running.
+
+## Tomorrow
+
+- Collect the extra seeds of fixed B2 / v1.2 / v2 and re-run the paired comparisons (manager vs B2 is the open question).
+- v2 still stops at the wood tier: `tools/action_suppression.py` on the v2 checkpoint.
+- Carry forward: `tomain`->`main` merge/push decision, Stage 0-2 offline gate, rewcause iron-pickaxe probe, `imag_length` 30-50 ceiling, re-syncing `../localplay/`.

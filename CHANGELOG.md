@@ -5,6 +5,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Comparison report on fixed evaluation worlds.** All 17 old checkpoints
+  were re-scored, plus the four reruns on the fixed code (honest map, B2,
+  v1.2, v2). Each is evaluated on the same 30 worlds, with one world hash
+  across all runs. The table now shows each score ± its standard error over
+  the worlds, and the raw normalized return.
+  - Holds up on the fixed code: the action mask (+2.57 ± 0.48), and v2 over
+    vanilla (+2.53 ± 0.44).
+  - Not established: the manager over B2 (+0.50 ± 0.57), and the order among
+    v1.1/v1.2/v1.3.
+  - v1.2 fell from 9.97 to 8.77 after the fixes; the other three reruns are
+    within noise of the old runs.
+- `death_eval.py --config-from-run` rebuilds a checkpoint from its saved
+  `config.yaml`, layered over the code's defaults. Older envs without
+  `reseed()` are reseeded through their key.
+- The training-curve plot adds the fixed runs.
+
 ### Fixed
 - **RSSM-2: training no longer sees what acting cannot, and episodes no
   longer leak** (found in an outside code review; details in
