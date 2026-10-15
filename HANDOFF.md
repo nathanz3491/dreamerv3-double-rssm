@@ -401,3 +401,20 @@ No files changed on 2026-10-15, but a session on 2026-10-14 (~22:28-22:30) left 
 - Collect the extra seeds of fixed B2 / v1.2 / v2 and re-run the paired comparisons (manager vs B2 is the open question).
 - v2 still stops at the wood tier: `tools/action_suppression.py` on the v2 checkpoint.
 - Carry forward: `tomain`->`main` merge/push decision, Stage 0-2 offline gate, rewcause iron-pickaxe probe, `imag_length` 30-50 ceiling, re-syncing `../localplay/`.
+
+
+---
+
+## Yesterday (state before this session, 2026-10-16 run)
+
+Tree clean at `34de626` on `fix/spine-recipe-costs`: 21 runs re-scored on 30 fixed worlds; extra seeds of fixed B2 / v1.2 / v2 running.
+
+## Today (2026-10-15 afternoon, discovered on this 2026-10-16 run)
+
+- `ab1fbab` (self-committed 17:51): `docs/curves/expB_mask_fix_s1.json`, curve for fixed B2 seed 1. Scored on the 30 fixed worlds: 7.70 ± 0.59 achievements (seed 0: 8.27). Seed-to-seed spread ~0.5 achievements, comparable to the unestablished manager-over-B2 gap (+0.50 ± 0.57). Nothing else changed; tree clean.
+
+## Tomorrow
+
+- Remaining seeds of fixed v1.2 / v2 (and B2 seed 2); paired comparisons with seed-level error bars.
+- `tools/action_suppression.py` on the v2 checkpoint.
+- Carry forward: `tomain`->`main` merge/push decision, Stage 0-2 offline gate, rewcause iron-pickaxe probe, `imag_length` 30-50 ceiling, re-syncing `../localplay/`.

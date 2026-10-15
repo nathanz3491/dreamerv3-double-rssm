@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Training curve for fixed B2, seed 1 (`docs/curves/expB_mask_fix_s1.json`): 7.70 ± 0.59 achievements on the 30 fixed worlds vs 8.27 for seed 0.
+
 ### Changed
 - **Comparison report on fixed evaluation worlds.** All 17 old checkpoints
   were re-scored, plus the four reruns on the fixed code (honest map, B2,
