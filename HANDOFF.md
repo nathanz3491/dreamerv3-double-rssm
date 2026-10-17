@@ -418,3 +418,14 @@ Tree clean at `34de626` on `fix/spine-recipe-costs`: 21 runs re-scored on 30 fix
 - Remaining seeds of fixed v1.2 / v2 (and B2 seed 2); paired comparisons with seed-level error bars.
 - `tools/action_suppression.py` on the v2 checkpoint.
 - Carry forward: `tomain`->`main` merge/push decision, Stage 0-2 offline gate, rewcause iron-pickaxe probe, `imag_length` 30-50 ceiling, re-syncing `../localplay/`.
+
+
+---
+
+## 2026-10-18 run
+
+**Yesterday:** tree clean at `e765ed2` on `fix/spine-recipe-costs`; extra seeds of fixed v1.2 / v2 / B2 running.
+
+**Today:** four finished-run training curves added to `docs/curves/` (committed this run): `expB_mask_fix_s2` (fixed B2 seed 2, ~1.08M steps), `mgr3_fix_s1`, `mgr3_fix_s2` (manager v3, ~1.09M), `v2_fix_s1` (~1.09M). No code change; not yet scored on the 30 fixed worlds.
+
+**Tomorrow:** score these four; paired comparisons with seed error bars; `tools/action_suppression.py` on v2; carry forward `tomain`->`main`, offline gate, rewcause probe, `imag_length` ceiling, `../localplay/` re-sync.
