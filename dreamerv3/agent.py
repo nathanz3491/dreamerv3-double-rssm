@@ -17,6 +17,7 @@ from . import craftax_features as cf
 from . import craftax_valid as cvalid
 from . import craftax_goals as cgoals
 from . import goalcodes
+from . import taste
 from embodied.jax import outs as jouts
 
 f32 = jnp.float32
@@ -250,6 +251,16 @@ class Agent(embodied.jax.Agent):
       self._valid_rule_mix = float(config.valid.rule_mix)
       self.feasclock = Counter(name='feasclock')
 
+    # Taste over actions (taste.py): a fast per-action logit bias learned from
+    # the critic's advantage on replay -- the knowledge-free stand-in for the
+    # rule mask, ported from the plastic-reward toy. Reads only the actions
+    # taken and the critic; no game rules reach it.
+    self._taste = bool(config.taste.enabled)
+    if self._taste:
+      kw ={k: v for k, v in config.taste.items() if k != 'enabled'}
+      self.taste = taste.Taste(
+          n_act=self._n_act, basic=tuple(cvalid.BASIC), **kw, name='taste')
+
     scalar = elements.Space(np.float32, ())
     binary = elements.Space(bool, (), 0, 2)
 
@@ -378,6 +389,8 @@ class Agent(embodied.jax.Agent):
 
     self._repval = bool(config.repval_loss) and (
         not self._use_mgr or self._shared)
+    assert self._repval or not self._taste, (
+        'taste reads its evidence from the replay value loss')
 
     self.rew = embodied.jax.MLPHead(scalar, **config.rewhead, name='rew')
     self.con = embodied.jax.MLPHead(binary, **config.conhead, name='con')
@@ -501,6 +514,8 @@ class Agent(embodied.jax.Agent):
         keys += ['goalnet', 'goalbook']   # reached-checks run while acting
     if self._valid_learned:
       keys += ['feas', 'feasclock']  # B3: the learned mask acts
+    if self._taste:
+      keys.append('taste')           # the taste bias acts
     return '^(' + '|'.join(keys) + ')/'
 
   @property
@@ -622,6 +637,8 @@ class Agent(embodied.jax.Agent):
       policy = self._masked(policy, allowed)
     elif self._valid_mask:
       policy = self._masked(policy, obs['valid'] > 0.5)
+    else:
+      policy = self._masked(policy, None)
     act = jax.tree.map(self._choose, policy)
     out = {}
     out['finite'] = elements.tree.flatdict(jax.tree.map(
@@ -679,7 +696,14 @@ class Agent(embodied.jax.Agent):
     The basic actions (NOOP, moves, DO) are always allowed. The mask is added
     after the categorical's unimix, so no uniform floor leaks back onto a
     masked action.
+
+    With taste enabled its bias is added first, here, so acting, the imagined
+    rollouts and the actor loss all see the same prior.
     """
+    if self._taste:
+      logits = policy['action'].logits
+      bias = sg(self.taste.bias()).astype(logits.dtype)
+      policy = {**policy, 'action': jouts.Categorical(logits + bias)}
     if valid is None:
       return policy
     allowed = valid
@@ -1681,6 +1705,15 @@ class Agent(embodied.jax.Agent):
           **self.config.repl_loss)
       losses.update(los)
       metrics.update(prefix(mets, 'reploss'))
+      if self._taste and training:
+        # Evidence for taste: the advantage of each real step, the return
+        # that really followed minus what the critic expected there, filed
+        # under the action taken at that step (prevact holds it one step
+        # later). Steps that end an episode have no following return.
+        adv = sg(reploss_out['ret'] - reploss_out['val'][:, :-1])
+        taken = prevact['action'][:, T - K + 1:]
+        metrics.update(prefix(self.taste.observe(
+            adv, taken, f32(~last[:, :-1])), 'taste'))
 
     assert set(losses.keys()) == set(self.scales.keys()), (
         sorted(losses.keys()), sorted(self.scales.keys()))
@@ -1992,6 +2025,7 @@ def repl_loss(
 
   outs = {}
   outs['ret'] = ret
+  outs['val'] = tarval
   metrics = {}
 
   return losses, outs, metrics

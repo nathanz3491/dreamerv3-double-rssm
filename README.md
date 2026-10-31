@@ -244,6 +244,13 @@ and 2.7 below v1.2. The real normalized return is 2.65% for v2 and 2.70% for
 v2-cur, against 3.91% for v1.2 and ITC's 7.09%. See
 [`docs/comparison-report.pdf`](docs/comparison-report.pdf).
 
+**v2-taste** ([`docs/taste-prior.md`](docs/taste-prior.md)) drops that last
+piece of game knowledge. The rule mask is replaced by a learned per-action
+"taste": a bias on the actor's logits, revised from the critic's advantage on
+real steps. It is ported from the plastic-reward toy, where it helped in
+every test world. Enable it with `--env.craftax.valid_obs False
+--agent.valid.mask False --agent.taste.enabled True`.
+
 
 The map model helps, and the tech-tree gate has opened for the first time:
 **map + potential shaping reaches 5.80 achievements/episode at 1.1M steps**,

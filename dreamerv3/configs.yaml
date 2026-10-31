@@ -167,6 +167,16 @@ defaults:
     # scales the explore stream by its own return spread, floored at retlimit
     # instead of the game's 1 (False reproduces v2's first run, where
     # curiosity stayed ~2% of the actor's signal).
+    # --- taste over actions (taste.py; ported from ../plastic-reward) ---------
+    # A per-action logit bias, learned from the critic's advantage on replay at
+    # the steps where each action was really taken: the knowledge-free stand-in
+    # for valid.mask's rules. The rule constants are the toy's evolved champion
+    # (btn2adv). every/fresh: a fold of evidence every 2000 train updates, which
+    # is 4000 new env steps at train_ratio 512 with 16x64 batches -- recompute
+    # fresh = every * batch_size * batch_length / train_ratio if those change.
+    # actions special leaves NOOP, the moves and DO untouched, as the toy's
+    # taste covered its buttons but not its moves.
+    taste: {enabled: False, actions: special, every: 2000, fresh: 4000.0, zscale: 0.288, w0: 0.25, alpha: 0.41, rho: 0.014, pos: 4.45, neg: 1.43, decay: 0.40, lam: 4.92, optimism: 0.0, n0: 20.0, wmax: 1.0, stdrate: 0.01}
     curiosity: {enabled: False, members: 5, layers: 2, units: 512, weight: 0.2, mgr_weight: 0.2, normalize: False, retlimit: 1e-3}
     memhead: {layers: 2, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in}
     gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}

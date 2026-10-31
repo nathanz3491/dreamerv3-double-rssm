@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Taste over actions** (`dreamerv3/taste.py`, `agent.taste.*`,
+  `docs/taste-prior.md`): a knowledge-free stand-in for v2's rule mask,
+  ported from the plastic-reward toy.
+  - It is a per-action logit bias, learned from the critic's advantage at the
+    real replay steps where each action was taken.
+  - The rule constants are the toy's evolved champion. In the toy it helped
+    in all 11 worlds (+11 to +37 lifespan), where the same taste as a reward
+    lost up to −81.
+  - Acting, imagination and the actor loss share the bias through
+    `Agent._masked`. `repl_loss` also returns its value baseline.
+  - Tests are in `test_taste.py`.
 - Training curve for fixed B2, seed 1 (`docs/curves/expB_mask_fix_s1.json`): 7.70 ± 0.59 achievements on the 30 fixed worlds vs 8.27 for seed 0.
 
 ### Changed
