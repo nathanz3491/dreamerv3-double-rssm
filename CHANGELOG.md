@@ -17,6 +17,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Acting, imagination and the actor loss share the bias through
     `Agent._masked`. `repl_loss` also returns its value baseline.
   - Tests are in `test_taste.py`.
+- `tools/compare_at_steps.py`: achievements per training episode at matched
+  env steps, from `curves_from_replay` JSONs, with seeds averaged and an SE
+  over seeds. It compares a run still training with finished runs at the
+  same step.
+- Training curve for fixed v2, seed 2 (`docs/curves/v2_fix_s2.json`).
 - Training curve for fixed B2, seed 1 (`docs/curves/expB_mask_fix_s1.json`): 7.70 ± 0.59 achievements on the 30 fixed worlds vs 8.27 for seed 0.
 
 ### Changed

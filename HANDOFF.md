@@ -429,3 +429,14 @@ Tree clean at `34de626` on `fix/spine-recipe-costs`: 21 runs re-scored on 30 fix
 **Today:** four finished-run training curves added to `docs/curves/` (committed this run): `expB_mask_fix_s2` (fixed B2 seed 2, ~1.08M steps), `mgr3_fix_s1`, `mgr3_fix_s2` (manager v3, ~1.09M), `v2_fix_s1` (~1.09M). No code change; not yet scored on the 30 fixed worlds.
 
 **Tomorrow:** score these four; paired comparisons with seed error bars; `tools/action_suppression.py` on v2; carry forward `tomain`->`main`, offline gate, rewcause probe, `imag_length` ceiling, `../localplay/` re-sync.
+
+
+---
+
+## 2026-11-01 run
+
+**Yesterday:** tree clean at `f7f24d6` on `fix/spine-recipe-costs`.
+
+**Today (2026-10-31 work):** new branch `feat/taste-prior`. `cbec67b` (self-committed) adds taste over actions as a knowledge-free action prior (`dreamerv3/taste.py`, tests, `docs/taste-prior.md`, agent/config hooks; bias flows through `Agent._masked`; `repl_loss` returns its value baseline). Committed this run: `tools/compare_at_steps.py` (matched-step achievements, seeds averaged, SE), `docs/curves/v2_fix_s2.json`, CHANGELOG.
+
+**Tomorrow:** train/check the taste-prior run and compare at matched steps vs v2/B2; score on the 30 fixed worlds; carry forward `tomain`->`main`, `action_suppression.py` on v2, `../localplay/` re-sync.
