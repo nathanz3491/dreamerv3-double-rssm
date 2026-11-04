@@ -250,6 +250,12 @@ piece of game knowledge. The rule mask is replaced by a learned per-action
 real steps. It is ported from the plastic-reward toy, where it helped in
 every test world. Enable it with `--env.craftax.valid_obs False
 --agent.valid.mask False --agent.taste.enabled True`.
+**Result (2026-11-01): 5.33** achievements on the 30 fixed worlds (1.96%
+return), against 7.02 for fixed v2 (three seeds) and 5.70 for the honest map.
+It never makes a wood pickaxe. Taste turned against nearly every special
+action, most of all the most-pressed ones, because its evidence averages
+below zero and ignores the situation. Details are in
+[`docs/taste-prior.md`](docs/taste-prior.md#result-2026-11-01).
 
 
 The map model helps, and the tech-tree gate has opened for the first time:

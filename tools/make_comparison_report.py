@@ -2,7 +2,8 @@
 
 Reads docs/eval_results.json -- one entry per evaluated checkpoint, each the
 output of tools/death_eval.py (episode-final achievement count, per-achievement
-unlock rate, cause of death) -- and writes docs/comparison-report.pdf.
+unlock rate, cause of death; tools/eval_entry.py turns a log into an entry) --
+and writes docs/comparison-report.pdf.
 
   python tools/make_comparison_report.py
 """

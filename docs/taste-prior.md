@@ -1,7 +1,8 @@
 # Taste over actions: replacing v2's rule mask
 
 Status: implemented (`dreamerv3/taste.py`, `agent.taste.*`), tests in
-`dreamerv3/test_taste.py`; v2-taste training queued.
+`dreamerv3/test_taste.py`. v2-taste trained and scored (2026-11-01): it did
+not replace the rule mask. See [Result](#result-2026-11-01).
 
 ## Why
 
@@ -81,3 +82,144 @@ Metrics are logged under `taste/`:
 - `shown_mean`, `shown_min`, `shown_max`;
 - `liked` (share of special actions with a positive shown taste);
 - `conf_mean`.
+
+## Result (2026-11-01)
+
+v2-taste trained for 1.1M env steps (one seed) and was scored on the same 30
+fixed worlds as every other run (`docs/comparison-report.pdf`).
+
+| run | test achievements | normalized return | wood pickaxe |
+|---|---|---|---|
+| v2 fixed (3 seeds) | 7.02 (7.17 / 7.83 / 6.07) | 2.71% | 53% (seed 0) |
+| honest map fixed (no mask, no taste) | 5.70 ± 0.21 | 2.12% | 7% |
+| **v2-taste** | **5.33 ± 0.19** | **1.96%** | **0%** |
+| vanilla | 4.63 ± 0.22 | 1.65% | 23% |
+
+Paired by world: −1.69 ± 0.25 against v2, −0.37 ± 0.26 against the honest
+map, +0.70 ± 0.28 against vanilla. In training it stayed about 2 below v2
+fixed at every step (5.12 against 7.36 at 1.08M).
+
+**What taste learned** (`docs/taste-run.json`: the `taste/` metrics over
+training, and each action's taste in the final checkpoint):
+- It started curious and liked every special action at 100k steps.
+- It then turned against almost all of them. From 250k steps on, at most 2
+  of the 37 had a positive bias, both almost never pressed. The mean shown
+  taste ended at −0.53, or −2.6 logits.
+- The bias follows how often an action was pressed (rank correlation −0.98
+  between evidence count and bias). Placing a table, which v2 needs, ended at
+  −4.5 logits. Making an iron sword, which is impossible this early, ended at
+  the same value.
+
+**Why:**
+1. *The evidence was not compared with a baseline.* The advantage
+   (λ-return minus the critic's value) averaged below zero for every action.
+   Each press therefore counted a little against the button pressed, and the
+   most-pressed buttons collected the most of it.
+2. *Taste ignores the situation.* Crafting pays only next to a table with
+   the right items. A single number per button cannot say "good here".
+3. *It replaced the mask instead of sitting on top of it.* The run therefore
+   tested whether taste can stand in for the game's rules, a question the
+   research proposal never asked. It confounds everything else.
+
+**No-taste control.** v2-norules (the same agent without taste) is still
+training. At matched steps up to 523k, v2-taste is 0.0 to 0.5 ahead. That is
+one seed each, within the seed-to-seed spread (up to 1.8).
+
+**Next.** The design the proposal intended:
+- keep the rule mask and put taste on top, with the same agent without taste
+  as the control;
+- compare the evidence with the average step;
+- let taste weigh observable events, such as the hand-written goals' reach
+  bonuses, instead of buttons.
+
+## Taste on the manager (next run, `agent.taste.target manager`)
+
+**The agent** is the next agent with taste added:
+- B2's rule mask;
+- curiosity as in v2;
+- v1.2's 13 hand-written goals;
+- everything else as fixed v2: RSSM-2 as a memory, the shared critic, hold
+  32, survival none.
+
+Taste acts **only on the manager**. The bottom actor, its goal reward and
+the reach bonus are untouched.
+
+**Where it writes.** `_mgr_loss_shared` already scores every goal g at a
+manager decision, using Q(s, g) from the critic's game head. Taste adds an
+internal reward for choosing g:
+
+    Q'(s, g) = Q(s, g) + lam_mgr x rscale x (taste(g) − mean taste of the 12 goals)
+
+This is the proposal's r_learn = r_env + λ·r_int, with "the manager chose
+goal g" as the event. Details:
+- rscale is the game retnorm scale, floored at 1. At 1M steps it was 1.0
+  against a Q spread of about 0.1, so lam_mgr is a gain on that scale, not
+  "one return spread".
+- The manager's advantage ignores any amount added equally to every goal.
+  Only taste *relative* to the other goals can move it.
+- NONE (goal 0) never gets a taste. Without the mean subtraction, a level
+  shared by the 12 goals (optimism, drift) would act as a permanent handicap
+  on NONE only. Code review found that optimism 0.25 alone gave a 0.23
+  offset, twice the game's Q spread.
+- No bias is added anywhere: the manager's choices change only as it learns
+  from Q'.
+- `q_spread` is logged before taste is added and `q_spread_taste` after, so
+  a run can tell the two apart.
+
+**Where it reads** (`_taste_mgr_evidence`, in the replay block). At every
+real step where the manager chose a goal (gphase 0), the evidence is:
+- the λ-return that really followed;
+- minus Σ_g π(g|s) Q(s, g), what the manager expected from its own choice
+  there.
+
+Only the game head counts: the proposal judges by external reward alone, so
+curiosity and the goal stream stay out. The evidence is filed under the goal
+chosen.
+
+Q here comes from the *fast* critic. That is the one the manager's loss uses
+and the one that bootstraps the λ-return (`repl_loss slowtar False`). The
+slow critic lags by about 50 updates, and that lag would add a goal-dependent
+error which centering cannot remove.
+
+Only the decision rows (about 3% of replay) are scored, at most `taste.rows`
+(256) per update. Scoring every row for all 13 goals would mean 13,000 critic
+rows per update, of which about 400 are used. Any dropped choices are
+counted in `choices_dropped`.
+
+**The baseline fix.** `center True` subtracts the fold's average over all
+choices from each goal's evidence. A constant error in the critic then
+cannot drag every goal down, which is what sank v2-taste.
+
+**Counts.** Choices happen at only a few steps, so `observe(..., steps=)`
+gives each goal its share of all the fresh env steps, not of the choices.
+Otherwise a fold of about 300 choices would count as 4000 pieces of
+evidence. These are replay samples, so n is a rate rather than a count of
+distinct choices. Early folds rest on few distinct decisions replayed many
+times, a property inherited from v2-taste.
+
+The step counter exists only for the manager target. Taste over actions
+keeps its old variables, so v2-taste checkpoints still load.
+
+**Settings.** The update rule keeps the toy's evolved `w0`, `alpha`, `rho`,
+`decay` and `n0`. Three settings differ from the toy:
+- **`pos = neg = 1.43`.** The toy weighted good evidence 3.1 times bad. With
+  centered evidence that turns taste into a sign detector: a goal slightly
+  above average pins at +1. In a simulation by the reviewer, every good goal
+  ended at 1.00 and every bad one at about 0. Equal weights make taste a
+  graded comparison with the average goal, which is what centering means.
+- **`lam_mgr 1.0`**, a separate key from the actions target's `lam` (4.92
+  logits), so a launch that forgets the flag cannot apply a reward 4.92 times
+  too large.
+- **`optimism 0`.** A level shared by every unseen goal cancels out of the
+  manager's advantage, so optimism cannot make new goals "slightly
+  favoured". The proposal's "curious at first" is left to v2's curiosity
+  stream, which the manager also values.
+
+**Runs** (`~/run_tmgrq.sh` on the box, after v2-norules): `next_taste`,
+then `next_notaste`, the same agent without taste. The control is the
+proposal's "fixed internal reward": the manager judged by game value alone.
+
+Metrics:
+- `taste/<goal>`: the shown taste per goal, logged from the manager loss;
+- the evidence fold's own: `adv_std`, `shown_mean`, `liked`, `conf_mean`,
+  and `choices` (decisions per batch).

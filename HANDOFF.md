@@ -440,3 +440,13 @@ Tree clean at `34de626` on `fix/spine-recipe-costs`: 21 runs re-scored on 30 fix
 **Today (2026-10-31 work):** new branch `feat/taste-prior`. `cbec67b` (self-committed) adds taste over actions as a knowledge-free action prior (`dreamerv3/taste.py`, tests, `docs/taste-prior.md`, agent/config hooks; bias flows through `Agent._masked`; `repl_loss` returns its value baseline). Committed this run: `tools/compare_at_steps.py` (matched-step achievements, seeds averaged, SE), `docs/curves/v2_fix_s2.json`, CHANGELOG.
 
 **Tomorrow:** train/check the taste-prior run and compare at matched steps vs v2/B2; score on the 30 fixed worlds; carry forward `tomain`->`main`, `action_suppression.py` on v2, `../localplay/` re-sync.
+
+---
+
+## 2026-11-04 run
+
+**Yesterday:** `e66d97e`, branch `feat/taste-prior`.
+
+**Today (11-01..03 work):** branch `feat/taste-manager`. Taste on the manager's goal choice (`agent.taste.target manager`); `docs/ablations.md` with ablation curves and a ±0.55 scoring-noise check (only RSSM-2 + v1.2 manager clearly beats plain; action-taste does nothing); `tools/eval_entry.py`; regenerated report/curve PDFs and `eval_results.json`. All uncommitted at run time, committed now.
+
+**Tomorrow:** read `v12_nomask` + second ablation seeds; decide on a full taste-on-manager run; carry forward `tomain`->`main`, `action_suppression.py` on v2, `../localplay/` re-sync.

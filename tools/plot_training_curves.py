@@ -3,8 +3,9 @@
 Top: achievements per training episode (episode-final count, the same measure
 death_eval reports), averaged in 50k-step bins. Bottom: episode length. The
 value printed beside each run is the mean over its last 100k steps -- a single
-bin is too noisy to quote. The five runs that carry the story are coloured;
-the rest are grey context, since ten categorical colours would be unreadable.
+bin is too noisy to quote. The runs that carry the story (vanilla and the
+fixed-code runs) are coloured; the rest are grey context, since ten
+categorical colours would be unreadable.
 
   python tools/plot_training_curves.py   # reads docs/curves/, writes docs/
 """
@@ -37,9 +38,9 @@ RUNS = [
     ('expB_input', 'B1: validity flags as input', None, 1),
     ('expB_mask', 'B2: impossible actions masked', None, 1),
     ('mgr', 'manager v1: B2 + goal manager', None, 1),
-    ('mgr2', 'manager v1.1: + reach bonuses', '#d6336c', 9),
+    ('mgr2', 'manager v1.1: + reach bonuses', None, 1),
     ('mgr3', 'manager v1.2: + shared two-headed critic', None, 1),
-    ('mgr4', 'manager v1.3: + survival goals & potential', '#0b8f8f', 11),
+    ('mgr4', 'manager v1.3: + survival goals & potential', None, 1),
     ('expB3', 'B3: learned action mask', None, 2),
     ('v2', 'v2: learned goals, memory, rule mask', None, 1),
     ('v2cur', 'v2-cur: v2 + curiosity on', None, 2),
@@ -47,6 +48,7 @@ RUNS = [
     ('mgr3_fix', 'v1.2, fixed RSSM-2', '#e8a33d', 15),
     ('v2_fix', 'v2, fixed RSSM-2', '#7a5230', 16),
     ('honest_map_fix', 'honest map, fixed RSSM-2', '#eb6834', 13),
+    ('v2_taste', 'v2-taste: taste, no mask', '#1baf7a', 17),
 ]
 
 plt.rcParams.update({

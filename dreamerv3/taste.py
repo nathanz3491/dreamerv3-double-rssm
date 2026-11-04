@@ -25,6 +25,17 @@ unit for unit:
   scale  the toy judged q = conf * eff / 32 with eff in steps of survival and
          a per-step advantage spread of ~9.2 steps; here eff is in units of
          the running per-step advantage spread, times zscale = 9.2 / 32.
+
+The slots need not be actions. With `agent.taste.target manager` they are
+the manager's goals: the evidence is the real return after the manager chose
+a goal, and the taste is an internal reward on that choice (agent.py,
+_mgr_loss_shared) rather than a logit bias.
+
+`center` compares each slot's evidence with the average over all slots in
+the fold, the baseline of the research proposal. Without it v2-taste's
+advantage averaged below zero for every action, so every press counted a
+little against its button and the most-pressed ones were liked least
+(docs/taste-prior.md, Result).
 """
 
 import jax
@@ -49,14 +60,19 @@ class Taste(nj.Module):
   pos: float = 4.45        # weight of good evidence
   neg: float = 1.43        # weight of bad evidence
   decay: float = 0.40      # per fold, how much old evidence is kept
-  lam: float = 4.92        # logits per unit of taste
+  lam: float = 4.92        # logits per unit of taste (target actions)
+  lam_mgr: float = 1.0     # retnorm scales per unit of taste (target manager)
+  rows: int = 256          # replay rows read per update (target manager)
   optimism: float = 0.0    # what the policy sees where evidence has faded
   n0: float = 20.0         # evidence count at which confidence is 1/2
   wmax: float = 1.0
   stdrate: float = 0.01    # EMA rate of the per-step advantage spread
+  center: bool = False     # evidence relative to the fold's average slot
+  target: str = 'actions'  # read by agent.py: where the taste acts
 
   def __init__(self):
     assert self.actions in ('special', 'all'), self.actions
+    assert self.target in ('actions', 'manager'), self.target
     A = self.n_act
     zeros = lambda: jnp.zeros((A,), f32)
     self.w = nj.Variable(lambda: jnp.full((A,), self.w0, f32), name='w')
@@ -64,6 +80,14 @@ class Taste(nj.Module):
     self.eff = nj.Variable(zeros, name='eff')
     self.acc_sum = nj.Variable(zeros, name='acc_sum')
     self.acc_cnt = nj.Variable(zeros, name='acc_cnt')
+    # Every step sampled since the last fold, with evidence or not: slots
+    # filled only at some steps (manager decisions) get counts in proportion.
+    # Over actions every step carries evidence, so the count of evidence is
+    # the count of steps and the variable is left out: v2-taste checkpoints
+    # keep loading.
+    self._sparse = self.target == 'manager'
+    if self._sparse:
+      self.acc_steps = nj.Variable(jnp.zeros, (), f32, name='acc_steps')
     # Running mean, mean square and debias weight of the per-step advantage.
     self.moms = nj.Variable(jnp.zeros, (3,), f32, name='moms')
     self.tick = nj.Variable(jnp.zeros, (), i32, name='tick')
@@ -84,17 +108,34 @@ class Taste(nj.Module):
     """(n_act,) logits added to the actor's; zero on untouched actions."""
     return self.lam * self.shown() * self.mask()
 
-  def observe(self, adv, act, weight):
+  def relative(self):
+    """(n_act,) shown taste minus its mean over the tasted slots; 0 untouched.
+
+    The manager's advantage is shift-invariant across all its goals, so a
+    level shared by the tasted goals would only act against the untasted one
+    (NONE): optimism 0.25 alone would be a permanent handicap on NONE larger
+    than the game's own Q spread. Only how a goal compares with the others
+    may move the manager.
+    """
+    m = self.mask()
+    shown = self.shown()
+    mean = (shown * m).sum() / jnp.maximum(m.sum(), 1.0)
+    return (shown - mean) * m
+
+  def observe(self, adv, act, weight, steps=None):
     """Fold one replay batch of advantages into the evidence.
 
     ``adv`` (B, T) external-reward advantage of each real step (lambda-return
-    minus the critic's value), ``act`` (B, T) the action taken there,
-    ``weight`` (B, T) 1 where the step counts. Every `every` calls the
+    minus the critic's value), ``act`` (B, T) the action (or goal) taken
+    there, ``weight`` (B, T) 1 where the step carries evidence. ``steps``
+    (target manager only) is how many replay steps the batch covers, so a
+    slot's count is its share of the fresh env steps. Every `every` calls the
     accumulated evidence is folded into memory and taste moves (the toy's
     reward.update). Returns metrics.
     """
     A = self.n_act
     adv, weight = f32(adv), f32(weight)
+    assert (steps is not None) == self._sparse, (steps, self.target)
     total = weight.sum()
     has = total > 0
     norm = jnp.maximum(total, 1.0)
@@ -110,12 +151,18 @@ class Taste(nj.Module):
     onehot = jax.nn.one_hot(act, A, dtype=f32) * weight[..., None]
     acc_sum = self.acc_sum.read() + (onehot * (adv / std)[..., None]).sum((0, 1))
     acc_cnt = self.acc_cnt.read() + onehot.sum((0, 1))
+    if self._sparse:
+      acc_steps = self.acc_steps.read() + f32(steps)
+    else:
+      acc_steps = acc_cnt.sum()
     tick = self.tick.read() + 1
     self.tick.write(tick)
 
     # Fold: the window's fresh env steps, shared by how often each was sampled.
-    count = acc_cnt / jnp.maximum(acc_cnt.sum(), 1.0) * self.fresh
+    count = acc_cnt / jnp.maximum(acc_steps, 1.0) * self.fresh
     seen = acc_sum / jnp.maximum(acc_cnt, 1e-6)
+    if self.center:
+      seen -= acc_sum.sum() / jnp.maximum(acc_cnt.sum(), 1e-6)
     n_old = self.decay * self.n.read()
     n = n_old + count
     eff = jnp.where(n > 0, (n_old * self.eff.read() + count * seen)
@@ -133,6 +180,8 @@ class Taste(nj.Module):
     self.eff.write(keep(eff, self.eff.read()))
     self.acc_sum.write(keep(jnp.zeros_like(acc_sum), acc_sum))
     self.acc_cnt.write(keep(jnp.zeros_like(acc_cnt), acc_cnt))
+    if self._sparse:
+      self.acc_steps.write(keep(jnp.zeros_like(acc_steps), acc_steps))
 
     m = self.mask()
     shown = self.shown()

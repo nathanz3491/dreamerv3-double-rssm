@@ -6,6 +6,82 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Ablation results and a scoring-noise check** (`docs/ablations.md`,
+  curves in `docs/curves/abl_*.json`).
+  - On plain DreamerV3, only RSSM-2 + the v1.2 manager comes out ahead in
+    both measures: +1.00 ± 0.35 on the test worlds and +0.6 in training.
+    RSSM-2 alone is unclear, and taste over actions does nothing.
+  - Rescoring the same checkpoints on a second set of 30 worlds puts one
+    30-world score's noise at about ±0.55.
+  - Fixed v1.2 leads B2 by +0.50 ± 0.25 over 60 worlds but is level in
+    training.
+  - Old v1.2's 9.97 is 9.73 over 60 worlds. That is a real lead over the
+    fixed v1.2 seeds, plus about +0.25 of world luck.
+  - Queued in `~/run_ablseeds.sh`:
+    - `v12_nomask`: fixed v1.2 minus the rule mask, to measure the mask
+      under the v1.2 manager;
+    - second seeds of `abl_manager` and `abl_plain`.
+  - v2-norules' curve is in `docs/curves/v2_norules.json`.
+- **Taste on the manager** (`agent.taste.target manager`, design in
+  `docs/taste-prior.md`). Taste becomes an internal reward on the manager's
+  choice of goal. It is added to Q(s, g) in `_mgr_loss_shared` and learned
+  from the real return after each choice, compared with the manager's
+  expected value Σ π Q.
+  - The bottom actor is untouched. It needs the named goals and the shared
+    critic.
+  - Queued on the box (`~/run_ablq.sh`) after the ablations below:
+    `next_taste`, then its no-taste control `next_notaste`. Both use the
+    next agent: B2 mask, curiosity, v1.2 named goals, the rest as fixed v2.
+- **Ablation queue: each addition alone on plain DreamerV3** (no rule mask,
+  no shaping, no curiosity, same code):
+  - `abl_rssm2`: RSSM-2 as a memory;
+  - `abl_manager`: RSSM-2 + the v1.2 manager (the manager reads RSSM-2, so
+    its own share is `abl_manager` − `abl_rssm2`);
+  - `abl_taste`: taste over actions, centered, equal weights, w0 0;
+  - `abl_plain`: plain DreamerV3 itself. The old vanilla run used other
+    code.
+- `taste.center`: each slot's evidence is compared with the fold's average,
+  the fix for v2-taste's negative bias. `Taste.observe(..., steps=)` counts
+  sparse evidence (manager choices) as a share of all env steps. The
+  defaults (`center False`, `target actions`) reproduce v2-taste.
+- Tests: centering ignores a constant shift (two different batches) and
+  undoes v2-taste's most-pressed-sinks-most failure; sparse counts over two
+  folds; the all-goals critic input matches the replay layout.
+  - The manager evidence files ret[t] − Σπ Q at exactly the chosen steps,
+    skipping episode ends and the cut last step.
+  - The row cap drops and counts any choices beyond it.
+  - Relative taste is neutral to a shared level.
+
+### Fixed
+- Manager taste, from code review before the first run:
+  - **The evidence used the slow critic** while the return and the manager
+    use the fast one. It now uses the fast one.
+  - **A level shared by the 12 goals handicapped NONE.** Taste now enters Q
+    relative to the goals' mean.
+  - **The manager reused the actions target's `lam` (4.92 logits).** It now
+    has its own key, `lam_mgr` (1.0).
+  - **The evidence scored all replay rows for 13 goals.** Only the decision
+    rows are scored now, capped by `taste.rows`.
+  - **`q_spread` mixed taste into the game spread.** It is now logged before
+    taste, with `q_spread_taste` after.
+  - **The new step counter broke v2-taste checkpoints.** It now exists only
+    for the manager target.
+  - The queued run uses equal good and bad evidence weights (1.43). The
+    toy's 3:1 ratio pins every above-average goal at +1 once evidence is
+    centered.
+- **v2-taste scored: 5.33 achievements on the 30 fixed worlds** (1.96%
+  return). That is −1.69 ± 0.25 against fixed v2 (three-seed mean 7.02),
+  level with the honest map (5.70), and +0.70 against vanilla. It never makes
+  a wood pickaxe.
+  - Taste turned against nearly every special action. The bias tracks how
+    often an action is pressed (rank correlation −0.98): placing a table ends
+    as low as an impossible iron sword, at −4.5 logits.
+  - Write-up in `docs/taste-prior.md`. The data (`taste/` metrics and the
+    final per-action taste) is in `docs/taste-run.json`. The training curve
+    is in `docs/curves/v2_taste.json`.
+- `tools/eval_entry.py` turns a `death_eval.py` log into a
+  `docs/eval_results.json` run entry. It reproduces the existing entries
+  exactly.
 - **Taste over actions** (`dreamerv3/taste.py`, `agent.taste.*`,
   `docs/taste-prior.md`): a knowledge-free stand-in for v2's rule mask,
   ported from the plastic-reward toy.
@@ -25,6 +101,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Training curve for fixed B2, seed 1 (`docs/curves/expB_mask_fix_s1.json`): 7.70 ± 0.59 achievements on the 30 fixed worlds vs 8.27 for seed 0.
 
 ### Changed
+- **Comparison report adds v2-taste and the three-seed results** (22 runs).
+  The seeds of fixed B2, v1.2 and v2 had been scored but were never reported.
+  Their means on the test worlds are B2 8.33, v1.2 8.78 and v2 7.02.
+  - Paired comparisons now use the per-world mean over the three seeds.
+    These hold up: the mask over the honest map (+2.63 ± 0.38), v2 over
+    vanilla (+2.39 ± 0.28) and B2 over v2 (+1.31 ± 0.32).
+  - Not established: v1.2 over B2 (+0.44 ± 0.33).
+  - The training-curve plot colours v2-taste and greys the old-code manager
+    runs.
 - **Comparison report on fixed evaluation worlds.** All 17 old checkpoints
   were re-scored, plus the four reruns on the fixed code (honest map, B2,
   v1.2, v2). Each is evaluated on the same 30 worlds, with one world hash

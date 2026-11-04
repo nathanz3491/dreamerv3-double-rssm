@@ -176,7 +176,14 @@ defaults:
     # fresh = every * batch_size * batch_length / train_ratio if those change.
     # actions special leaves NOOP, the moves and DO untouched, as the toy's
     # taste covered its buttons but not its moves.
-    taste: {enabled: False, actions: special, every: 2000, fresh: 4000.0, zscale: 0.288, w0: 0.25, alpha: 0.41, rho: 0.014, pos: 4.45, neg: 1.43, decay: 0.40, lam: 4.92, optimism: 0.0, n0: 20.0, wmax: 1.0, stdrate: 0.01}
+    # target manager moves taste onto the manager's goals instead (named goals,
+    # critic shared): an internal reward on choosing each goal, lam_mgr x its
+    # taste relative to the other goals, in rscale units (lam is the actions
+    # target's logits and is not used there), learned from the real return
+    # after each choice against the manager's expected value; rows caps the
+    # decision rows scored per update. center compares every slot with the
+    # fold's average (False reproduces v2-taste).
+    taste: {enabled: False, target: actions, center: False, actions: special, every: 2000, fresh: 4000.0, zscale: 0.288, w0: 0.25, alpha: 0.41, rho: 0.014, pos: 4.45, neg: 1.43, decay: 0.40, lam: 4.92, lam_mgr: 1.0, rows: 256, optimism: 0.0, n0: 20.0, wmax: 1.0, stdrate: 0.01}
     curiosity: {enabled: False, members: 5, layers: 2, units: 512, weight: 0.2, mgr_weight: 0.2, normalize: False, retlimit: 1e-3}
     memhead: {layers: 2, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in}
     gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}

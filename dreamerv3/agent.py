@@ -251,15 +251,17 @@ class Agent(embodied.jax.Agent):
       self._valid_rule_mix = float(config.valid.rule_mix)
       self.feasclock = Counter(name='feasclock')
 
-    # Taste over actions (taste.py): a fast per-action logit bias learned from
-    # the critic's advantage on replay -- the knowledge-free stand-in for the
-    # rule mask, ported from the plastic-reward toy. Reads only the actions
-    # taken and the critic; no game rules reach it.
+    # Taste (taste.py), created once the manager's goal count is known.
+    #   target actions: a fast per-action logit bias learned from the critic's
+    #     advantage on replay -- v2-taste's knowledge-free stand-in for the
+    #     rule mask. Reads only the actions taken and the critic.
+    #   target manager: an internal reward on the manager's choice of goal,
+    #     learned from the real return after each choice (_mgr_loss_shared,
+    #     _taste_mgr_evidence). The bottom actor and its rewards are untouched.
     self._taste = bool(config.taste.enabled)
-    if self._taste:
-      kw ={k: v for k, v in config.taste.items() if k != 'enabled'}
-      self.taste = taste.Taste(
-          n_act=self._n_act, basic=tuple(cvalid.BASIC), **kw, name='taste')
+    assert config.taste.target in ('actions', 'manager'), config.taste.target
+    self._taste_mgr = self._taste and config.taste.target == 'manager'
+    self._taste_act = self._taste and not self._taste_mgr
 
     scalar = elements.Space(np.float32, ())
     binary = elements.Space(bool, (), 0, 2)
@@ -391,6 +393,17 @@ class Agent(embodied.jax.Agent):
         not self._use_mgr or self._shared)
     assert self._repval or not self._taste, (
         'taste reads its evidence from the replay value loss')
+    if self._taste:
+      kw = {k: v for k, v in config.taste.items() if k != 'enabled'}
+      if self._taste_mgr:
+        assert self._shared and not self._learned_goals, (
+            'manager taste needs the named goals and manager.critic shared')
+        # One slot per goal; NONE (goal 0) is never given a taste.
+        self.taste = taste.Taste(
+            n_act=self._goals, basic=(0,), **kw, name='taste')
+      else:
+        self.taste = taste.Taste(
+            n_act=self._n_act, basic=tuple(cvalid.BASIC), **kw, name='taste')
 
     self.rew = embodied.jax.MLPHead(scalar, **config.rewhead, name='rew')
     self.con = embodied.jax.MLPHead(binary, **config.conhead, name='con')
@@ -514,7 +527,7 @@ class Agent(embodied.jax.Agent):
         keys += ['goalnet', 'goalbook']   # reached-checks run while acting
     if self._valid_learned:
       keys += ['feas', 'feasclock']  # B3: the learned mask acts
-    if self._taste:
+    if self._taste_act:
       keys.append('taste')           # the taste bias acts
     return '^(' + '|'.join(keys) + ')/'
 
@@ -697,10 +710,10 @@ class Agent(embodied.jax.Agent):
     after the categorical's unimix, so no uniform floor leaks back onto a
     masked action.
 
-    With taste enabled its bias is added first, here, so acting, the imagined
-    rollouts and the actor loss all see the same prior.
+    With taste over actions its bias is added first, here, so acting, the
+    imagined rollouts and the actor loss all see the same prior.
     """
-    if self._taste:
+    if self._taste_act:
       logits = policy['action'].logits
       bias = sg(self.taste.bias()).astype(logits.dtype)
       policy = {**policy, 'action': jouts.Categorical(logits + bias)}
@@ -1179,6 +1192,65 @@ class Agent(embodied.jax.Agent):
     grew = jnp.concatenate([jnp.zeros_like(grew[:, :1]), grew], 1)
     return grew, event
 
+  def _all_goals_input(self, base, deter2, flags):
+    """The shared critic's input with every goal set at segment step 0.
+
+    base (..., D) is the actor's view, deter2 (..., D2) RSSM-2's state and
+    flags (..., G) the goals reached so far, all at the same states. Returns
+    (..., G, D'): the same layout as the critic input on replay.
+    """
+    G = self._goals
+    allg = self._goalfeat(jnp.arange(G), jnp.zeros(G, i32))  # (G, G + P)
+    lead = base.shape[:-1]
+    tile = lambda x: jnp.broadcast_to(
+        x[..., None, :], (*lead, G, x.shape[-1]))
+    return jnp.concatenate([
+        tile(base), jnp.broadcast_to(allg, (*lead, G, allg.shape[-1])),
+        tile(nn.cast(sg(deter2))), tile(nn.cast(f32(flags)))], -1)
+
+  def _taste_mgr_evidence(self, base, deter2, obs, ret, last, K):
+    """Taste's evidence on the manager: what each real goal choice was worth.
+
+    At every real step where the manager chose a goal (gphase 0), the
+    lambda-return that really followed minus the manager's expected value of
+    its own choice there, sum_g pi(g|s) Q(s, g), from the game head alone:
+    the proposal judges taste by external reward only, so curiosity and the
+    goal stream stay out. Q comes from the fast critic, the one the manager's
+    loss uses and the one that bootstraps `ret` (repl_loss slowtar False);
+    the slow critic's lag would add a goal-dependent error that centering
+    cannot remove. Filed under the goal chosen. taste.center then compares
+    each goal with the fold's average choice.
+
+    ret[:, t] is the return after the action at step t, so every array is
+    cut to the same K-1 steps. Only the decision rows (about 3%) are scored:
+    the first `taste.rows` of them per batch, the rest dropped and counted.
+    """
+    N = ret.shape[0] * ret.shape[1]
+    cut = lambda x: x[:, -K:][:, :-1].reshape((N, *x.shape[2:]))
+    chose = cut(obs['gphase'] == 0) & cut(~last[:, -K:])
+    M = min(N, int(self.taste.rows))
+    # Decisions first, in step order: a unique key per row keeps it stable.
+    key = jnp.where(chose, 0, N) + jnp.arange(N)
+    rows = jnp.argsort(key)[:M]
+    take = lambda x: x[rows]
+    flags = take(cut(obs['goalreach'] > 0.5))
+    reached = (take(cut(obs['goalphi'] >= 1.0 - 1e-3))
+               & (jnp.arange(self._goals) > 0))
+    base, deter2 = take(cut(base)), take(cut(deter2))
+    cinp = self._all_goals_input(base, deter2, flags)          # (M, G, D')
+    voffset, vscale = self.valnorm.stats()
+    q = f32(self.val(cinp, 2)['game'].pred()) * vscale + voffset
+    dist = self._mgr_dist(self._mgr_input(base, deter2, flags), 1, reached)
+    probs = jax.nn.softmax(f32(dist.logits), -1)
+    expect = (probs * q).sum(-1)                               # (M,)
+    adv = sg(take(ret.reshape(N)) - expect)
+    mets = self.taste.observe(
+        adv[None], take(cut(obs['goal']))[None], f32(take(chose))[None],
+        steps=f32(cut(~last[:, -K:])).sum())
+    mets['choices'] = f32(chose).sum()
+    mets['choices_dropped'] = jnp.maximum(f32(chose).sum() - M, 0.0)
+    return mets
+
   def _mgr_loss_shared(self, imgfeat, goals, phases, flags, reached, weight,
                        frozen, deter2, rscale):
     """The manager actor, judged by the shared critic's game head.
@@ -1195,15 +1267,10 @@ class Agent(embodied.jax.Agent):
     idx = list(range(0, T - 1, 8))
     feat = jax.tree.map(lambda x: x[:, idx], imgfeat)
     base = self.actor2tensor(feat, frozen)                   # (N, I, D)
-    N, I = base.shape[:2]
+    I = base.shape[1]
     G = self._goals
-    allg = self._goalfeat(jnp.arange(G), jnp.zeros(G, i32))  # (G, G + P)
-    d2 = nn.cast(sg(deter2))
-    fl = nn.cast(f32(flags[:, idx]))
-    tile = lambda x: jnp.broadcast_to(x[:, :, None], (N, I, G, x.shape[-1]))
-    cinp = jnp.concatenate([
-        tile(base), jnp.broadcast_to(allg, (N, I, G, allg.shape[-1])),
-        tile(jnp.repeat(d2[:, None], I, 1)), tile(fl)], -1)
+    cinp = self._all_goals_input(
+        base, jnp.repeat(deter2[:, None], I, 1), flags[:, idx])
     voffset, vscale = self.valnorm.stats()
     heads = self.val(cinp, 3)
     q = f32(heads['game'].pred()) * vscale + voffset   # (N, I, G)
@@ -1216,6 +1283,19 @@ class Agent(embodied.jax.Agent):
         # explore part ends up divided by its own spread instead.
         qe = qe * rscale / self.eretnorm.stats()[1]
       q = q + self._curio_mgr * qe
+    # The manager's own Q spread, before any taste, so a run can tell the two
+    # apart.
+    mets = {'q_spread': q.std(-1).mean()}
+    if self._taste_mgr:
+      # Taste: an internal reward for choosing goal g, lam_mgr x its taste
+      # relative to the other goals, in units of rscale (the floored game
+      # retnorm scale; q is divided by it below). It moves the manager only
+      # through this learning signal; no bias acts.
+      rel = sg(self.taste.relative())
+      q = q + self.taste.lam_mgr * rscale * rel
+      mets['q_spread_taste'] = q.std(-1).mean()
+      for i, name in enumerate(self._goal_names):
+        mets[f'taste/{name.lower()}'] = rel[i]
     dist = self._mgr_dist(self._mgr_input(base, deter2, flags[:, idx]), 2,
                           reached[:, idx])
     probs = jax.nn.softmax(f32(dist.logits), -1)
@@ -1223,9 +1303,8 @@ class Agent(embodied.jax.Agent):
     ent = dist.entropy()
     actent = float(self.config.manager.actent)
     loss = sg(weight[:, idx]) * -((probs * adv).sum(-1) + actent * ent)
-    mets = {'ent/goal': ent.mean(),
-            'q_spread': q.std(-1).mean(),
-            'q_best_minus_mean': (q.max(-1) - (probs * q).sum(-1)).mean()}
+    mets.update({'ent/goal': ent.mean(),
+                 'q_best_minus_mean': (q.max(-1) - (probs * q).sum(-1)).mean()})
     decided = (phases == 0)[:, 1:]
     picks = (jax.nn.one_hot(goals[:, 1:], G) * decided[..., None]).sum((0, 1))
     picks = picks / jnp.maximum(picks.sum(), 1)
@@ -1685,6 +1764,7 @@ class Agent(embodied.jax.Agent):
         mf, _ = self.mapfeat(d2)
         inp = self.actor2tensor(feat, mf.reshape((B, K, -1)))
       value, slow = self.val, self.slowval
+      base = inp                     # the actor's view, before the goal
       if self._shared:
         # The game head on replay, with the goal and segment step the agent
         # really had there -- the same input the imagined rollouts resume.
@@ -1705,7 +1785,11 @@ class Agent(embodied.jax.Agent):
           **self.config.repl_loss)
       losses.update(los)
       metrics.update(prefix(mets, 'reploss'))
-      if self._taste and training:
+      if self._taste_mgr and training:
+        metrics.update(prefix(self._taste_mgr_evidence(
+            base, deter2_step[:, -K:], obs, reploss_out['ret'], last, K),
+            'taste'))
+      elif self._taste and training:
         # Evidence for taste: the advantage of each real step, the return
         # that really followed minus what the critic expected there, filed
         # under the action taken at that step (prevact holds it one step
