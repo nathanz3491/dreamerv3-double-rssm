@@ -239,6 +239,20 @@ episode, one seed, against three-seed means:
 | 1000k | 9.21 | 8.67 | 8.63 | 7.31 |
 | 1080k | 9.22 | 8.74 | 8.79 | 7.36 |
 
+**Test worlds** (`tools/death_eval.py`, 60 worlds, seeds 0–59, paired gaps
+by world):
+
+| run | worlds 0–29 | worlds 30–59 | 60 worlds | next_taste − run |
+|---|---|---|---|---|
+| next_taste | 9.80 | 8.97 | 9.38 ± 0.34 | — |
+| v1.2 fixed (3 seeds) | 8.78 | 9.29 | 9.03 ± 0.22 | +0.35 ± 0.35 |
+| B2 fixed (3 seeds) | 8.33 | 8.73 | 8.53 ± 0.24 | +0.85 ± 0.39 |
+| v2 fixed (3 seeds) | 7.02 | — | — | +2.78 ± 0.48 (worlds 0–29) |
+
+Level with v1.2, likely above B2, far above v2. It never makes a stone
+pickaxe or sword and never collects iron on any of the 60 worlds; its score
+comes from the wood tier plus placing stone and furnaces, arrows and coal.
+
 **But taste did not do what it was designed to do. It locked the manager
 onto one goal by 90k steps:**
 - `place_table`'s relative taste rose to 0.66 by 90k and 0.82 by 610k. Every

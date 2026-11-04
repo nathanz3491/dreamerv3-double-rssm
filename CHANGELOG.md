@@ -8,7 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - **next_taste result** (`docs/taste-prior.md`, curve in
   `docs/curves/next_taste.json`). It trains to 9.2 achievements per episode
-  at 1.08M steps, above fixed v1.2 (8.74) and B2 (8.79). But taste locked
+  at 1.08M steps, above fixed v1.2 (8.74) and B2 (8.79). On 60 test worlds
+  it scores 9.38 ± 0.34: +0.35 ± 0.35 over fixed v1.2, +0.85 ± 0.39 over
+  B2 and +2.78 ± 0.48 over v2 (30 worlds). But taste locked
   the manager onto `place_table` by 90k steps (goal entropy 0 from then on),
   so the run measures a fixed goal, not taste. `next_notaste` crashed on a
   GPU fault (Xid 69) 90 s in; it reruns after `v12_nomask` via
