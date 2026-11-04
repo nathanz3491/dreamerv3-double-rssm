@@ -450,3 +450,18 @@ Tree clean at `34de626` on `fix/spine-recipe-costs`: 21 runs re-scored on 30 fix
 **Today (11-01..03 work):** branch `feat/taste-manager`. Taste on the manager's goal choice (`agent.taste.target manager`); `docs/ablations.md` with ablation curves and a ±0.55 scoring-noise check (only RSSM-2 + v1.2 manager clearly beats plain; action-taste does nothing); `tools/eval_entry.py`; regenerated report/curve PDFs and `eval_results.json`. All uncommitted at run time, committed now.
 
 **Tomorrow:** read `v12_nomask` + second ablation seeds; decide on a full taste-on-manager run; carry forward `tomain`->`main`, `action_suppression.py` on v2, `../localplay/` re-sync.
+
+---
+
+## 2026-11-05 run
+
+**Yesterday:** `68acdea` on `feat/taste-manager` (taste on the manager's goal choice, ablations, `eval_entry.py`); `v12_nomask` and second ablation seeds queued on the box.
+
+**Today (2026-11-04 afternoon work, self-committed):**
+- `e45bf99` (14:16): `next_taste` (taste on manager) trains to 9.2, above fixed v1.2 and B2, but manager goal entropy was 0 from 90k steps: centered evidence from chosen goals only freezes the winner and starves the rest. No-taste control crashed on a GPU fault and was requeued. Added `docs/curves/next_taste.json`, `docs/taste-prior.md` section, CHANGELOG.
+- `9b7519d` (15:50): `next_taste` scored on 60 worlds: 9.38, level with fixed v1.2, +0.85 over B2, +2.78 over v2; never reaches the stone tier.
+- Tree clean; `plastic-reward/` (`a7a4df9`) and `craftax/` (`c3c2e0d`) unchanged.
+
+**Tomorrow:**
+- Fix taste's goal-lock (evidence for unchosen goals) or drop it; read the requeued no-taste control, `v12_nomask`, second ablation seeds.
+- Carry forward: `tomain`->`main` decision, `action_suppression.py` on v2, `../localplay/` re-sync.
