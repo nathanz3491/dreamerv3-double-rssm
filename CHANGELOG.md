@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **next_taste result** (`docs/taste-prior.md`, curve in
+  `docs/curves/next_taste.json`). It trains to 9.2 achievements per episode
+  at 1.08M steps, above fixed v1.2 (8.74) and B2 (8.79). But taste locked
+  the manager onto `place_table` by 90k steps (goal entropy 0 from then on),
+  so the run measures a fixed goal, not taste. `next_notaste` crashed on a
+  GPU fault (Xid 69) 90 s in; it reruns after `v12_nomask` via
+  `~/run_ablseeds2.sh`, followed by the two ablation seeds.
 - **Ablation results and a scoring-noise check** (`docs/ablations.md`,
   curves in `docs/curves/abl_*.json`).
   - On plain DreamerV3, only RSSM-2 + the v1.2 manager comes out ahead in

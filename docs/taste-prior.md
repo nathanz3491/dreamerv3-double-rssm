@@ -215,11 +215,52 @@ keeps its old variables, so v2-taste checkpoints still load.
   favoured". The proposal's "curious at first" is left to v2's curiosity
   stream, which the manager also values.
 
-**Runs** (`~/run_tmgrq.sh` on the box, after v2-norules): `next_taste`,
-then `next_notaste`, the same agent without taste. The control is the
-proposal's "fixed internal reward": the manager judged by game value alone.
+**Runs** (`~/run_ablq.sh` on the box): `next_taste`, then `next_notaste`,
+the same agent without taste. The control is the proposal's "fixed internal
+reward": the manager judged by game value alone. `next_notaste` crashed 90 s
+in (a GPU fault, Xid 69) and was rerun after `v12_nomask` by
+`~/run_ablseeds2.sh`.
 
 Metrics:
 - `taste/<goal>`: the shown taste per goal, logged from the manager loss;
 - the evidence fold's own: `adv_std`, `shown_mean`, `liked`, `conf_mean`,
   and `choices` (decisions per batch).
+
+## Result: next_taste (2026-11-04)
+
+**Training is the best of the fixed-code runs.** Achievements per training
+episode, one seed, against three-seed means:
+
+| env steps | next-taste | v1.2 fixed | B2 fixed | v2 fixed |
+|---|---|---|---|---|
+| 700k | 8.10 | 8.22 | 7.57 | 6.70 |
+| 800k | 8.99 | 8.26 | 8.13 | 6.91 |
+| 900k | 8.79 | 8.53 | 8.56 | 7.22 |
+| 1000k | 9.21 | 8.67 | 8.63 | 7.31 |
+| 1080k | 9.22 | 8.74 | 8.79 | 7.36 |
+
+**But taste did not do what it was designed to do. It locked the manager
+onto one goal by 90k steps:**
+- `place_table`'s relative taste rose to 0.66 by 90k and 0.82 by 610k. Every
+  other goal sat at −0.075, unchanged after that.
+- The manager's goal entropy was 0.0 from 90k to the end.
+- The critic barely separates goals (`q_spread` 0.05–0.13). Taste, scaled by
+  `rscale` (about 7.6), separates them by about 4 (`q_spread_taste`). Taste
+  outweighs the critic 40 to 80 times over.
+
+**Why it locks in:** evidence comes only from goals the manager chooses.
+Once one goal wins, the others get no evidence and keep their taste. The
+winner's own evidence is centered over the fold, and the fold holds only
+the winner, so its centered evidence is about 0 and its taste stops moving.
+Nothing pulls it back.
+
+**What this means for the score:** next_taste is effectively "the next
+agent with the manager always saying `place_table`". Its 9.2 says a fixed
+goal costs nothing on top of the mask; it does not show that taste helps.
+`next_notaste` (the same agent with a learned manager) will tell whether
+the manager's choice matters at all.
+
+Possible fixes, if taste on the manager is kept:
+- scale taste by the critic's own goal spread, not by `rscale`;
+- center over the goals, not over the fold's choices;
+- keep some exploration of goals, so every goal keeps getting evidence.
