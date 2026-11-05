@@ -35,8 +35,8 @@ the gap columns are paired by world):
   +1.00 on the test worlds and +0.6 in training. The manager alone, compared
   with RSSM-2 alone, is +0.43 ± 0.29 on the test worlds. It learns more slowly
   at first (behind plain until about 800k steps), then is still climbing at
-  the end. A second seed (`abl_manager_s1`, queued in `~/run_ablseeds.sh`)
-  will tell whether this is real.
+  the end. The second seed did not repeat it (see "Second seed of the
+  manager ablation" below).
 - **RSSM-2 alone:** the two measures disagree. It is +0.57 on the test worlds
   but −0.25 in training. That disagreement is what noise looks like (see
   below). No effect is established.
@@ -55,9 +55,38 @@ three things that `abl_manager` lacks:
   memory mode;
 - the tech-tree potential shaping (`survival potential`).
 
-`v12_nomask` is queued first in `~/run_ablseeds.sh`: fixed v1.2 with the
-`~/vfix` code and flags of its three seeds, minus `valid.mask` and
-`valid_obs`. It measures what the mask is worth under the v1.2 manager.
+## What the mask is worth under the v1.2 manager (`v12_nomask`, 2026-11-05)
+
+`v12_nomask` is fixed v1.2 with the `~/vfix` code and flags of its three
+seeds, minus `valid.mask` and `valid_obs`. One seed.
+
+| run | test, 60 worlds | training, 1.08M steps |
+|---|---|---|
+| v1.2 fixed (3 seeds) | 9.03 ± 0.22 | 8.74 |
+| B2 fixed (3 seeds) | 8.53 ± 0.24 | 8.79 |
+| **v1.2 without the mask** | **6.13 ± 0.22** | **5.90** |
+| honest map fixed (worlds 0–29) | 5.70 ± 0.21 | 5.60 |
+
+- **The mask is worth +2.90 ± 0.26 under the v1.2 manager** (paired over
+  60 worlds), and +2.8 in training. That is the same as without a manager
+  (+2.6), so the manager does not reduce the need for the mask.
+- Without the mask, v1.2 is +0.33 ± 0.40 over the honest map (worlds 0–29)
+  and +0.3 in training: the manager and the shaping on top of the map
+  add little.
+
+## Second seed of the manager ablation
+
+`abl_manager_s1` ends training at 5.03, below plain (5.41), against 5.78 for
+seed 0. On worlds 0–29 it scores 5.30 ± 0.23 (seed 0: 5.77).
+
+| two-seed mean, worlds 0–29 | gap |
+|---|---|
+| abl_manager 5.53 ± 0.16 − abl_plain (s0) | +0.77 ± 0.28 |
+| abl_manager 5.53 ± 0.16 − abl_rssm2 | +0.20 ± 0.24 |
+
+The manager's own share (over RSSM-2 alone) is not established. Its lead
+over plain on the test worlds is smaller with two seeds, and gone in
+training. `abl_plain_s1` will finish the comparison.
 
 ## Scoring noise and training luck (the v1.2 question)
 

@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **v1.2 without the mask, and the manager ablation's second seed**
+  (`docs/ablations.md`, curves `docs/curves/v12_nomask.json` and
+  `abl_manager_s1.json`).
+  - `v12_nomask` scores 6.13 on 60 test worlds: the mask is worth
+    +2.90 ± 0.26 under the v1.2 manager, as much as without one.
+  - `abl_manager_s1` ends below plain in training (5.03 against 5.41) and
+    scores 5.30 on worlds 0–29. With two seeds the manager is +0.20 ± 0.24
+    over RSSM-2 alone: not established.
+  - `next_notaste` crashed a second time on its first policy step (Xid 13).
+    `~/run_notaste3.sh` tries it once more after `abl_plain_s1`, and if it
+    dies again, runs `next_lam0` (taste on the manager with `lam_mgr 0`) as
+    the no-taste control.
 - **next_taste result** (`docs/taste-prior.md`, curve in
   `docs/curves/next_taste.json`). It trains to 9.2 achievements per episode
   at 1.08M steps, above fixed v1.2 (8.74) and B2 (8.79). On 60 test worlds
