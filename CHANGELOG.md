@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Comparison report: 28 runs** (`docs/comparison-report.pdf`,
+  `docs/eval_results.json`). Adds the four ablations (plain and manager with
+  two seeds), v1.2 without the mask and next-taste, with updated summary and
+  conclusions; the training-curve page adds them too. `abl_plain_s1` scores
+  4.77, the same as seed 0.
+  - Bold table rows now mark runs new since the last report (`new` in the
+    entry, `--new` in `tools/eval_entry.py`), no longer the fixed-code runs.
 - **v1.2 without the mask, and the manager ablation's second seed**
   (`docs/ablations.md`, curves `docs/curves/v12_nomask.json` and
   `abl_manager_s1.json`).

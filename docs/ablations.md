@@ -86,7 +86,11 @@ seed 0. On worlds 0–29 it scores 5.30 ± 0.23 (seed 0: 5.77).
 
 The manager's own share (over RSSM-2 alone) is not established. Its lead
 over plain on the test worlds is smaller with two seeds, and gone in
-training. `abl_plain_s1` will finish the comparison.
+training.
+
+`abl_plain_s1` scores 4.77 on worlds 0–29, exactly seed 0's score. With two
+seeds each, the manager is +0.77 ± 0.22 over plain and RSSM-2 alone is
++0.57 ± 0.26.
 
 ## Scoring noise and training luck (the v1.2 question)
 

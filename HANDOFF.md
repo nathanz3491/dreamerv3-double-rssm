@@ -465,3 +465,18 @@ Tree clean at `34de626` on `fix/spine-recipe-costs`: 21 runs re-scored on 30 fix
 **Tomorrow:**
 - Fix taste's goal-lock (evidence for unchosen goals) or drop it; read the requeued no-taste control, `v12_nomask`, second ablation seeds.
 - Carry forward: `tomain`->`main` decision, `action_suppression.py` on v2, `../localplay/` re-sync.
+
+---
+
+## 2026-11-06 run
+
+**Yesterday:** `c7ccad5` on `feat/taste-manager`; `v12_nomask`, second ablation seeds and the no-taste control were queued on the box.
+
+**Today (2026-11-05 evening work):**
+- `874a461` (20:11, self-committed): `v12_nomask` and `abl_manager_s1` recorded. The mask is worth +2.90 under the v1.2 manager (6.13 vs 9.03 on 60 worlds), same as without a manager; manager's second ablation seed ends below plain, so its own share was not established. Curves `docs/curves/v12_nomask.json`, `abl_manager_s1.json`.
+- Uncommitted at run time, committed now: `abl_plain_s1` scores 4.77 (same as seed 0), so with two seeds the manager is +0.77 ± 0.22 over plain and RSSM-2 alone +0.57 ± 0.26 (`docs/ablations.md`, `docs/curves/abl_plain_s1.json`). Comparison report regenerated with 28 runs (`docs/comparison-report.pdf`, `training-curves.*`, `eval_results.json`); `tools/eval_entry.py` gets `--new` (bold rows = runs new since last report); `make_comparison_report.py` / `plot_training_curves.py` updated; CHANGELOG entry.
+
+**Tomorrow:**
+- Fix taste's goal-lock (evidence for unchosen goals) or drop taste-on-manager; read the requeued no-taste control.
+- Carry forward: `tomain`->`main` decision, `action_suppression.py` on v2, `../localplay/` re-sync.
+- Housekeeping: README still accurate; no `AGENTS.md` (no multi-agent roles).

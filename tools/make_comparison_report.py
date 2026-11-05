@@ -113,7 +113,7 @@ def main():
         cell.set_text_props(ha='left')
       if i == 0:
         cell.set_text_props(weight='bold', color=INK2)
-      if i > 0 and runs[i - 1].get('fixed'):     # trained on the fixed code
+      if i > 0 and runs[i - 1].get('new'):       # new since the last report
         cell.set_text_props(weight='bold')
     wrap(fig, 0.07, y - 0.05 - th, data['table_note'], width=125, size=7.5,
          color=MUTED, line=0.012)
@@ -121,10 +121,11 @@ def main():
     plt.close(fig)
 
     # --------------------------------------------- 2. totals + the tech spine
-    fig = page(pdf, 'Sleep inflates the map runs; the manager is real progress',
+    fig = page(pdf, 'Sleep inflates the map runs; the mask is the large gain',
                'Mean episode-final achievements per run, split into WAKE_UP and '
                'the rest; unlock rate of the early tech-tree rungs')
     ax = fig.add_axes([0.33, 0.60, 0.59, 0.27])
+    fs = 8 if len(runs) <= 22 else 7      # rows get tight past 22 runs
     ypos = np.arange(len(runs))[::-1]
     rest = np.array([r['achievements'] - r['wake_up'] for r in runs])
     wake = np.array([r['wake_up'] for r in runs])
@@ -133,15 +134,15 @@ def main():
     ax.barh(ypos, wake, left=rest, height=0.62, color=WAKE, edgecolor=SURFACE,
             linewidth=2, label='WAKE_UP (sleep, then wake)')
     for yy, a, b in zip(ypos, rest, wake):
-      ax.text(a + b + 0.06, yy, f'{a + b:.2f}', va='center', fontsize=8.5)
-      ax.text(a - 0.08, yy, f'{a:.2f}', va='center', ha='right', fontsize=7.5,
-              color='#ffffff')
+      ax.text(a + b + 0.06, yy, f'{a + b:.2f}', va='center', fontsize=fs + 0.5)
+      ax.text(a - 0.08, yy, f'{a:.2f}', va='center', ha='right',
+              fontsize=fs - 0.5, color='#ffffff')
     ax.axvline(runs[0]['achievements'], color=MUTED, linewidth=1,
                linestyle=(0, (3, 3)))
     ax.text(runs[0]['achievements'], -0.75, ' vanilla', fontsize=7.5,
             color=MUTED, va='center')
     ax.set_yticks(ypos)
-    ax.set_yticklabels(labels, fontsize=8)
+    ax.set_yticklabels(labels, fontsize=fs)
     ax.set_xlim(0, max(rest + wake) * 1.15)
     ax.set_xlabel('achievements per episode (episode-final count)')
     ax.legend(ncol=2, loc='lower left', bbox_to_anchor=(0, 1.0), frameon=False,

@@ -49,6 +49,13 @@ RUNS = [
     ('v2_fix', 'v2, fixed RSSM-2', '#7a5230', 16),
     ('honest_map_fix', 'honest map, fixed RSSM-2', '#eb6834', 13),
     ('v2_taste', 'v2-taste: taste, no mask', '#1baf7a', 17),
+    ('v2_norules', 'v2-norules: v2 without the mask', None, 2),
+    ('abl_plain', 'plain DreamerV3 (today\'s code)', None, 2),
+    ('abl_rssm2', 'plain + RSSM-2', None, 2),
+    ('abl_manager', 'plain + RSSM-2 + v1.2 manager', None, 2),
+    ('abl_taste', 'plain + taste over actions', None, 2),
+    ('v12_nomask', 'v1.2 without the mask', '#8e5bd0', 18),
+    ('next_taste', 'next: v2 + named goals + taste', '#d6336c', 19),
 ]
 
 plt.rcParams.update({
@@ -107,12 +114,12 @@ def figure(size=(11, 10)):
   for tail, lx, ly, label, colour in [e for e in ends if e[1] < 0.9]:
     top.text(lx + 0.02, ly, f'{label}  {tail:.1f} (stopped at {lx:.1f}M)',
              fontsize=7.5, color=MUTED, va='center')
-  ends = sorted((e for e in ends if e[1] >= 0.9), key=lambda e: e[0])
+  # Placed top-down, each label pushed below the one above it: the best runs
+  # cluster near the top, and pushing upward would run past the title.
+  ends = sorted((e for e in ends if e[1] >= 0.9), key=lambda e: -e[0])
   placed = []
   for tail, lx, ly, label, colour in ends:
-    yy = tail
-    while any(abs(yy - p) < 0.22 for p in placed):
-      yy += 0.22
+    yy = min(tail, placed[-1] - 0.22) if placed else tail
     placed.append(yy)
     top.annotate(
         f'{label}  {tail:.1f}', xy=(lx, ly), xytext=(1.13, yy),

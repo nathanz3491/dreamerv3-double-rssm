@@ -57,11 +57,15 @@ def main():
   ap.add_argument('--label', required=True)
   ap.add_argument('--short', required=True)
   ap.add_argument('--fixed', action='store_true',
-                  help='trained on the 2026-10-11 fixed code (bold row)')
+                  help='trained on the 2026-10-11 fixed code')
+  ap.add_argument('--new', action='store_true',
+                  help='new since the last report (bold row)')
   args = ap.parse_args()
   entry = dict(id=args.id, label=args.label, short=args.short, final=True)
   if args.fixed:
     entry['fixed'] = True
+  if args.new:
+    entry['new'] = True
   entry.update(parse(pathlib.Path(args.log).read_text(encoding='utf-8')))
   print(json.dumps(entry, indent=1))
 
