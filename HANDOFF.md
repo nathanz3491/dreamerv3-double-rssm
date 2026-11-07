@@ -480,3 +480,11 @@ Tree clean at `34de626` on `fix/spine-recipe-costs`: 21 runs re-scored on 30 fix
 - Fix taste's goal-lock (evidence for unchosen goals) or drop taste-on-manager; read the requeued no-taste control.
 - Carry forward: `tomain`->`main` decision, `action_suppression.py` on v2, `../localplay/` re-sync.
 - Housekeeping: README still accurate; no `AGENTS.md` (no multi-agent roles).
+
+## 2026-11-08 run
+
+**Yesterday:** `7be4d51`, clean, `feat/taste-manager`.
+
+**Today:** the 2026-11-07 session committed `de105e0`: no-taste control `next_lam0` = 11.30 ± 0.27 on 60 test worlds (best run; +1.92 ± 0.41 over next-taste); `docs/taste-prior.md` explains the failure (taste outweighed the critic 15-300x, manager locked on `place_table`, 60% no-goal steps near tables); 29-run comparison report regenerated; CHANGELOG updated.
+
+**Tomorrow:** fix taste's goal-lock or drop it; `tomain`->`main`; `action_suppression.py` on v2.
