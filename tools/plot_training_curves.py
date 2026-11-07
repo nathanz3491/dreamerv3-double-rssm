@@ -56,6 +56,7 @@ RUNS = [
     ('abl_taste', 'plain + taste over actions', None, 2),
     ('v12_nomask', 'v1.2 without the mask', '#8e5bd0', 18),
     ('next_taste', 'next: v2 + named goals + taste', '#d6336c', 19),
+    ('next_lam0', 'next, no taste', '#0b7a75', 20),
 ]
 
 plt.rcParams.update({

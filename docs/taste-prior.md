@@ -278,3 +278,79 @@ Possible fixes, if taste on the manager is kept:
 - scale taste by the critic's own goal spread, not by `rscale`;
 - center over the goals, not over the fold's choices;
 - keep some exploration of goals, so every goal keeps getting evidence.
+
+## Why taste hurt (2026-11-07)
+
+**Test worlds** (60 worlds, paired by world): next_lam0 scores
+**11.30 ± 0.27**, the best of any run (old v1.2: 9.73 over the same 60).
+
+| next_lam0 − run | gap |
+|---|---|
+| next-taste | +1.92 ± 0.41 |
+| v1.2 fixed (3 seeds) | +2.27 ± 0.33 |
+| B2 fixed (3 seeds) | +2.77 ± 0.32 |
+| v2 fixed (3 seeds, worlds 0–29) | +4.18 ± 0.49 |
+
+On worlds 0–29 it makes the stone sword in 50% of episodes and the stone
+pickaxe in 30%; next-taste made neither in any of 60. One seed.
+
+The control, `next_lam0` (the same agent with taste on the manager but
+`lam_mgr 0`, so taste is computed and never used), trains to 9.92 at 1.08M
+steps against next-taste's 9.22, and leads at every checkpoint from 700k.
+Taste hurt through four links, each measured.
+
+**1. Taste swamps the critic from its first update.** The manager's
+advantage is `(Q − Σ π Q) / rscale`. The critic barely separates goals:
+`q_spread` 0.02–0.1, so about 0.003–0.013 after dividing by `rscale`
+(about 7.6). Taste adds `lam_mgr × relative taste` directly: 0.2 after the
+first fold, 0.9 by the end. That is 15 to 300 times the game signal, against
+an entropy bonus of only `actent` 1e-3. Goal entropy fell from 2.55 to 0.004
+at the first fold, **6.7k env steps** into training.
+
+**2. The lock is permanent.** Only a chosen goal gets evidence. The fold
+holds only the winner, so its centered evidence is about 0. The others keep
+their taste. Nothing can move it back (`place_table` 0.20 → 0.82; the rest
+frozen at −0.075).
+
+**3. "Relative" taste turns NONE into the second choice.** A goal that
+already holds is blocked from the manager's choice, and `PLACE_TABLE` holds
+whenever a table is nearby. NONE has no taste (0), and every unfavoured goal
+sits at −0.075, so whenever the agent is near a table the manager picks NONE.
+Over the last 160k steps of replay:
+
+| goal share | next-taste | next_lam0 |
+|---|---|---|
+| NONE (no goal) | 60% | 27% |
+| PLACE_TABLE | 40% | 10% |
+| the 11 other goals | 0% | 63% (no goal above 11%) |
+
+**4. Being told "be near a table", the actor builds tables instead of
+tools.** The goal reward pays for reaching the goal, and placing a table
+reaches it at once. Presses per episode (replay, last 160k steps):
+
+| press | next-taste | next_lam0 |
+|---|---|---|
+| place table | 4.63 (4.21 under the table goal) | 3.53 |
+| DO (chop, mine, hit) | 87.7 | 58.7 |
+| place stone | 1.10 | 2.39 |
+| place furnace | 1.11 | 1.53 |
+| make stone pickaxe | 0.00 | 0.06 |
+| make stone sword | 0.00 | 0.32 |
+
+Over the last 150k steps (`tools/diagnose_run.py`), next-taste collects
+stone in 69% of episodes (next_lam0 82%) and places a furnace in 61% (78%).
+Of the episodes that held wood and stone next to a table, it made the stone
+pickaxe in 0.3% (8.2%). The goals that point past the table (stone, iron,
+the stone tools) are never proposed. The control's manager proposes all
+eleven, and that is where its lead comes from.
+
+**What this says about the design:**
+- Taste must be on the critic's scale, not `rscale`'s: for example, in
+  units of the critic's own spread between goals, or capped below it.
+- Evidence must reach unchosen goals, or taste must decay back toward
+  neutral; otherwise the first winner is permanent.
+- NONE must be treated like the other goals (or excluded from the choice),
+  so that centering does not make "no goal" the default.
+- Not measured, but likely: easy goals win early. A rule that judges goals
+  by the return right after choosing them favours whatever is achievable
+  first, while the tech tree needs goals whose payoff comes later.

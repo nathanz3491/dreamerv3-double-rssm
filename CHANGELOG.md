@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Comparison report: 29 runs** (`docs/comparison-report.pdf`). Adds
+  "Next, no taste" (`next_lam0`, 11.20 on the 30 worlds, 4.56% return) as
+  the only bold (new) row, its training curve, and rewritten conclusions 5–7.
+- **Why taste on the manager hurt** (`docs/taste-prior.md`). The no-taste
+  control `next_lam0` trains to 9.92 against next-taste's 9.22, and scores
+  11.30 ± 0.27 on 60 test worlds, the best of any run (+1.92 ± 0.41 over
+  next-taste, +2.27 ± 0.33 over fixed v1.2). Taste
+  outweighed the critic 15–300 times from its first update (6.7k steps), so
+  the manager locked onto `place_table`. Relative taste then made NONE the
+  choice whenever a table was near (60% of steps with no goal). The actor
+  built tables instead of stone tools: no stone pickaxe or sword presses,
+  against 0.06 and 0.32 per episode in the control.
 - **Comparison report: 28 runs** (`docs/comparison-report.pdf`,
   `docs/eval_results.json`). Adds the four ablations (plain and manager with
   two seeds), v1.2 without the mask and next-taste, with updated summary and
