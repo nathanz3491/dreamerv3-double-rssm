@@ -26,11 +26,17 @@ BIN = 50_000
 TAIL = 100_000
 
 # (run, label, colour or None for grey context, z-order)
-# Main lists the plain runs only; each family branch lists its own runs.
+# Each branch lists its own runs. family/taste: the plain baseline, the three
+# taste runs, and the no-taste controls of v2_taste (v2_norules, family/v) and
+# next_taste (next_lam0, family/next). (M) = masked, counted as cheating.
 RUNS = [
-    ('vanilla', 'vanilla DreamerV3 (old code)', '#52514e', 3),
-    ('abl_plain', 'plain DreamerV3 (fixed code)', '#2a78d6', 4),
-    ('abl_plain_s1', 'plain DreamerV3 (fixed code), seed 1', '#eb6834', 4),
+    ('vanilla', 'vanilla DreamerV3 (old code)', None, 1),
+    ('abl_plain', 'plain DreamerV3 (fixed code)', '#52514e', 3),
+    ('abl_taste', 'plain + taste over actions', '#2a78d6', 4),
+    ('v2_taste', 'v2-taste: v2, no mask, taste over actions', '#1baf7a', 5),
+    ('v2_norules', 'control: v2 without the mask, no taste', None, 2),
+    ('next_taste', '(M) next-taste: taste on the manager', '#d6336c', 6),
+    ('next_lam0', '(M) control: next, no taste', '#e8a33d', 6),
 ]
 
 plt.rcParams.update({
@@ -94,7 +100,7 @@ def figure(size=(11, 10)):
   ends = sorted((e for e in ends if e[1] >= 0.9), key=lambda e: -e[0])
   placed = []
   for tail, lx, ly, label, colour in ends:
-    yy = min(tail, placed[-1] - 0.22) if placed else tail
+    yy = min(tail, placed[-1] - 0.3) if placed else tail
     placed.append(yy)
     top.annotate(
         f'{label}  {tail:.1f}', xy=(lx, ly), xytext=(1.13, yy),
