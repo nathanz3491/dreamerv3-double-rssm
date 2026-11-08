@@ -26,11 +26,21 @@ BIN = 50_000
 TAIL = 100_000
 
 # (run, label, colour or None for grey context, z-order)
-# Main lists the plain runs only; each family branch lists its own runs.
+# This branch lists the map-model runs and the plain baselines. Runs on the
+# fixed code (2026-10-11 or later) get a colour; the older map runs are grey.
 RUNS = [
+    ('map_stage5', 'map model (bug)', None, 1),
+    ('map_survive', 'map + 5 hand rewards (bug)', None, 1),
+    ('map_potential', 'map + potential (bug)', None, 1),
+    ('map_noshift', 'map model (fixed)', None, 1),
+    ('map_pot_fixed', 'map + potential', None, 1),
+    ('priv_map', 'privileged map + potential + fixes', None, 1),
+    ('honest_map', 'honest map (old RSSM-2)', None, 2),
     ('vanilla', 'vanilla DreamerV3 (old code)', '#52514e', 3),
     ('abl_plain', 'plain DreamerV3 (fixed code)', '#2a78d6', 4),
-    ('abl_plain_s1', 'plain DreamerV3 (fixed code), seed 1', '#eb6834', 4),
+    ('abl_plain_s1', 'plain DreamerV3 (fixed code), seed 1', '#8e5bd0', 4),
+    ('honest_map_fix', 'honest map, fixed RSSM-2', '#eb6834', 6),
+    ('abl_rssm2', 'plain + RSSM-2 as a memory', '#1baf7a', 5),
 ]
 
 plt.rcParams.update({
