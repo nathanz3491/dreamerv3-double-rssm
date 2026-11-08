@@ -172,8 +172,10 @@ class Agent(embodied.jax.Agent):
           'the separate-critic manager (v1/v1.1) lives on family/v',
           config.manager.critic)
       assert 'goalreach' in obs_space, 'needs env.craftax.goals_obs True'
+      # 13 tech goals, or 15 with the v1.3 survival goals
+      # (env.craftax.goals_survival): whatever the env emits progress for.
       self._goals = int(obs_space['goalphi'].shape[0])
-      self._goal_names = cgoals.names()
+      self._goal_names = cgoals.names(self._goals > cgoals.N_GOALS)
       assert len(self._goal_names) == self._goals, self._goals
       self._hold = int(config.manager.hold)
       assert self._hold > 0, 'goals are held until reached or `hold` steps'

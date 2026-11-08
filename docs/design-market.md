@@ -1,8 +1,13 @@
 # Design: the market agent (`family/market`)
 
-Status: **design only, nothing built.** Decided with the user on 2026-11-08.
+Status: **being built, not trained yet.** Decided with the user on 2026-11-08.
 Points marked *proposed* are implementation choices still open to change. The
-[Open questions](#open-questions) section lists what is undecided.
+[Open questions](#open-questions) section lists what is undecided; where the
+code had to choose, the choice is recorded there as "chosen: …".
+
+| part | status | flag (default off) |
+|---|---|---|
+| §5 survival goals | built | `env.craftax.goals_survival` |
 
 ## The idea in one paragraph
 
@@ -131,6 +136,11 @@ describe the base. Taste stays at `lam_mgr 0`, where it is inert.
   v1.3 had no SLEEP goal.
 - The code is on `family/v` (`goals_survival`) and must be ported here;
   `family/next` left it out.
+  - **Built:** `--env.craftax.goals_survival True` (with `goals_obs True`).
+    `craftax_goals.py` already carried the two goals; the env flag and the
+    agent's goal names (13 or 15, read off `obs['goalphi']`) are ported.
+    A goal reads as reached when its meter is at least 8 of 9; below that its
+    progress is 0.25 × meter / 8.
 - When P\* is high, the manager's goal values favour these goals. Without them,
   it could only choose "no goal".
 - Like the named goals, they are hand-written: game knowledge accepted for now,

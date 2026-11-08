@@ -35,8 +35,9 @@ defaults:
     # `--env.craftax.survival none` still parses.
     # valid_obs: obs['valid'], the rule flags -- the label of the rule mask
     # (agent.valid.mask), which counts as cheating. goals_obs: obs['goalphi']
-    # and obs['goalreach'] for the manager's named goals.
-    craftax: {logs: False, use_seed: True, valid_obs: False, goals_obs: False, survival: none}
+    # and obs['goalreach'] for the manager's named goals; goals_survival
+    # (v1.3, the market agent) adds DRINK and EAT after the 13.
+    craftax: {logs: False, use_seed: True, valid_obs: False, goals_obs: False, goals_survival: False, survival: none}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}

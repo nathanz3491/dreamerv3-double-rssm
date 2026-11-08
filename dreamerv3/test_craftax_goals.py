@@ -93,3 +93,23 @@ def test_survival_goals_follow_the_meters():
         truth = float(np.asarray(meter)) >= G.FULL
         assert (got[i] == 1.0) == truth, (names[i], got[i], meter)
         assert truth or got[i] <= 0.25
+
+
+def test_env_emits_the_survival_goals_with_goals_survival():
+  """env.craftax.goals_survival: goalphi and goalreach grow to 15 entries,
+  the first 13 unchanged, and the space matches what the env emits."""
+  if TV._craftax() is None:
+    return
+  from embodied.envs.craftax import Craftax
+  plain = Craftax(seed=5, goals_obs=True)
+  surv = Craftax(seed=5, goals_obs=True, goals_survival=True)
+  n = G.N_GOALS + len(G.SURVIVAL)
+  assert surv.obs_space['goalphi'].shape == (n,)
+  assert surv.obs_space['goalreach'].shape == (n,)
+  reset = {'action': np.int32(0), 'reset': np.ones((), bool)}
+  a, b = plain.step(reset), surv.step(reset)
+  for _ in range(50):
+    assert b['goalphi'].shape == (n,) and b['goalreach'].shape == (n,)
+    assert (a['goalphi'] == b['goalphi'][:G.N_GOALS]).all()
+    step = {'action': np.int32(0), 'reset': np.zeros((), bool)}
+    a, b = plain.step(step), surv.step(step)

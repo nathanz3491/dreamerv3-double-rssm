@@ -1,8 +1,10 @@
 # DreamerV3 on Craftax: the market agent (`family/market`)
 
-**Status: design stage. No market code yet.** This branch holds the design
-([docs/design-market.md](docs/design-market.md)) on top of its base agent's
-code. The base, `next_nomask`, is the honest next agent from `family/next`. For
+**Status: being built, not trained yet.** Built so far: the survival goals
+(`env.craftax.goals_survival`). Every new part is behind a flag that defaults
+off, so with the defaults the code is `family/next`'s agent. The design is
+[docs/design-market.md](docs/design-market.md); its table says which parts are
+built. The base, `next_nomask`, is the honest next agent from `family/next`. For
 the plain baseline and the index of every family, see `main`.
 
 ## What it is

@@ -21,7 +21,9 @@ repo's own crafter.py. Beyond a plain wrapper:
   7. ``goals_obs``: ``obs['goalphi']``, progress toward each of the manager's
      13 named goals, and ``obs['goalreach']``, which goals have read as
      reached at any step of this episode (craftax_goals). Both are computed
-     from the observation vector alone; neither reaches the encoder.
+     from the observation vector alone; neither reaches the encoder. With
+     ``goals_survival`` (v1.3, ported from family/v) the two survival goals
+     DRINK and EAT follow the 13, so both vectors have 15 entries.
 
 dreamerv3's embodied.jax installs a global ``jax_transfer_guard='disallow'`` to
 catch stray host<->device transfers inside the agent. The env legitimately
@@ -47,7 +49,8 @@ import numpy as np
 class Craftax(embodied.Env):
 
   def __init__(self, task='symbolic', size=None, seed=0, logs=False,
-               valid_obs=False, goals_obs=False, survival='none'):
+               valid_obs=False, goals_obs=False, goals_survival=False,
+               survival='none'):
     # Reward shaping lives on family/rssm2 and family/v; this branch has the
     # stock reward only. The argument stays so `--env.craftax.survival none`
     # still parses.
@@ -73,7 +76,8 @@ class Craftax(embodied.Env):
     if self._goals_obs:
       from dreamerv3 import craftax_goals
       self._G = craftax_goals
-      self._n_goals = len(craftax_goals.names())
+      self._goals_survival = bool(goals_survival)
+      self._n_goals = len(craftax_goals.names(self._goals_survival))
       self._goalreach = np.zeros(self._n_goals, bool)
 
     # Everything here touches the host<->device boundary (params pytree, space
@@ -225,7 +229,7 @@ class Craftax(embodied.Env):
     return obs
 
   def _goal_obs(self, vector, is_first):
-    phi = self._G.progress(vector)
+    phi = self._G.progress(vector, self._goals_survival)
     if is_first:
       self._goalreach[:] = False
     self._goalreach |= phi >= 1.0

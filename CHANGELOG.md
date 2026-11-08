@@ -12,6 +12,11 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **Survival goals for the manager** (design §5), ported from `family/v`'s
+  v1.3: `--env.craftax.goals_survival True` appends DRINK and EAT to the 13
+  named goals in `obs['goalphi']` and `obs['goalreach']`; the agent reads its
+  goal names off the observation (13 or 15). Default off. Test:
+  `test_env_emits_the_survival_goals_with_goals_survival` (needs Craftax).
 - **Branch `family/market`: the design of the market agent**
   ([docs/design-market.md](docs/design-market.md)); no code yet. The agent
   trades score against survival at a price P\*, which a small network moves
