@@ -42,9 +42,10 @@ def from_run(logdir, argv):
 
   Rebuilds a checkpoint exactly as it was trained, with no flag list to get
   wrong -- the way old checkpoints are re-scored. Keys this branch's
-  configs.yaml lacks are dropped silently, so a run from a family branch (map
-  model, manager, mask, taste) must be scored from its own branch: here it
-  would quietly be rebuilt as the plain agent.
+  configs.yaml lacks are dropped silently, so a run from another family
+  (taste, B1/B3, the reward-cause head) must be scored from its own branch.
+  On this branch the dropped keys of the goal-manager runs are all at their
+  defaults (rewcause, taste, valid.input/learned/..., the 'shaped' surv_*).
   """
   import ruamel.yaml as yaml
   from dreamerv3 import main as dv3main
@@ -95,7 +96,7 @@ def main():
   ap.add_argument('--episodes', type=int, default=30)
   ap.add_argument('--max-steps', type=int, default=1200)
   ap.add_argument('--greedy', action='store_true',
-                  help='argmax action; default samples like training')
+                  help='argmax action and goal; default samples like training')
   ap.add_argument('--seed', type=int, default=0,
                   help='episode i is built from seed + i')
   ap.add_argument('--config-from-run', action='store_true',
