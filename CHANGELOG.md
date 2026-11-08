@@ -36,11 +36,21 @@ below.
   - Checked against the pre-split code (`49a6bc3`): the flag sets of
     `abl_taste`, `v2_taste`, `next_taste`, `next_lam0` and the plain run all
     parse, and every config key both trees have gets the same value (the
-    keys removed here are listed under Changed). **Pending** (the GPU box was
-    unreachable): the tests on JAX, and the CPU equivalence check of the
-    parameter tree, initial values, policy outputs, and parameters and
-    metrics after four train steps, for those flag sets plus `abl_taste`,
-    `v2_taste` and `next_taste` with a taste fold every update.
+    keys removed here are listed under Changed).
+  - Equivalence with `49a6bc3` on CPU (single-threaded XLA; batch 2 × 16,
+    `size50m`, seed 0), for the flag sets of `abl_taste`, `v2_taste`,
+    `next_taste` and the plain run, and the three taste runs again with
+    `taste.every 1` so taste folds on every update: the parameter tree
+    (names, shapes, dtypes) and the initial values, the policy outputs
+    (train, greedy and probe modes), the parameters after 3 train steps,
+    the train metrics of 4 steps and the report metrics are all
+    bit-identical (max abs diff 0). The parameters after the 4th step are
+    bit-identical too for every taste set; for plain they differ by up to
+    4.9e-4 in three tensors, and 49a6bc3 against itself differs by the same
+    4.9e-4, so that is run-to-run noise in the 4th step, not the code.
+  - Tests (`pytest dreamerv3/ embodied/tests/test_replay.py`, on the box):
+    99 passed; the 53 failures are the known `Replay.dataset` ones in
+    `test_replay.py`, the same as on `main` and at 49a6bc3.
   - Docs: `docs/taste-prior.md` (design, every result, why taste hurt, with
     the `abl_taste` result added and masked runs marked), `docs/taste-run.json`,
     `docs/agent.md` (the agents underneath, trimmed from `family/v`'s design

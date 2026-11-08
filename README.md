@@ -112,9 +112,14 @@ and builds the same agent here.
 defaults (`target actions`, `center False`) reproduce it, so the `v2_taste`
 command needs no taste flags beyond `enabled`. Every flag set above (and
 `next_lam0` and the plain one) parses here and gives the same value as
-`49a6bc3` for every config key both have. The CPU equivalence check against
-`49a6bc3` (parameter tree, initial values, policy outputs, parameters and
-metrics after four train steps) is **pending**; see `CHANGELOG.md`. Every run before
+`49a6bc3` for every config key both have. On CPU (single-threaded XLA), this
+branch and `49a6bc3` build bit-identical agents for the `abl_taste`,
+`v2_taste`, `next_taste` and plain flag sets, and for the three taste runs
+again with a taste fold every update: the same parameter names, shapes,
+dtypes and initial values, the same policy outputs in every mode, and the
+same parameters, train metrics and report metrics after the train steps
+(plain's 4th step shows the same 4.9e-4 run-to-run noise as `49a6bc3`
+against itself). See `CHANGELOG.md`. Every run before
 2026-10-11 used code with the RSSM-2 bugs (`docs/rssm2-step-alignment.md`)
 and is not reproduced exactly by any branch; none of this family's runs
 predates the fixes.
