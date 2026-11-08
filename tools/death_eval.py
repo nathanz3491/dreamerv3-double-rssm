@@ -95,7 +95,7 @@ def main():
   ap.add_argument('--episodes', type=int, default=30)
   ap.add_argument('--max-steps', type=int, default=1200)
   ap.add_argument('--greedy', action='store_true',
-                  help='argmax action; default samples like training')
+                  help='argmax action and goal; default samples like training')
   ap.add_argument('--seed', type=int, default=0,
                   help='episode i is built from seed + i')
   ap.add_argument('--config-from-run', action='store_true',

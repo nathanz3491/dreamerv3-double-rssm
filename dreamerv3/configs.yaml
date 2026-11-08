@@ -30,9 +30,13 @@ defaults:
     atari: {size: [96, 96], repeat: 4, sticky: True, gray: True, actions: all, lives: unused, noops: 30, autostart: False, pooling: 2, aggregate: max, resize: pillow, clip_reward: False}
     procgen: {size: [96, 96], resize: pillow}
     crafter: {size: [64, 64], logs: False}
-    # survival: only 'none' exists on main (no reward shaping). The key stays
-    # so the plain runs' `--env.craftax.survival none` still parses.
-    craftax: {logs: False, use_seed: True, survival: none}
+    # survival: only 'none' (no reward shaping; the shaping modes live on
+    # family/rssm2 and family/v). The key stays so the runs'
+    # `--env.craftax.survival none` still parses.
+    # valid_obs: obs['valid'], the rule flags -- the label of the rule mask
+    # (agent.valid.mask), which counts as cheating. goals_obs: obs['goalphi']
+    # and obs['goalreach'] for the manager's named goals.
+    craftax: {logs: False, use_seed: True, valid_obs: False, goals_obs: False, survival: none}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}
@@ -49,7 +53,8 @@ defaults:
     chunksize: 1024
     # Not written to disk: the latents cached for replay_context (~90% of a
     # run's disk; see embodied/core/replay.py). [] keeps the stock behaviour.
-    save_skip: ['dyn/', 'enc/', 'dec/']
+    # 'map/' is RSSM-2's state.
+    save_skip: ['dyn/', 'enc/', 'dec/', 'map/']
 
   run:
     steps: 1e10
@@ -90,7 +95,7 @@ defaults:
     coordinator_address: ''
 
   agent:
-    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3}
+    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, feas: 1.0, gphi: 1.0, mpolicy: 1.0, memfut: 1.0, memrec: 1.0, curio: 1.0}
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
@@ -104,6 +109,61 @@ defaults:
       simple: {depth: 64, mults: [2, 3, 4, 4], layers: 3, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in, outer: False, kernel: 5, bspace: 8, strided: False}
     rewhead: {layers: 1, units: 1024, act: silu, norm: rms, output: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
     conhead: {layers: 1, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
+    # --- the rule mask (B2; needs env.craftax.valid_obs). COUNTED AS CHEATING:
+    # it reads the game's action rules. Default off; kept so the masked runs
+    # (next_notaste, next_lam0) still run with their own flags. mask: an
+    # impossible action gets zero probability and zero gradient -- the true
+    # flags when acting, the learned 'feas' head (validhead) in imagination,
+    # where an action counts as possible above `threshold`.
+    valid: {mask: False, threshold: 0.1}
+    validhead: {layers: 2, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
+    # --- the manager over named goals (docs/design-manager.md; needs
+    # env.craftax.goals_obs and RSSM-2 with to_actor). A second actor picks
+    # one of 13 tech-tree goals (craftax_goals) from RSSM-1's state plus
+    # RSSM-2's and holds it until the observation shows it reached, or for
+    # `hold` steps. The bottom actor sees the goal and is paid goal_reward x
+    # the change in its predicted progress, plus reach_bonus when it is
+    # reached ('goal' stream, weighed by goal_weight against the game
+    # stream's 1.0 after each is normalised). The manager is judged by the
+    # shared critic's game head alone; actent is its entropy bonus.
+    # reach_threshold: predicted progress above which an imagined state counts
+    # as reached. critic and goals accept only 'shared' and 'named' here (the
+    # separate-critic v1/v1.1 and learned goals live on family/v).
+    manager: {enabled: False, goal_reward: 1.0, reach_bonus: 1.0, reach_threshold: 0.6, actent: 1e-3, critic: shared, hold: 32, goal_weight: 0.5, goals: named}
+    # --- taste on the manager (taste.py). An internal reward on choosing each
+    # goal, lam_mgr x its taste relative to the other goals, in rscale units,
+    # learned from the real return after each choice against the manager's
+    # expected value; rows caps the decision rows scored per update; every /
+    # fresh: a fold of evidence every 2000 train updates (4000 new env steps
+    # at train_ratio 512 with 16x64 batches). center compares every goal with
+    # the fold's average. The runs here use lam_mgr 0.0, which adds exactly
+    # nothing: taste itself (and taste over actions, which uses lam, actions
+    # and the action-target defaults) is studied on family/taste. Only
+    # target manager is accepted here.
+    taste: {enabled: False, target: manager, center: False, actions: special, every: 2000, fresh: 4000.0, zscale: 0.288, w0: 0.25, alpha: 0.41, rho: 0.014, pos: 4.45, neg: 1.43, decay: 0.40, lam: 4.92, lam_mgr: 1.0, rows: 256, optimism: 0.0, n0: 20.0, wmax: 1.0, stdrate: 0.01}
+    # --- curiosity (needs the manager's shared critic): `members` networks
+    # predict the next latent; their disagreement is a third reward stream
+    # (weight for the bottom actor, mgr_weight for the manager's goal values).
+    curiosity: {enabled: False, members: 5, layers: 2, units: 512, weight: 0.2, mgr_weight: 0.2}
+    memhead: {layers: 2, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in}
+    gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}
+    # --- RSSM-2 as a memory (mapmodel.py). enabled False is the plain agent.
+    # A slow GRU ticks every `tick` env steps on the window's mean RSSM-1
+    # latent and the raw actions; from its state, memhead heads predict
+    # RSSM-1's latent `ahead` ticks on and recall the observation `back`
+    # ticks ago -- no game labels. to_actor feeds its state (through a learned
+    # gate) to the actor, critic and manager. target accepts only 'memory'
+    # here (the map target is on family/rssm2).
+    mapmodel:
+      enabled: False
+      to_actor: False
+      target: memory
+      ahead: [1, 2, 4]
+      back: [1, 2, 4]
+      tick: 8           # env steps per RSSM-2 tick; must divide batch_length
+      deter: 1024
+      hidden: 512
+      layers: 2
     policy: {layers: 3, units: 1024, act: silu, norm: rms, minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: trunc_normal_in}
     value: {layers: 3, units: 1024, act: silu, norm: rms, output: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
     policy_dist_disc: categorical
