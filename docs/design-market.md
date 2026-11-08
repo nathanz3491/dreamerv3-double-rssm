@@ -135,7 +135,8 @@ describe the base. Taste stays at `lam_mgr 0`, where it is inert.
     through P\*.
 - **Consumers (all three):**
   - the critic and actor value at Q_score + P\* · Q_life;
-  - the manager values goals the same way.
+  - the manager values goals the same way;
+  - all three also read log(P*/price0) as an input (see §3, Built).
 - **Training signal: the achievement slope.** This is the external score, not
   the critic's loss (which would collapse the price into the critic) and not an
   LLM (game knowledge, too slow).
@@ -175,17 +176,21 @@ describe the base. Taste stays at `lam_mgr 0`, where it is inert.
     episode, b = a running mean of R (rate 0.01, debiased). Steps without a full
     window carry no loss (about half of each sequence). The net's loss is its
     own and no gradient reaches it from elsewhere.
-  - **Known weakness, not fixed here.** The price at step t reaches the actor
-    only through the weights trained at that step's rollouts (the actor does not
-    see P\*; only the critic and the value targets do). So R, the achievements
-    after step t, depends on the draw z_t only very weakly, and the REINFORCE
-    gradient is mostly noise. A price that is *consistent* in a kind of state
-    (what the net can learn) matters more than the per-step draw, but nothing
-    credits it directly. If the full-market run does no better than the fixed
-    price, suspect this before the constants. The cheap structural fixes, not
-    built: hold the draw for a whole episode (credit = that episode's
-    achievements), or feed log P\* to the actor so that acting under a price is
-    a thing the actor can learn.
+  - *The consumers see the price* (chosen: decided with the user). The actor,
+    the critic (and its slow copy, so both keep one shape) and the manager each
+    get `log(P*/price0)` as an input, stop-gradient: 0 at the baseline price.
+    It rides in the RSSM-2 slot of the actor's input (`_with_price`), so every
+    consumer that reads that slot gets it, and the Q-heads too. In imagination
+    it is the rollout's held starting-state value, the same one the reward uses;
+    on real steps it is the value `policy()` computed. It is on whenever
+    `agent.market.enabled` is: the fixed-price run (2) feeds a constant 0 and the
+    moving-price run (3) a varying value, with the same architecture. Without
+    it the actor never saw P*, a step's draw could change acting only through
+    weights, and REINFORCE's per-step credit would have been mostly noise; with
+    it, acting under a price is something the actor can learn, so a draw can
+    change what happens in the window after it. If the price net still does not
+    learn, the fallback is to hold each draw for a whole episode (credit = that
+    episode's achievements). Needs `mapmodel.enabled` and `to_actor` (asserted).
 
 ### 4. Slope quota
 
@@ -267,8 +272,8 @@ describe the base. Taste stays at `lam_mgr 0`, where it is inert.
 
 1. **Market-net training.** Is REINFORCE on real experience enough, or does it
    need imagination? What window and baseline does its reward use? Chosen:
-   real experience, a 32-step window, a running-mean baseline (§3); see its
-   known weakness.
+   real experience, a 32-step window, a running-mean baseline (§3); the
+   consumers read the price so that the draws get credit.
 2. **L_nom** for the death charge (chosen: the running mean, §4):
    - a fixed number;
    - or the agent's running mean lifespan, which lets old agents escape

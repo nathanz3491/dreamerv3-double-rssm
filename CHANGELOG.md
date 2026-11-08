@@ -11,6 +11,13 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 
 ## [Unreleased]
 
+### Changed
+- The market's consumers now read the price: `log(P*/price0)` (stop-gradient)
+  joins the actor's, the critic's (and slow critic's) and the manager's input
+  whenever `agent.market.enabled`; constant 0 under the fixed price. Needs
+  `mapmodel.enabled` and `to_actor`. Before this the actor never saw P*, so the
+  price net's per-step credit was mostly noise. Off changes nothing.
+
 ### Added
 - **The moving price** (design §3): `--agent.market.shift True` (with
   `agent.market.enabled`; needs the RSSM-2 memory). A small net reads the
@@ -20,7 +27,7 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
   imagined rollout, and logged with Q* (`market/logp`, `market/logq`). The net
   learns by REINFORCE on the achievements in the next 32 steps. `dreamerv3/market.py`
   (pure numpy maths); tests `test_market_math.py` (no JAX) and
-  `test_market.py` (JAX). See the design's known weakness on credit.
+  `test_market.py` (JAX). The consumers read log(P*/price0), see Changed.
 - **Q-heads and a fixed price P\*** (design §1, §2): `--agent.market.enabled
   True` adds Q_score and Q_life (43 scalar outputs each, their own small MLP on
   the actor's input, trained on imagined lambda-returns of the action taken).

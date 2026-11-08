@@ -280,6 +280,9 @@ class Agent(embodied.jax.Agent):
     if self._market:
       mk = config.market
       assert not self._valid_mask, 'the rule mask counts as cheating'
+      assert self._use_map and self._map_to_actor, (
+          'the consumers read log P* through the RSSM-2 slot of the actor '
+          'input: needs mapmodel.enabled and to_actor')
       self._price0 = float(mk.price0)
       qspace = elements.Space(np.float32, (self._n_act,))
       self.qhead = embodied.jax.MLPHead(
@@ -463,6 +466,15 @@ class Agent(embodied.jax.Agent):
     if self._use_map:
       prev_map = map_carry
       map_carry, mapfeat = self._map_act(map_carry, feat, prevact, reset)
+    if self._market:
+      # The consumers condition on the price in force at this step: the
+      # market's draw on the real observation, or the fixed price0 (a
+      # constant input).
+      price = jnp.full(reset.shape, self._price0, f32)
+      if self._shift:
+        map_carry, mout = self._market_act(map_carry, obs, reset)
+        price = mout['pstar']
+      mapfeat = self._with_price(mapfeat, price)
     ainp = self.actor2tensor(feat, mapfeat)
     if self._use_mgr:
       goal, phase, map_carry = self._mgr_act(prev_map, map_carry, ainp, reset,
@@ -487,7 +499,6 @@ class Agent(embodied.jax.Agent):
       out['goal'] = goal
       out['gphase'] = phase
     if self._shift:
-      map_carry, mout = self._market_act(map_carry, obs, reset)
       out.update(mout)
     carry = (enc_carry, dyn_carry, dec_carry, map_carry, act)
     if self.config.replay_context:
@@ -545,6 +556,14 @@ class Agent(embodied.jax.Agent):
     if self._shift:
       return f32(obs['pstar'])
     return jnp.full(obs['is_first'].shape, self._price0, f32)
+
+  def _with_price(self, mapfeat, price):
+    """Append log(P*/price0) to the actor's RSSM-2 slot, so the actor, the
+    critic (and its slow copy) and the manager all read the price they are
+    valued at: zero at the baseline, and a constant zero under a fixed price.
+    mapfeat (..., D2), price (...). Stop-gradient."""
+    lp = jnp.log(jnp.maximum(f32(price), 1e-8) / self._price0)
+    return jnp.concatenate([mapfeat, nn.cast(sg(lp))[..., None]], -1)
 
   def _market_mean(self, x, bdims):
     """The market net's mean draw (..., 2) from Delta-env features (..., F).
@@ -1119,6 +1138,11 @@ class Agent(embodied.jax.Agent):
     if self._use_map and self._map_to_actor:
       start2 = deter2_step[:, -K:].reshape((B * K, -1))
       frozen = self.mapfeat(start2)[:, 0]
+      if self._market:
+        # One price per rollout: the one at its starting state, held through
+        # the dream. The actor, critic and manager read it as an input.
+        price = self._price(obs)[:, -K:].reshape((B * K,))
+        frozen = self._with_price(frozen, price)
     first = jax.tree.map(
         lambda x: x[:, -K:].reshape((B * K, 1, *x.shape[2:])), repfeat)
     if self._use_mgr:
@@ -1150,9 +1174,7 @@ class Agent(embodied.jax.Agent):
     con = self.con(inp, 2).prob(1)
     if self._market:
       # Valued at P*: the reward the actor-critic and the manager see is the
-      # score plus P* per step alive. One price per rollout, the one at its
-      # starting state, held through the dream.
-      price = self._price(obs)[:, -K:].reshape((B * K,))
+      # score plus P* per step alive, at the rollout's held price.
       alive = self._alive(con)
       rew_score, rew = rew, rew + price[:, None] * alive
     if self._use_mgr:
@@ -1236,7 +1258,10 @@ class Agent(embodied.jax.Agent):
       inp = self.feat2tensor(feat)
       if self._use_map and self._map_to_actor:
         d2 = deter2_step[:, -K:].reshape((B * K, -1))
-        inp = self.actor2tensor(feat, self.mapfeat(d2).reshape((B, K, -1)))
+        mf = self.mapfeat(d2).reshape((B, K, -1))
+        if self._market:
+          mf = self._with_price(mf, rprice)
+        inp = self.actor2tensor(feat, mf)
       value, slow = self.val, self.slowval
       base = inp                     # the actor's view, before the goal
       if self._use_mgr:

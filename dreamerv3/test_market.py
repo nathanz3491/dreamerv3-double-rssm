@@ -310,3 +310,60 @@ def test_the_stored_price_is_what_value_reads():
          'pstar': jnp.full((2, 3), 0.07, f32)}
   got = np.asarray(agentlib.Agent._price(a, obs))
   assert (got == np.float32(0.07)).all()
+
+
+# --- the consumers read the price -----------------------------------------------------
+def _with_price(a, mapfeat, price):
+  return agentlib.Agent._with_price(a, mapfeat, f32(price))
+
+
+def test_log_price_input_is_zero_at_the_baseline_and_appended_last():
+  a = _agent()                                   # price0 0.25
+  mf = jnp.ones((3, 5), jnp.bfloat16)
+  out = _with_price(a, mf, [0.25, 0.5, 0.125])
+  assert out.shape == (3, 6)
+  np.testing.assert_array_equal(np.asarray(out[:, :5], np.float32), 1.0)
+  np.testing.assert_allclose(np.asarray(out[:, 5], np.float32),
+                             [0.0, np.log(2.0), -np.log(2.0)], atol=1e-2)
+
+
+def test_log_price_input_takes_replay_and_rollout_shapes():
+  a = _agent()
+  # (B, K, D2) with (B, K) prices, as the replay value loss feeds it.
+  out = _with_price(a, jnp.zeros((2, 4, 7), jnp.bfloat16), jnp.full((2, 4), 0.25))
+  assert out.shape == (2, 4, 8) and float(jnp.abs(out[..., -1]).max()) == 0.0
+  # (BK, D2) with (BK,) prices, one per rollout, as the imagination feeds it.
+  out = _with_price(a, jnp.zeros((6, 7), jnp.bfloat16), jnp.full((6,), 0.5))
+  assert out.shape == (6, 8)
+
+
+def test_log_price_input_stops_the_gradient():
+  a = _agent()
+  g = jax.grad(lambda p: _with_price(
+      a, jnp.zeros((2, 3), jnp.bfloat16), p).astype(f32).sum())(f32([0.3, 0.6]))
+  assert float(jnp.abs(g).max()) == 0.0
+
+
+def test_a_fixed_price_is_a_constant_input():
+  # market without shift: every step reads price0, so the input is exactly 0
+  # at acting, in the dream and in replay -- the same architecture as the
+  # moving price, with nothing to read.
+  a = _agent()
+  a._shift = False
+  obs = {'is_first': jnp.zeros((2, 5), bool)}
+  price = agentlib.Agent._price(a, obs)
+  out = _with_price(a, jnp.zeros((2, 5, 3), jnp.bfloat16), price)
+  assert float(jnp.abs(out[..., -1]).max()) == 0.0
+
+
+def test_the_price_input_exists_only_with_the_market():
+  # With the market off the helper is never reached: every call is under a
+  # market guard in agent.py.
+  import inspect
+  import re
+  src = inspect.getsource(agentlib.Agent)
+  lines = src.split('\n')
+  for i, line in enumerate(lines):
+    if '_with_price(' in line and 'def _with_price' not in line:
+      window = '\n'.join(lines[max(0, i - 10):i])
+      assert 'if self._market' in window, line
