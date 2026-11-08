@@ -173,9 +173,8 @@ configuration on today's code. `honest_map_fix` ran on `7df2d36` (`~/vfix`)
 and `abl_rssm2` on `49a6bc3` (`~/vtmgr`). The CPU equivalence check of this
 branch against `49a6bc3` (see the CHANGELOG) gives bit-identical policy
 outputs, train outputs and metrics for both, and parameters equal up to the
-run-to-run noise of `49a6bc3` itself, except one transient 9.8e-4 difference
-in `honest_map_fix` that is not yet explained. `honest_map_truepos` (config = `honest_map`,
-never scored) is probably an earlier attempt at `honest_map`.
+run-to-run noise of `49a6bc3` itself. `honest_map_truepos` (config =
+`honest_map`, never scored) is probably an earlier attempt at `honest_map`.
 
 Disk: a finished run takes ~1.4 GB; `replay.save_skip` keeps the
 replay_context latents (`dyn/`, `enc/`, `dec/`, `map/`) off disk.

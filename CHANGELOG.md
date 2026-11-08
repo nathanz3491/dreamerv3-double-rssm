@@ -47,15 +47,20 @@ from it are summarised under "Added" and "Fixed" below.
       in 6 arrays (`dyn/dyngru/kernel`, optimizer slots of `dyn/dynin0`),
       against up to 5.5e-5 in 7 arrays between the two `49a6bc3` runs.
       Within the ref-vs-ref noise, not bit-identical.
-    - `honest_map_fix`: after 4 train steps the largest difference is 1.3e-5
-      in 7 arrays, the same as between the two `49a6bc3` runs (1.3e-5, 7
-      arrays). After 3 steps one parameter, `slowval/mlp/linear2/kernel`,
-      differs by 9.8e-4 against 6.2e-6 between the two `49a6bc3` runs, and
-      is identical again after step 4, which the 0.02 slow-value update
-      should not produce. All train and report metrics are identical, so this
-      is not understood. Not resolved by the records kept (the per-element
-      data was deleted with the run); a rerun of this one set is needed to
-      call it noise or a difference.
+    - `honest_map_fix`: noise, after a rerun. In the first run one
+      parameter, `slowval/mlp/linear2/kernel`, differed by 9.8e-4 after 3
+      train steps (6.2e-6 between the two `49a6bc3` runs) and was identical
+      again after step 4, which the 0.02 slow-value update cannot produce
+      from a real difference, so it was a bad recording or a transient fault,
+      not a behaviour change. The rerun (two runs of `49a6bc3`, one of this
+      branch, files checked with `zipfile.testzip`) shows nothing of the
+      kind: `slowval/mlp/linear2/kernel` and `val/mlp/linear2/kernel` are
+      bit-identical in all three runs at init, step 3 and step 4. Elsewhere
+      the parameters after training differ by at most 1.5e-5 (new vs ref;
+      11 arrays, 1 to 8 elements each) against 1.4e-5 between the two
+      `49a6bc3` runs (13 arrays, 1 to 11 elements each), at the level of
+      CPU run-to-run noise. Initial values, policy outputs, train outputs,
+      train and report metrics are bit-identical.
 
     Tests on the box (CPU, 8 GB cap): `pytest dreamerv3/
     embodied/tests/test_replay.py` gives 111 passed, 53 failed; all 53 are
