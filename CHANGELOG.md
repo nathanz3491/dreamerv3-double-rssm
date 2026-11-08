@@ -22,15 +22,46 @@ from it are summarised under "Added" and "Fixed" below.
   flags, goal manager, named or learned goals, curiosity, taste or
   reward-cause head. Why: each family is reproducible and readable on its own;
   see `main`'s README for the index.
-  - PENDING: the CPU equivalence check against `49a6bc3` (parameter tree,
-    initial values, policy outputs and carry, parameters and metrics after
-    four train steps, report metrics) for the flag sets `abl_rssm2`,
-    `honest_map_fix`, `map_stage5` and plain. It was launched on the box but
-    the box became unreachable before the results could be read; the plain
-    and `abl_rssm2` pairs had finished with records of identical size, not
-    yet compared. The
-    box-side tests (`test_mapmodel_step.py`, `test_audit_fixes.py`) are
-    pending for the same reason.
+  - CPU equivalence check against `49a6bc3` (size50m, batch 2x16; records
+    the parameter tree, initial values, policy outputs and carry in train,
+    greedy and probe modes, train outputs and metrics, parameters after 3
+    and 4 train steps, report metrics) for the flag sets plain, `abl_rssm2`,
+    `honest_map_fix` and `map_stage5`. Each set was run twice on `49a6bc3`
+    (ref A, ref B) and once here, and the new-vs-ref comparison was judged
+    against ref-vs-ref, because CPU runs of the same code are not bit-exact
+    in a few parameters (changes of 1e-5 to 6e-5 in `dyn/` kernels and
+    optimizer slots, and in one initial `rew` kernel). In all four sets the
+    parameter tree, dtypes, policy outputs and carry, train outputs, train
+    metrics and report metrics are bit-identical (max abs diff 0), and the
+    initial parameters are identical except as noted:
+    - `map_stage5`: parameters after 3 and 4 train steps bit-identical. The
+      one differing array is the initial `rew/mlp/linear0/kernel` (6.1e-5),
+      which also differs between the two runs of `49a6bc3`. Match.
+    - `abl_rssm2`: a single kernel, `dyn/dynhid0/kernel`, differs by 1.9e-6
+      in the initial values and carries that difference unchanged into the
+      later parameters; nothing else differs. The two `49a6bc3` runs had
+      identical initial values but differ by up to 5.9e-5 after training in
+      six arrays, so this is inside that noise. Match, with a stray
+      initial-value difference.
+    - plain: parameters after 3 and 4 train steps differ by at most 7.6e-6
+      in 6 arrays (`dyn/dyngru/kernel`, optimizer slots of `dyn/dynin0`),
+      against up to 5.5e-5 in 7 arrays between the two `49a6bc3` runs.
+      Within the ref-vs-ref noise, not bit-identical.
+    - `honest_map_fix`: after 4 train steps the largest difference is 1.3e-5
+      in 7 arrays, the same as between the two `49a6bc3` runs (1.3e-5, 7
+      arrays). After 3 steps one parameter, `slowval/mlp/linear2/kernel`,
+      differs by 9.8e-4 against 6.2e-6 between the two `49a6bc3` runs, and
+      is identical again after step 4, which the 0.02 slow-value update
+      should not produce. All train and report metrics are identical, so this
+      is not understood. Not resolved by the records kept (the per-element
+      data was deleted with the run); a rerun of this one set is needed to
+      call it noise or a difference.
+
+    Tests on the box (CPU, 8 GB cap): `pytest dreamerv3/
+    embodied/tests/test_replay.py` gives 111 passed, 53 failed; all 53 are
+    `embodied/tests/test_replay.py` (`'Replay' object has no attribute
+    'dataset'`, the same at `49a6bc3`); `test_mapmodel_step.py` and
+    `test_audit_fixes.py` pass.
   - Every run flag set of the family (`map_stage5`, `map_survive`,
     `map_potential`, `map_noshift`, `map_pot_fixed`, `priv_map`,
     `honest_map`, `honest_map_truepos`, `honest_map_fix`, `abl_rssm2`, and
