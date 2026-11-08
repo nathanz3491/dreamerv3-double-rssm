@@ -70,11 +70,29 @@ split, all families together, is in `CHANGELOG.md` at tag
   - every run's flags parse on both trees (expB_input, expB_mask,
     expB_mask_fix and s1/s2, expB3, expB3fix, calib_obs, calib_latent, plain);
   - the env builds and steps with each of them.
-
-  PENDING: the CPU equivalence of the built agents against `49a6bc3`
-  (parameters, policy outputs, parameters and metrics after training steps)
-  and a rerun of `test_craftax_valid.py::test_agrees_with_the_game` with
-  `tools/` present. The box became unreachable before either ran.
+- CPU equivalence of the built agents against `49a6bc3` (2026-11-08, size50m,
+  batch 2 x 16, seed 0; parameters at init, policy outputs in train, greedy
+  and probe modes, metrics and parameters after 3 and 4 train steps, report
+  metrics). Each flag set ran `49a6bc3` twice (refA, refB) and this branch
+  once or twice, because two CPU runs of the same code differ in a few
+  parameter arrays by up to about 1e-3 after training:
+  - `expB_input`: bit-identical to `49a6bc3` in everything, parameters
+    included;
+  - `expB_mask_fix`, `expB3fix`, `b3fix_stress`: policy outputs, train
+    outputs and metrics bit-identical; parameters after training differ by
+    at most 4.9e-4, 5.5e-5 and 2.2e-6 (ref vs ref: 4.9e-4, 0, 1.5e-5; the
+    `expB3fix` refs happened to agree, and 5.5e-5 is the size of the noise
+    between `49a6bc3` runs in the other flag sets);
+  - `expB3`: the same, with parameters within 9.8e-4 (ref vs ref: 3.3e-5;
+    one branch run differs from the other by 9.8e-4 as well);
+  - `plain`: the same. One first-pass run differed in the third train step's
+    metrics (loss, advantage) and in parameters by up to 0.2; that did not
+    recur in two reruns (metrics bit-identical, parameters 1.3e-4 from
+    refA, against 2.4e-4 between the two refs), so it was a bad recording.
+- `test_craftax_valid.py::test_agrees_with_the_game` passes with `tools/`
+  present. The rest of `dreamerv3/` and `test_replay.py`: 113 passed and 53
+  failed, all of them in `test_replay.py` (`'Replay' object has no attribute
+  'dataset'`), which fail the same way at `49a6bc3`.
 
 ### Removed
 - Left on other branches, because no run here used them:
