@@ -42,7 +42,7 @@ def _agent(contdisc=True, lam=0.95, sscale=1.0, lscale=1.0, rscale=1.0):
           contdisc=contdisc, horizon=H,
           imag_loss=types.SimpleNamespace(lam=lam)),
       qsnorm=_Norm(sscale), qlnorm=_Norm(lscale), retnorm=_Norm(rscale),
-      _price0=0.25)
+      _price0=0.25, _shift=False)
   a._profit = functools.partial(agentlib.Agent._profit, a)
   return a
 
