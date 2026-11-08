@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes to `family/next` (the next agent on DreamerV3 for Craftax)
-are recorded here. The branch is `main` (plain DreamerV3 on Craftax) plus this
-family, so the entries of `main` are kept below, marked "from `main`". The
+All notable changes to `family/market` (the market agent on DreamerV3 for
+Craftax) are recorded here. The branch starts from `family/next`, the base
+agent's code, so `family/next`'s entries and `main`'s are kept below. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 The history of every family up to the split is in `CHANGELOG.md` at tag
@@ -12,6 +12,28 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **Branch `family/market`: the design of the market agent**
+  ([docs/design-market.md](docs/design-market.md)); no code yet. The agent
+  trades score against survival at a price P\*, which a small network moves
+  when the world changes.
+  - The base is `next_nomask`. The rule mask stays off, because it counts as
+    cheating.
+  - Two goods, score and survival, in one market. Per-action Q-heads for score
+    and for life. The critic is given each action's economic profit (its value
+    minus the best alternative's).
+  - The price acts on the critic, the actor and the manager. Curves are
+    log-linear with tanh-bounded shifts. The shifts are learned from the
+    observation's change over 8 steps: the non-view part subtracted, the view as
+    1 − cosine.
+  - Slope quota: at least one achievement per window, or a moderate penalty.
+    The window grows with the agent's progress, and dying charges the remaining
+    windows. The health term stays in the score.
+  - The manager gets v1.3's DRINK and EAT goals.
+  - Why it is layer 1.5 (valuation between the world model and the decision
+    layers), not a slower layer on top: lives are too short for a slower
+    manager, and nothing but the weights may carry over between lives.
+
+### Added (from `family/next`)
 - **Branch `family/next`: the next agent**, re-added on top of `main` from the
   pre-split code (`49a6bc3`, tag `archive/full-2026-11-08`): v1.2's named-goal
   manager on v2's parts.
