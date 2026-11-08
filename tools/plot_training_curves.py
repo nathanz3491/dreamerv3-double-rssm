@@ -3,8 +3,9 @@
 Top: achievements per training episode (episode-final count, the same measure
 death_eval reports), averaged in 50k-step bins. Bottom: episode length. The
 value printed beside each run is the mean over its last 100k steps -- a single
-bin is too noisy to quote. The five runs that carry the story are coloured;
-the rest are grey context, since ten categorical colours would be unreadable.
+bin is too noisy to quote. Runs listed with a colour are drawn in it; runs
+without one are grey context, since ten categorical colours would be
+unreadable.
 
   python tools/plot_training_curves.py   # reads docs/curves/, writes docs/
 """
@@ -25,24 +26,11 @@ BIN = 50_000
 TAIL = 100_000
 
 # (run, label, colour or None for grey context, z-order)
+# Main lists the plain runs only; each family branch lists its own runs.
 RUNS = [
-    ('map_stage5', 'map model (bug)', None, 1),
-    ('map_survive', 'map + 5 hand rewards (bug)', None, 1),
-    ('map_potential', 'map + potential (bug)', None, 1),
-    ('map_noshift', 'map model (fixed)', None, 1),
-    ('priv_map', 'control: privileged map + fixes', None, 1),
-    ('vanilla', 'vanilla DreamerV3', '#52514e', 3),
-    ('map_pot_fixed', 'map + potential (old record)', None, 1),
-    ('honest_map', 'honest map', None, 1),
-    ('expB_input', 'B1: validity flags as input', None, 1),
-    ('expB_mask', 'B2: impossible actions masked', '#2a78d6', 7),
-    ('mgr', 'manager v1: B2 + goal manager', None, 1),
-    ('mgr2', 'manager v1.1: + reach bonuses', '#d6336c', 9),
-    ('mgr3', 'manager v1.2: + shared two-headed critic', '#e8a33d', 10),
-    ('mgr4', 'manager v1.3: + survival goals & potential', '#0b8f8f', 11),
-    ('expB3', 'B3: learned action mask', None, 2),
-    ('v2', 'v2: learned goals, memory, rule mask', '#7a5230', 12),
-    ('v2cur', 'v2-cur: v2 + curiosity on', '#6d9b1e', 13),
+    ('vanilla', 'vanilla DreamerV3 (old code)', '#52514e', 3),
+    ('abl_plain', 'plain DreamerV3 (fixed code)', '#2a78d6', 4),
+    ('abl_plain_s1', 'plain DreamerV3 (fixed code), seed 1', '#eb6834', 4),
 ]
 
 plt.rcParams.update({
@@ -76,7 +64,7 @@ def figure(size=(11, 10)):
   fig.text(0.07, 0.955, 'Training curves: every run', fontsize=15,
            weight='bold')
   fig.text(0.07, 0.93, "Rebuilt from each run's replay; 50k-step bins; value "
-           '= mean of the last 100k steps; one seed per run.', fontsize=8.5,
+           '= mean of the last 100k steps.', fontsize=8.5,
            color=INK2)
 
   ends = []
@@ -101,12 +89,12 @@ def figure(size=(11, 10)):
   for tail, lx, ly, label, colour in [e for e in ends if e[1] < 0.9]:
     top.text(lx + 0.02, ly, f'{label}  {tail:.1f} (stopped at {lx:.1f}M)',
              fontsize=7.5, color=MUTED, va='center')
-  ends = sorted((e for e in ends if e[1] >= 0.9), key=lambda e: e[0])
+  # Placed top-down, each label pushed below the one above it: the best runs
+  # cluster near the top, and pushing upward would run past the title.
+  ends = sorted((e for e in ends if e[1] >= 0.9), key=lambda e: -e[0])
   placed = []
   for tail, lx, ly, label, colour in ends:
-    yy = tail
-    while any(abs(yy - p) < 0.22 for p in placed):
-      yy += 0.22
+    yy = min(tail, placed[-1] - 0.22) if placed else tail
     placed.append(yy)
     top.annotate(
         f'{label}  {tail:.1f}', xy=(lx, ly), xytext=(1.13, yy),

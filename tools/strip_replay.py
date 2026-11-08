@@ -1,11 +1,11 @@
 """Shrink a finished run for archiving: drop the latents cached in its replay.
 
 With replay_context on, every replay chunk also stores the agent's latent
-state at each step (dyn/deter, dyn/stoch, map/deter2, ...) so training can
-resume a sequence mid-episode. Those are random-looking floats that barely
-compress: dyn/deter alone is ~89% of a run's disk, ~7.6 of 9.3 GB. Nothing
-after training reads them -- curves_from_replay, diagnose_run and
-episode_cases need only observations, actions and achievements -- so a finished
+state at each step (dyn/deter, dyn/stoch, ...) so training can resume a
+sequence mid-episode. Those are random-looking floats that barely compress:
+dyn/deter alone is ~89% of a run's disk, ~7.6 of 9.3 GB. Nothing after
+training reads them -- curves_from_replay needs only observations, actions
+and achievements -- so a finished
 run keeps everything else and shrinks to ~1.4 GB (replay ~0.8 GB, checkpoint
 ~0.7 GB). The cost: the run can no longer be resumed from its replay.
 
@@ -14,8 +14,8 @@ Guards, so a live run is never touched:
   - refuses a run whose last logged step is short of its config's run.steps
     (a crashed run may still need resuming) unless --allow-incomplete.
 
-  python tools/strip_replay.py ~/logdir/vanilla ~/logdir/expB_mask
-  python tools/strip_replay.py --wait ~/logdir/mgr ~/logdir/mgr2   # queued
+  python tools/strip_replay.py ~/logdir/vanilla
+  python tools/strip_replay.py --wait ~/logdir/abl_plain   # queued
 """
 
 import argparse
@@ -27,7 +27,9 @@ import subprocess
 import time
 import zipfile
 
-LATENT = ('dyn/', 'enc/', 'dec/', 'map/')    # replay_context entry prefixes
+# replay_context entry prefixes; 'map/' is RSSM-2's, so runs from the map
+# family branches strip completely too.
+LATENT = ('dyn/', 'enc/', 'dec/', 'map/')
 
 
 def training(logdir):

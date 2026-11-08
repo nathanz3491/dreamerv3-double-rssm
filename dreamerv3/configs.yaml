@@ -30,11 +30,9 @@ defaults:
     atari: {size: [96, 96], repeat: 4, sticky: True, gray: True, actions: all, lives: unused, noops: 30, autostart: False, pooling: 2, aggregate: max, resize: pillow, clip_reward: False}
     procgen: {size: [96, 96], resize: pillow}
     crafter: {size: [64, 64], logs: False}
-    craftax: {logs: False, use_seed: True, mapmodel: False, seen_decay: 0.99,
-              map_privileged: False, valid_obs: False, goals_obs: False, goals_survival: False, survival: none, surv_alive: 0.005, surv_death: 5.0,
-              surv_restore: 0.3, surv_threshold: 3.0, surv_kill: 0.5,
-              surv_idle: 1.0, surv_idle_steps: 30, phi_scale: 4.0, phi_gamma: 0.997,
-              surv_w0: 0.75, surv_kappa: 1.0, surv_ach_ref: 10.0}
+    # survival: only 'none' exists on main (no reward shaping). The key stays
+    # so the plain runs' `--env.craftax.survival none` still parses.
+    craftax: {logs: False, use_seed: True, survival: none}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}
@@ -51,7 +49,7 @@ defaults:
     chunksize: 1024
     # Not written to disk: the latents cached for replay_context (~90% of a
     # run's disk; see embodied/core/replay.py). [] keeps the stock behaviour.
-    save_skip: ['dyn/', 'enc/', 'dec/', 'map/']
+    save_skip: ['dyn/', 'enc/', 'dec/']
 
   run:
     steps: 1e10
@@ -92,7 +90,7 @@ defaults:
     coordinator_address: ''
 
   agent:
-    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, rewcause: 1.0, map: 1.0, mappos: 1.0, feas: 1.0, gphi: 1.0, mpolicy: 1.0, mvalue: 1.0, memfut: 1.0, memrec: 1.0, goalvq: 1.0, curio: 1.0}
+    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3}
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
@@ -106,108 +104,6 @@ defaults:
       simple: {depth: 64, mults: [2, 3, 4, 4], layers: 3, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in, outer: False, kernel: 5, bspace: 8, strided: False}
     rewhead: {layers: 1, units: 1024, act: silu, norm: rms, output: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
     conhead: {layers: 1, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
-    rewcausehead: {layers: 2, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
-    # --- experiment B: valid-action information (needs env.craftax.valid_obs) --
-    # input  B1: the 43 validity flags enter the encoder beside the observation
-    # mask   B2: impossible actions get zero probability and zero gradient --
-    #        true flags when acting, the learned 'feas' head in imagination
-    # learned (B3): the mask head is trained on the world model's own
-    # counterfactual -- did NOOP explain the outcome as well? -- and masks the
-    # actor while acting, so the rules (obs['valid']) only feed metrics.
-    # evidence: nats by which the action must out-explain NOOP to count as
-    # having done something. explore: share of acting steps that ignore the
-    # mask, so a wrong "impossible" can still be tried and corrected.
-    # warmup: train updates before the learned mask switches on (acting and
-    # imagination run unmasked until then; 50k updates = 100k env steps at
-    # train_ratio 512).
-    # exempt_basic False (v2) learns the mask for NOOP, moves and DO too;
-    # reference random (v2) compares each action with a random other action
-    # instead of assuming action 0 is NOOP.
-    # detach True stops the mask head's loss reaching the world model; label obs
-    # judges "did something" by decoded observations against what really came
-    # next, with a margin in nats of reconstruction error -- the fix for B3
-    # (latent labels with the head's gradient in the world model fed back on
-    # themselves).
-    # rule_mix is for label calibration only: that fraction of acting steps is
-    # masked by the rules so the check sees valid and invalid special actions.
-    valid: {input: False, mask: False, threshold: 0.1, learned: False, explore: 0.01, evidence: 1.0, warmup: 50000, exempt_basic: True, reference: noop, detach: False, label: latent, margin: 0.5, rule_mix: 0.0}
-    validhead: {layers: 2, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
-    # --- two-level agent (docs/design-manager.md; needs env.craftax.goals_obs
-    # and the map model). A manager actor-critic picks one of 13 tech-tree goals
-    # (craftax_goals) every `every` steps from RSSM-1's state plus RSSM-2's slow
-    # state; the actor sees the goal and is paid goal_reward x the change in its
-    # predicted progress, on top of the game reward. The manager is paid the
-    # game reward only. actent is the manager's entropy bonus: it chooses among
-    # 13 options every 8 steps, so it needs more than the actor's 3e-4 to keep
-    # trying goals it has not yet seen pay.
-    # v1.1 -- reaching the goal pays both levels. reach_bonus: the actor, the
-    # first time its goal is reached in a segment. mgr_bonus: the manager, the
-    # first time in the episode a goal it set is reached (it reads the
-    # reached-this-episode flags, and goals that already hold are masked out
-    # of its choice). Kept below an achievement's +1 so reaching easy goals
-    # never outbids playing. reach_threshold: predicted progress above which
-    # an imagined state counts as reached (progress is 1.0 there, <= 0.25
-    # anywhere else).
-    # v1.2 -- critic: shared gives one critic body with two heads, 'game' for
-    # both actors and 'goal' for the bottom actor only; the manager drops its
-    # own critic and takes the exact gradient over all goals from the game
-    # head. hold > 0 keeps a goal until reached or for `hold` steps (requires
-    # critic: shared). goal_weight weighs the goal stream's NORMALISED
-    # advantage against the game stream's 1.0. mgr_bonus and every are unused
-    # in v1.2.
-    # v2 -- goals: learned replaces the hand-written goal list with a codebook
-    # of `codes` latent-change types (goalcodes.py), learned from changes over
-    # code_window steps; a goal counts as reached when the change since it was
-    # set is classified as its code (nearest code, cosine above code_reach).
-    # Needs critic: shared.
-    manager: {enabled: False, every: 8, goal_reward: 1.0, reach_bonus: 1.0, mgr_bonus: 0.5, reach_threshold: 0.6, actent: 1e-3, critic: separate, hold: 0, goal_weight: 0.5, goals: named, codes: 16, code_dim: 64, code_window: 8, code_reach: 0.3, code_beta: 0.25, code_decay: 0.99}
-    # v2 -- curiosity replaces the reward hints: `members` networks predict the
-    # next latent; their disagreement is a third reward stream (weight for the
-    # bottom actor, mgr_weight for the manager's goal values). normalize True
-    # scales the explore stream by its own return spread, floored at retlimit
-    # instead of the game's 1 (False reproduces v2's first run, where
-    # curiosity stayed ~2% of the actor's signal).
-    curiosity: {enabled: False, members: 5, layers: 2, units: 512, weight: 0.2, mgr_weight: 0.2, normalize: False, retlimit: 1e-3}
-    memhead: {layers: 2, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in}
-    gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}
-    # --- two-RSSM map model (design-map-model.md) ---------------------------
-    # enabled: False reproduces stock behaviour byte-for-byte.
-    mapmodel:
-      enabled: False
-      to_actor: False    # Stage 4: feed the coarse map to pol/val
-      # Stage 5: slide the crop through imagination. DEFAULT FALSE -- True is
-      # BROKEN and was measured doing real damage. rssm.imagine() threads only
-      # (deter, stoch) through its scan, so the rollout that PICKS imagined
-      # actions reads the crop frozen at the imagination start while the loss
-      # that SCORES them reads the shifted crop. imag_loss is REINFORCE, so it
-      # takes logpi of actions drawn from a different distribution; as the gate
-      # opens the two diverge and the policy objective runs away. Measured at
-      # 1.1M: policy loss -61 with True vs 0.0001 with False, entropy 0.005 vs
-      # 0.138, achievements 4.35 vs 5.03. Fixing True properly means threading
-      # the coarse cell through nj.scan in rssm.py.
-      imag_shift: False
-      # target: map trains RSSM-2 on hand-built map labels; memory (v2) trains
-      # it to predict RSSM-1's latent `ahead` ticks on and to recall the
-      # observation `back` ticks ago, fed raw actions -- no game knowledge.
-      target: map
-      ahead: [1, 2, 4]
-      back: [1, 2, 4]
-      # Grade an early tick against the mosaic as it stood at the END of the
-      # episode segment, so the model is asked to predict terrain it has not
-      # reached yet and marked once the agent gets there. Every label is still
-      # something the agent observed. False grades each tick against what it had
-      # already seen by then, which trains recall and not prediction.
-      hindsight: True
-      tick: 8           # env steps per RSSM-2 tick; must divide batch_length
-      deter: 1024
-      hidden: 512
-      layers: 2
-      coarse: 12        # 12x12 grid over a 48x48 level
-      planes: 16
-      crop: 9           # egocentric window, in coarse cells
-    rewcause: False           # enable only for Craftax runs (needs obs['ach'])
-    rewcause_none_weight: 0.1
-    rewcause_holdout: ''
     policy: {layers: 3, units: 1024, act: silu, norm: rms, minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: trunc_normal_in}
     value: {layers: 3, units: 1024, act: silu, norm: rms, output: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
     policy_dist_disc: categorical
@@ -291,23 +187,17 @@ crafter:
   run: {steps: 1.1e6, envs: 1, train_ratio: 512}
 
 craftax:
-  # NOTE: the map model needs BOTH env.craftax.mapmodel (emit targets) and
-  # agent.mapmodel.enabled (train RSSM-2). Enable together:
-  #   --env.craftax.mapmodel True --agent.mapmodel.enabled True
   # Symbolic Craftax at Dreamer's reference operating point (single env, high
   # train_ratio), matching the crafter preset. Apply a size on top, e.g.
   #   --configs craftax size50m
-  # Baseline run leaves rewcause off; enable the compositional reward-cause head
-  # and the iron-holdout go/no-go with:
-  #   --rewcause True --rewcause_holdout MAKE_IRON_PICKAXE
   task: craftax_symbolic
   run: {steps: 1.1e6, envs: 1, train_ratio: 512}
   # Replay lives in HOST RAM, and the default size (5e6) never evicts inside a
-  # 1.1M-step run -- so peak memory is the whole run. The map targets make each
-  # step ~40% bigger (map12 2304 floats + mapseen 144 + deter2 1024 in
-  # replay_context, on top of the 8268-dim observation: ~33KB -> ~47KB), which
-  # took a 62GB box over the edge at ~690k steps. 400k steps ~= 19GB, leaving
-  # room for JAX and the model.
+  # 1.1M-step run -- so peak memory would be the whole run (~33KB a step with
+  # the 8268-dim observation and replay_context). The cap of 400k steps
+  # (~13-19GB) was set for the larger family runs and every scored run used
+  # it, the plain baselines included, so it stays: changing it changes which
+  # steps are replayed after 400k.
   replay: {size: 4e5}
 
 dmc_proprio:

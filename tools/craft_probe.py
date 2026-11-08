@@ -14,8 +14,7 @@ bottleneck is exploration, full stop.
 
 Run (CPU is plenty):
   python tools/craft_probe.py --logdir <logdir> --trials 200 \
-      --configs craftax size50m --env.craftax.mapmodel True \
-      --agent.mapmodel.enabled True --agent.mapmodel.to_actor True
+      --configs craftax size50m --env.craftax.survival none
 """
 
 import argparse

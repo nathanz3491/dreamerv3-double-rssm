@@ -92,13 +92,6 @@ def main(argv=None):
         bind(make_logger, config),
         args)
 
-  elif config.script == 'rewcause_probe':
-    embodied.run.rewcause_probe(
-        bind(make_agent, config),
-        bind(make_env, config),
-        args,
-        str(config.agent.rewcause_holdout))
-
   elif config.script == 'parallel':
     embodied.run.parallel.combined(
         bind(make_agent, config),

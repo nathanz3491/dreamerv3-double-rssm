@@ -2,7 +2,8 @@
 
 Reads docs/eval_results.json -- one entry per evaluated checkpoint, each the
 output of tools/death_eval.py (episode-final achievement count, per-achievement
-unlock rate, cause of death) -- and writes docs/comparison-report.pdf.
+unlock rate, cause of death; tools/eval_entry.py turns a log into an entry) --
+and writes docs/comparison-report.pdf.
 
   python tools/make_comparison_report.py
 """
@@ -20,7 +21,6 @@ import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = ROOT / 'docs' / 'eval_results.json'
-DIAG = ROOT / 'docs' / 'diagnosis.json'           # tools/diagnose_run.py
 OUT = ROOT / 'docs' / 'comparison-report.pdf'
 
 # Reference palette (dataviz skill, light mode): recessive ink, one sequential
@@ -72,14 +72,16 @@ def main():
                data['subtitle'])
     y = wrap(fig, 0.07, 0.90, data['summary'], width=104)
 
-    cols = ['run', 'eps', 'ach.', 'w/o wake', 'life', 'table', 'pickaxe',
-            'sword', 'stone', 'drink']
+    cols = ['run', 'ach. ± SE', 'w/o wake', 'life', 'return', 'table',
+            'pickaxe', 'sword', 'stone', 'drink']
     rows = []
     for r in runs:
       rt = r['rates']
-      rows.append([r['label'], str(r['episodes']), f"{r['achievements']:.2f}",
+      se = f" ± {r['se']:.2f}" if 'se' in r else ''
+      ret = f"{r['ret']:.2f}%" if 'ret' in r else '-'
+      rows.append([r['label'], f"{r['achievements']:.2f}{se}",
                    f"{r['achievements'] - r['wake_up']:.2f}",
-                   f"{r['lifespan']:.0f}" if r.get('lifespan') else '-']
+                   f"{r['lifespan']:.0f}" if r.get('lifespan') else '-', ret]
                   + [f"{100 * rt.get(k, 0):.0f}%" for k in (
                       'PLACE_TABLE', 'MAKE_WOOD_PICKAXE', 'MAKE_WOOD_SWORD',
                       'COLLECT_STONE', 'COLLECT_DRINK')])
@@ -97,8 +99,8 @@ def main():
     ax.axis('off')
     tab = ax.table(cellText=rows, colLabels=cols, loc='upper left',
                    cellLoc='center', colLoc='center',
-                   colWidths=[0.34, 0.05, 0.06, 0.09, 0.06, 0.07, 0.08, 0.07,
-                              0.07, 0.07])
+                   colWidths=[0.31, 0.11, 0.08, 0.05, 0.07, 0.06, 0.07, 0.06,
+                              0.06, 0.06])
     tab.auto_set_font_size(False)
     tab.set_fontsize(8)
     tab.scale(1, 1.55)
@@ -110,7 +112,7 @@ def main():
         cell.set_text_props(ha='left')
       if i == 0:
         cell.set_text_props(weight='bold', color=INK2)
-      if i == len(rows):                         # newest run
+      if i > 0 and runs[i - 1].get('new'):       # new since the last report
         cell.set_text_props(weight='bold')
     wrap(fig, 0.07, y - 0.05 - th, data['table_note'], width=125, size=7.5,
          color=MUTED, line=0.012)
@@ -118,10 +120,11 @@ def main():
     plt.close(fig)
 
     # --------------------------------------------- 2. totals + the tech spine
-    fig = page(pdf, 'Sleep inflates the map runs; the manager is real progress',
+    fig = page(pdf, 'Achievements per run, and the early tech tree',
                'Mean episode-final achievements per run, split into WAKE_UP and '
                'the rest; unlock rate of the early tech-tree rungs')
     ax = fig.add_axes([0.33, 0.60, 0.59, 0.27])
+    fs = 8 if len(runs) <= 22 else 7      # rows get tight past 22 runs
     ypos = np.arange(len(runs))[::-1]
     rest = np.array([r['achievements'] - r['wake_up'] for r in runs])
     wake = np.array([r['wake_up'] for r in runs])
@@ -130,15 +133,15 @@ def main():
     ax.barh(ypos, wake, left=rest, height=0.62, color=WAKE, edgecolor=SURFACE,
             linewidth=2, label='WAKE_UP (sleep, then wake)')
     for yy, a, b in zip(ypos, rest, wake):
-      ax.text(a + b + 0.06, yy, f'{a + b:.2f}', va='center', fontsize=8.5)
-      ax.text(a - 0.08, yy, f'{a:.2f}', va='center', ha='right', fontsize=7.5,
-              color='#ffffff')
+      ax.text(a + b + 0.06, yy, f'{a + b:.2f}', va='center', fontsize=fs + 0.5)
+      ax.text(a - 0.08, yy, f'{a:.2f}', va='center', ha='right',
+              fontsize=fs - 0.5, color='#ffffff')
     ax.axvline(runs[0]['achievements'], color=MUTED, linewidth=1,
                linestyle=(0, (3, 3)))
     ax.text(runs[0]['achievements'], -0.75, ' vanilla', fontsize=7.5,
             color=MUTED, va='center')
     ax.set_yticks(ypos)
-    ax.set_yticklabels(labels, fontsize=8)
+    ax.set_yticklabels(labels, fontsize=fs)
     ax.set_xlim(0, max(rest + wake) * 1.15)
     ax.set_xlabel('achievements per episode (episode-final count)')
     ax.legend(ncol=2, loc='lower left', bbox_to_anchor=(0, 1.0), frameon=False,
@@ -198,9 +201,10 @@ def main():
     plt.close(fig)
 
     # ---------------------------------------- 4. death + checkpoint variance
-    fig = page(pdf, 'Survival never moved',
+    fig = page(pdf, 'Cause of death and lifespan',
                'Cause of death (share of evaluation episodes) and lifespan; '
-               'and how much one run moves between its own checkpoints')
+               'and, if the results list one, how much a run moves between '
+               'its own checkpoints')
     cruns = [r for r in runs if r.get('causes')]
     ax = fig.add_axes([0.40, 0.56, 0.52, 0.31])
     ypos = np.arange(len(cruns))[::-1]
@@ -225,27 +229,28 @@ def main():
               fontsize=8)
     ax.spines['left'].set_visible(False)
     wrap(fig, 0.40, 0.528, 'Random policy lives 261-284 steps; doing nothing '
-         'lives 333. Map + potential (bug) has no recorded causes.', width=75,
+         'lives 333.', width=75,
          size=7.5, color=MUTED, line=0.012)
 
-    ck = data['checkpoints']
-    ax = fig.add_axes([0.30, 0.10, 0.62, 0.33])
-    xs = np.arange(len(ck['points']))
-    ys = [p['achievements'] for p in ck['points']]
-    ax.plot(xs, ys, color=BLUE, linewidth=2, marker='o', markersize=7,
-            markeredgecolor=SURFACE, markeredgewidth=2)
-    for x, p in zip(xs, ck['points']):
-      ax.text(x, p['achievements'] + 0.08, f"{p['achievements']:.2f}",
-              ha='center', fontsize=8)
-    ax.set_xticks(xs)
-    ax.set_xticklabels([p['label'] for p in ck['points']], fontsize=8)
-    ax.set_ylim(min(ys) - 0.6, max(ys) + 0.5)
-    ax.set_ylabel('achievements per episode')
-    ax.grid(axis='y', color=GRID, linewidth=0.6)
-    ax.set_axisbelow(True)
-    fig.text(0.30, 0.46, ck['title'], fontsize=9, weight='bold')
-    wrap(fig, 0.30, 0.448, ck['note'], width=78, size=7.5, color=INK2,
-         line=0.013)
+    ck = data.get('checkpoints')
+    if ck:
+      ax = fig.add_axes([0.30, 0.10, 0.62, 0.33])
+      xs = np.arange(len(ck['points']))
+      ys = [p['achievements'] for p in ck['points']]
+      ax.plot(xs, ys, color=BLUE, linewidth=2, marker='o', markersize=7,
+              markeredgecolor=SURFACE, markeredgewidth=2)
+      for x, p in zip(xs, ck['points']):
+        ax.text(x, p['achievements'] + 0.08, f"{p['achievements']:.2f}",
+                ha='center', fontsize=8)
+      ax.set_xticks(xs)
+      ax.set_xticklabels([p['label'] for p in ck['points']], fontsize=8)
+      ax.set_ylim(min(ys) - 0.6, max(ys) + 0.5)
+      ax.set_ylabel('achievements per episode')
+      ax.grid(axis='y', color=GRID, linewidth=0.6)
+      ax.set_axisbelow(True)
+      fig.text(0.30, 0.46, ck['title'], fontsize=9, weight='bold')
+      wrap(fig, 0.30, 0.448, ck['note'], width=78, size=7.5, color=INK2,
+           line=0.013)
     pdf.savefig(fig)
     plt.close(fig)
 
@@ -255,75 +260,7 @@ def main():
     pdf.savefig(fig)
     plt.close(fig)
 
-    # --------------------------------------- 6. where the best run falls short
-    diag = {d['run']: d for d in json.loads(DIAG.read_text(encoding='utf-8'))}
-    fig = page(pdf, 'Where B2 falls short',
-               'Last 150k training steps of each run (~500 episodes), decoded '
-               'from replay by tools/diagnose_run.py')
-    rungs = ['COLLECT_WOOD', 'PLACE_TABLE', 'MAKE_WOOD_PICKAXE',
-             'COLLECT_STONE', 'PLACE_FURNACE', 'MAKE_STONE_PICKAXE',
-             'COLLECT_IRON']
-    series = [('expB_mask', 'B2 masked', '#2a78d6'),
-              ('expB_input', 'B1 told', '#1baf7a'),
-              ('honest_map', 'honest map', '#eb6834')]
-    ax = fig.add_axes([0.10, 0.58, 0.62, 0.30])
-    xs = np.arange(len(rungs))
-    for run, label, colour in series:
-      ys = [100 * diag[run]['funnel'][r]['all'] for r in rungs]
-      ax.plot(xs, ys, color=colour, linewidth=2, marker='o', markersize=7,
-              markeredgecolor=SURFACE, markeredgewidth=2, label=label)
-    b2 = [100 * diag['expB_mask']['funnel'][r]['all'] for r in rungs]
-    for x, y in zip(xs, b2):
-      ax.text(x, y + 4, f'{y:.0f}%', ha='center', fontsize=8, color=INK)
-    ax.set_xticks(xs)
-    ax.set_xticklabels([r.replace('_', ' ').lower() for r in rungs],
-                       rotation=25, ha='right', fontsize=8)
-    ax.set_ylabel('% of episodes reaching the rung')
-    ax.set_ylim(-3, 108)
-    ax.grid(axis='y', color=GRID, linewidth=0.6)
-    ax.set_axisbelow(True)
-    ax.legend(loc='upper right', frameon=False, fontsize=8)
-    sp = diag['expB_mask']['stone_pickaxe']
-    de = diag['expB_mask']['deaths']
-    pct = lambda v: f'{100 * v:.0f}%'
-    text = (
-        "1. The stone pickaxe is the wall. B2 reaches the furnace in "
-        f"{pct(diag['expB_mask']['funnel']['PLACE_FURNACE']['all'])} of episodes "
-        "but makes the stone pickaxe in "
-        f"{pct(diag['expB_mask']['funnel']['MAKE_STONE_PICKAXE']['all'])}. Of the "
-        f"{sp['episodes']} episodes that collected stone, {pct(sp['held_both'])} "
-        "held wood and stone at the same time, but only "
-        f"{pct(sp['both_at_table'])} ever stood next to a table while holding "
-        f"both, and {pct(sp['made'])} made the pickaxe. Two gaps: it rarely "
-        "brings the ingredients back to a table (logistics), and when it does "
-        "the chance lasts one step -- the single log usually goes into the wood "
-        "sword or it walks off (measured in docs/b2-casebook.pdf).\n"
-        "2. Table to wood pickaxe leaks. "
-        f"{pct(1 - diag['expB_mask']['funnel']['MAKE_WOOD_PICKAXE']['given_previous'])}"
-        " of the episodes that place a table never make the wood pickaxe. At a "
-        "table holding wood it crafts every time, but every one of these "
-        "episodes placed the table with its last two logs, and later logs go "
-        "into another table rather than back to the first "
-        "(docs/b2-casebook.pdf).\n"
-        "3. Survival. Training-window lifespan "
-        f"{de['lifespan_mean']:.0f} (median {de['lifespan_median']:.0f}) against "
-        "261-284 for a random policy. Thirst is still the first meter to run "
-        f"out in {pct(de['causes'].get('drink ran out', 0))} of deaths and "
-        f"hunger in {pct(de['causes'].get('food ran out', 0))}: Craftax pays "
-        "for the first drink only, so topping up is never rewarded. A hostile "
-        f"mob is adjacent at {pct(de['at_death'].get('hostile', 0))} of deaths; "
-        "it dies in lava in "
-        f"{pct(de['at_death'].get('lava', 0))} (the others: under 1%), the price "
-        "of exploring further. Deaths in its sleep are rare "
-        f"({pct(de['at_death'].get('sleeping', 0))}).\n"
-        "4. Wasted presses. 43% of presses still do nothing (experiment A): DO "
-        "with nothing in front (26%), NOOP and walking into walls. Masking only "
-        "removes the special actions; these basic ones are never masked.")
-    wrap(fig, 0.07, 0.47, text, width=108, size=8.6, line=0.0148)
-    pdf.savefig(fig)
-    plt.close(fig)
-
-    # --------------------------------------------- 7. interpretation
+    # --------------------------------------------- 6. interpretation
     fig = page(pdf, 'What the results say, and what would settle the rest')
     y = 0.90
     for block in data['interpretation']:

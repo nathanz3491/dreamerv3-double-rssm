@@ -5,11 +5,8 @@ chose, the actor's top action probabilities, its entropy, and
 the achievements as they unlock. Paced so a human can follow it.
 
 Run (CPU is fine, and keeps the GPU free for training):
-  python tools/watch_agent.py --logdir ~/logdir/map_pot_fixed --episodes 5 \
-      --delay 1.5 --configs craftax size50m \
-      --env.craftax.mapmodel True --env.craftax.survival potential \
-      --agent.mapmodel.enabled True --agent.mapmodel.to_actor True \
-      --agent.mapmodel.imag_shift False --agent.imag_length 15 \
+  python tools/watch_agent.py --logdir ~/logdir/abl_plain --episodes 5 \
+      --delay 1.5 --configs craftax size50m --env.craftax.survival none \
       --jax.platform cpu
 """
 
