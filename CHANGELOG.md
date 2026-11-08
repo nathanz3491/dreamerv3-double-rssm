@@ -11,6 +11,11 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 
 ## [Unreleased]
 
+### Fixed
+- `test_market.py::test_fixed_price_is_price0_everywhere`: the agent stand-in
+  lacked `_shift` (added with the moving price), so `Agent._price` raised
+  AttributeError. A test-only fix; no agent code changed.
+
 ### Changed
 - The market's consumers now read the price: `log(P*/price0)` (stop-gradient)
   joins the actor's, the critic's (and slow critic's) and the manager's input
