@@ -30,9 +30,11 @@ defaults:
     atari: {size: [96, 96], repeat: 4, sticky: True, gray: True, actions: all, lives: unused, noops: 30, autostart: False, pooling: 2, aggregate: max, resize: pillow, clip_reward: False}
     procgen: {size: [96, 96], resize: pillow}
     crafter: {size: [64, 64], logs: False}
-    # survival: only 'none' exists on main (no reward shaping). The key stays
-    # so the plain runs' `--env.craftax.survival none` still parses.
-    craftax: {logs: False, use_seed: True, survival: none}
+    # valid_obs emits obs['valid'] (the rule mask's flags), goals_obs the named
+    # goals' obs['goalphi'] / obs['goalreach']. survival: only 'none' exists on
+    # this branch (no reward shaping); the key stays so the runs'
+    # `--env.craftax.survival none` still parses.
+    craftax: {logs: False, use_seed: True, valid_obs: False, goals_obs: False, survival: none}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}
@@ -49,7 +51,7 @@ defaults:
     chunksize: 1024
     # Not written to disk: the latents cached for replay_context (~90% of a
     # run's disk; see embodied/core/replay.py). [] keeps the stock behaviour.
-    save_skip: ['dyn/', 'enc/', 'dec/']
+    save_skip: ['dyn/', 'enc/', 'dec/', 'map/']
 
   run:
     steps: 1e10
@@ -90,7 +92,7 @@ defaults:
     coordinator_address: ''
 
   agent:
-    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3}
+    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, feas: 1.0, gphi: 1.0, mpolicy: 1.0, memfut: 1.0, memrec: 1.0, goalvq: 1.0, curio: 1.0}
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
@@ -104,6 +106,71 @@ defaults:
       simple: {depth: 64, mults: [2, 3, 4, 4], layers: 3, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in, outer: False, kernel: 5, bspace: 8, strided: False}
     rewhead: {layers: 1, units: 1024, act: silu, norm: rms, output: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
     conhead: {layers: 1, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
+    # --- the rule mask (needs env.craftax.valid_obs; counted as CHEATING) -----
+    # mask: impossible actions get zero probability and zero gradient -- the
+    # true flags (obs['valid'], the game's rules) when acting, the learned
+    # 'feas' head in imagination, which allows an action above `threshold`.
+    # Off by default; next_taste used it.
+    valid: {mask: False, threshold: 0.1}
+    validhead: {layers: 2, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
+    # --- two-level agent (docs/agent.md; needs mapmodel.enabled and
+    # to_actor). A manager picks one of the goals from RSSM-1's state plus
+    # RSSM-2's slow state and holds it until reached or for `hold` steps; the
+    # actor sees the goal and is paid goal_reward x the change in its predicted
+    # progress plus reach_bonus on reaching it. One critic body with two heads
+    # (critic: shared, the only kind on this branch): 'game' judges both
+    # actors, 'goal' the bottom actor only, and the manager takes the exact
+    # gradient over all goals from the game head. goal_weight weighs the goal
+    # stream's NORMALISED advantage against the game stream's 1.0. actent is
+    # the manager's entropy bonus. reach_threshold: predicted progress above
+    # which an imagined state counts as reached.
+    # goals: named -- the 13 tech-tree goals (craftax_goals; needs
+    # env.craftax.goals_obs). learned (v2) -- a codebook of `codes` latent-change
+    # types (goalcodes.py), learned from changes over code_window steps; a goal
+    # counts as reached when the change since it was set is classified as its
+    # code (nearest code, cosine above code_reach).
+    manager: {enabled: False, goal_reward: 1.0, reach_bonus: 1.0, reach_threshold: 0.6, actent: 1e-3, critic: shared, hold: 32, goal_weight: 0.5, goals: named, codes: 16, code_dim: 64, code_window: 8, code_reach: 0.3, code_beta: 0.25, code_decay: 0.99}
+    # --- taste (taste.py; docs/taste-prior.md; ported from ../plastic-reward) --
+    # target actions: a per-action logit bias, learned from the critic's
+    # advantage on replay at the steps where each action was really taken: the
+    # knowledge-free stand-in for valid.mask's rules. The rule constants are the
+    # toy's evolved champion (btn2adv). every/fresh: a fold of evidence every
+    # 2000 train updates, which is 4000 new env steps at train_ratio 512 with
+    # 16x64 batches -- recompute fresh = every * batch_size * batch_length /
+    # train_ratio if those change. actions special leaves NOOP, the moves and DO
+    # untouched, as the toy's taste covered its buttons but not its moves.
+    # target manager moves taste onto the manager's goals instead (named goals):
+    # an internal reward on choosing each goal, lam_mgr x its taste relative to
+    # the other goals, in rscale units (lam is the actions target's logits and
+    # is not used there), learned from the real return after each choice
+    # against the manager's expected value; rows caps the decision rows scored
+    # per update. lam_mgr 0 is the no-taste control (next_lam0). center
+    # compares every slot with the fold's average (False reproduces v2_taste).
+    taste: {enabled: False, target: actions, center: False, actions: special, every: 2000, fresh: 4000.0, zscale: 0.288, w0: 0.25, alpha: 0.41, rho: 0.014, pos: 4.45, neg: 1.43, decay: 0.40, lam: 4.92, lam_mgr: 1.0, rows: 256, optimism: 0.0, n0: 20.0, wmax: 1.0, stdrate: 0.01}
+    # v2 -- curiosity replaces the reward hints: `members` networks predict the
+    # next latent; their disagreement is a third reward stream (weight for the
+    # bottom actor, mgr_weight for the manager's goal values). Needs the
+    # manager (its shared critic gets an 'explore' head).
+    curiosity: {enabled: False, members: 5, layers: 2, units: 512, weight: 0.2, mgr_weight: 0.2}
+    memhead: {layers: 2, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in}
+    gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}
+    # --- RSSM-2 as memory (mapmodel.py) -------------------------------------
+    # A second, slower world model that ticks every `tick` env steps on
+    # RSSM-1's mean latent and the window's raw actions. target memory (the
+    # only target on this branch; the map target is on family/rssm2) trains it
+    # to predict RSSM-1's latent `ahead` ticks on and to recall the observation
+    # `back` ticks ago -- no game knowledge. to_actor feeds its state to the
+    # actor and critic (and the manager reads it); the manager needs both.
+    mapmodel:
+      enabled: False
+      to_actor: False
+      target: memory
+      ahead: [1, 2, 4]
+      back: [1, 2, 4]
+      tick: 8           # env steps per RSSM-2 tick; must divide batch_length
+      deter: 1024
+      hidden: 512
+      layers: 2
     policy: {layers: 3, units: 1024, act: silu, norm: rms, minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: trunc_normal_in}
     value: {layers: 3, units: 1024, act: silu, norm: rms, output: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
     policy_dist_disc: categorical

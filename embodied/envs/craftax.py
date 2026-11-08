@@ -14,6 +14,10 @@ repo's own crafter.py. Beyond a plain wrapper:
   4. ``raw_reward`` holds Craftax's own reward for the last step.
   5. ``save_state()`` / ``reset_to()`` checkpoint and restore the functional
      Craftax EnvState (used by tools/craft_probe.py).
+  6. ``valid_obs`` adds ``obs['valid']``, the rule mask (which actions can do
+     anything now); ``goals_obs`` adds ``obs['goalphi']`` and
+     ``obs['goalreach']`` for the named-goal manager. Both are read from the
+     observation vector alone and are labels, never encoder inputs.
 
 dreamerv3's embodied.jax installs a global ``jax_transfer_guard='disallow'`` to
 catch stray host<->device transfers inside the agent. The env legitimately
@@ -39,9 +43,9 @@ import numpy as np
 class Craftax(embodied.Env):
 
   def __init__(self, task='symbolic', size=None, seed=0, logs=False,
-               survival='none'):
-    # Reward shaping lives on the family branches; main has the stock reward
-    # only. The argument stays so `--env.craftax.survival none` still parses.
+               valid_obs=False, goals_obs=False, survival='none'):
+    # No reward shaping on this branch (it lives on family/rssm2 and
+    # family/v). The argument stays so `--env.craftax.survival none` parses.
     assert survival == 'none', survival
     assert task in ('symbolic',), task  # pixels: add 'Craftax-Pixels-v1' below
     import jax
@@ -52,6 +56,26 @@ class Craftax(embodied.Env):
     self._env = make_craftax_env_from_name(
         'Craftax-Symbolic-v1', auto_reset=False)
     self._num_ach = NUM_ACHIEVEMENTS
+
+    # The rule mask: obs['valid'], which of the 43 actions can do anything
+    # now, computed from the observation vector alone (craftax_valid). It is
+    # the game's own rules, so a run that masks with it counts as cheating.
+    self._valid_obs = bool(valid_obs)
+    if self._valid_obs:
+      from dreamerv3 import craftax_valid
+      self._V = craftax_valid
+    # Named goals: obs['goalphi'], progress toward each manager goal,
+    # computed from the observation vector alone (craftax_goals) -- a training
+    # target for the agent's goal-progress head, never an encoder input -- and
+    # obs['goalreach'], which goals have read as reached at any step of this
+    # episode: the manager's memory of what it has done. Built from goalphi
+    # alone, so it is what an observer of the screen could have kept.
+    self._goals_obs = bool(goals_obs)
+    if self._goals_obs:
+      from dreamerv3 import craftax_goals
+      self._G = craftax_goals
+      self._n_goals = len(craftax_goals.names())
+      self._goalreach = np.zeros(self._n_goals, bool)
 
     # Everything here touches the host<->device boundary (params pytree, space
     # bounds, RNG key), so it runs under an allow scope; see module docstring.
@@ -94,6 +118,13 @@ class Craftax(embodied.Env):
         'is_last': elements.Space(bool),
         'is_terminal': elements.Space(bool),
     }
+    if self._valid_obs:
+      spaces['valid'] = elements.Space(np.float32, (self._num_actions,), 0.0, 1.0)
+    if self._goals_obs:
+      spaces['goalphi'] = elements.Space(
+          np.float32, (self._n_goals,), 0.0, 1.0)
+      spaces['goalreach'] = elements.Space(
+          np.float32, (self._n_goals,), 0.0, 1.0)
     if self._logs:
       spaces['log/reward'] = elements.Space(np.float32)
       spaces['log/achievements'] = elements.Space(np.int32)
@@ -183,12 +214,23 @@ class Craftax(embodied.Env):
         is_last=is_last,
         is_terminal=is_terminal,
     )
+    if self._valid_obs:
+      obs['valid'] = self._V.valid_actions(vector).astype(np.float32)
+    if self._goals_obs:
+      obs.update(self._goal_obs(vector, is_first))
     if self._logs:
       obs['log/reward'] = np.float32(reward)
       with self._jax.transfer_guard('allow'):
         obs['log/achievements'] = np.int32(
             np.asarray(state.achievements).sum())
     return obs
+
+  def _goal_obs(self, vector, is_first):
+    phi = self._G.progress(vector)
+    if is_first:
+      self._goalreach[:] = False
+    self._goalreach |= phi >= 1.0
+    return dict(goalphi=phi, goalreach=self._goalreach.astype(np.float32))
 
   # --- checkpoint/restore ----------------------------------------------------
   def save_state(self):
@@ -218,6 +260,10 @@ class Craftax(embodied.Env):
         is_first=True, is_last=False, is_terminal=False,
     )
     # Must match obs_space exactly -- the agent asserts on the key set.
+    if self._valid_obs:
+      result['valid'] = self._V.valid_actions(obs).astype(np.float32)
+    if self._goals_obs:
+      result.update(self._goal_obs(obs, is_first=True))
     if self._logs:
       result['log/reward'] = np.float32(0.0)
       result['log/achievements'] = ach_sum
