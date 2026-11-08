@@ -7,6 +7,7 @@ code had to choose, the choice is recorded there as "chosen: …".
 
 | part | status | flag (default off) |
 |---|---|---|
+| §1, §2 Q-heads, fixed P\* | built | `agent.market.enabled` |
 | §4 slope quota | built | `env.craftax.quota.enabled` |
 | §5 survival goals | built | `env.craftax.goals_survival` |
 
@@ -75,6 +76,38 @@ describe the base. Taste stays at `lam_mgr 0`, where it is inert.
 - **The critic** gets the 43-dim profit vector as an input, with gradients
   stopped. It is relative, so the critic cannot copy it as its value. What it
   carries is "how much the choice matters here".
+- **Built** (`--agent.market.enabled True`, `agent.py`: `_q_loss`, `_profit`,
+  `_alive`, `_price`; config `agent.market`, `agent.qhead`, loss `qhead`).
+  Here P\* is the constant `agent.market.price0` (0.01); the moving price is
+  §3. Chosen, where the design left it open:
+  - *Q-head output: scalar, own trunk.* One small MLP (`qhead`: 2 layers, 512
+    units) on the actor's input (stop-gradient) with two heads of 43 scalar
+    outputs. It does not share the critic's trunk: the critic reads the Q-heads'
+    profit, and a shared body would let it copy them. The two heads do share
+    this one small trunk. Targets are divided by each head's running return
+    scale (`qsnorm`, `qlnorm`, `retnorm`'s settings, floor 1).
+  - *Targets.* λ-returns on the imagined rollout, per head: score reward = the
+    reward head's prediction (quota included); life reward = 1 per step alive,
+    cut by the continue head (`con` rescaled by 1 − 1/horizon, so 1 while
+    alive and 0 at death). Each head bootstraps on itself at the next state and
+    the next action the dream sampled (SARSA), so Q(s, a) is the return of
+    taking a then following the actor. Weighted by the survival of the dream,
+    like the critic.
+  - *Every consumer values at P\*.* The reward the critic and actor see in
+    imagination is `r_score + P* · alive`, and the real reward in the replay
+    value loss is `reward + P* · (1 − is_terminal)`. The manager is judged by
+    the critic's game head, so it inherits the price with no further change. The
+    critic's input gains the 43-dim profit (computed at Q = Q_score + P\* Q_life
+    in return units, divided by the game return scale, stop-gradient); the
+    manager's all-goals critic input and taste's evidence carry it too (the
+    Q-heads read under each goal at step 0).
+  - *Why `price0` 0.01.* Survival pays 1 per step against achievements worth
+    1 to 8 every few hundred steps. At 0.01, a few hundred steps alive are worth
+    about one basic achievement, so staying alive matters but cannot swamp the
+    score signal (a price of 1 would make dawdling worth more than any
+    achievement). Untuned; sweep it if the Q-heads run is interesting.
+  - *One price per rollout:* the value at the rollout's starting state, held
+    through the dream (constant here anyway).
 
 ### 3. The market
 
@@ -189,13 +222,14 @@ describe the base. Taste stays at `lam_mgr 0`, where it is inert.
 
 1. **Market-net training.** Is REINFORCE on real experience enough, or does it
    need imagination? What window and baseline does its reward use?
-2. **L_nom** for the death charge:
+2. **L_nom** for the death charge (chosen: the running mean, §4):
    - a fixed number;
    - or the agent's running mean lifespan, which lets old agents escape
      (proposed).
 3. **Constants.** The baselines A_s and A_d, elasticities ε_s and ε_d, tanh
    bound B, and dead-zone width.
 4. **Q-head output:** scalar or distributional? Shared trunk with the critic?
+   Chosen: scalar, own trunk (§2).
 5. **Mid-life change test:**
    - Craftax's own changes (night, going down a floor);
    - or injected ones (food made scarce partway through a life), which need a

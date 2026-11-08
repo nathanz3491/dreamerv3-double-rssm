@@ -1,8 +1,10 @@
 # DreamerV3 on Craftax: the market agent (`family/market`)
 
 **Status: being built, not trained yet.** Built so far: the survival goals
-(`env.craftax.goals_survival`) and the slope quota (`env.craftax.quota.enabled`). Every new part is behind a flag that defaults
-off, so with the defaults the code is `family/next`'s agent. The design is
+(`env.craftax.goals_survival`), the slope quota (`env.craftax.quota.enabled`)
+and the Q-heads at a fixed price (`agent.market.enabled`). Every new part is
+behind a flag that defaults off, so with the defaults the code is
+`family/next`'s agent. The design is
 [docs/design-market.md](docs/design-market.md); its table says which parts are
 built. The base, `next_nomask`, is the honest next agent from `family/next`. For
 the plain baseline and the index of every family, see `main`.

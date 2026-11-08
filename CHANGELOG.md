@@ -12,6 +12,13 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **Q-heads and a fixed price P\*** (design §1, §2): `--agent.market.enabled
+  True` adds Q_score and Q_life (43 scalar outputs each, their own small MLP on
+  the actor's input, trained on imagined lambda-returns of the action taken).
+  The critic, actor and manager value at `r_score + P* x alive` (P* =
+  `agent.market.price0`, 0.01), and the critic gets each action's economic
+  profit as an input. Default off. Tests: `dreamerv3/test_market.py` (needs
+  JAX), `dreamerv3/test_market_config.py`.
 - **Slope quota** (design §4): `--env.craftax.quota.enabled True` adds a
   penalty `k` to the reward when a window (`margin` x the running mean gap at
   the current achievement count) passes without a new achievement, and at death

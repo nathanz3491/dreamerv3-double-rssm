@@ -266,8 +266,30 @@ class Agent(embodied.jax.Agent):
     self.valnorm = embodied.jax.Normalize(**config.valnorm, name='valnorm')
     self.advnorm = embodied.jax.Normalize(**config.advnorm, name='advnorm')
 
+    # --- the market agent (docs/design-market.md), default off ---------------
+    # Two per-action Q-heads, Q_score(s, a) and Q_life(s, a): scalar outputs,
+    # one per action. They are one small MLP of their own on the actor's input
+    # (stop-gradient), not the critic's trunk: the critic reads their economic
+    # profit as an input, and sharing a body would let it copy them. Trained on
+    # the imagined lambda-returns of the action actually taken (_q_loss), each
+    # against its own running return scale.
+    self._market = bool(config.market.enabled)
+    if self._market:
+      mk = config.market
+      assert not mk.shift, 'the moving price is the next stage'
+      assert not self._valid_mask, 'the rule mask counts as cheating'
+      self._price0 = float(mk.price0)
+      qspace = elements.Space(np.float32, (self._n_act,))
+      self.qhead = embodied.jax.MLPHead(
+          {'score': qspace, 'life': qspace}, {'score': 'mse', 'life': 'mse'},
+          **config.qhead, name='qhead')
+      self.qsnorm = embodied.jax.Normalize(**config.retnorm, name='qsnorm')
+      self.qlnorm = embodied.jax.Normalize(**config.retnorm, name='qlnorm')
+
     self.modules = [
         self.dyn, self.enc, self.dec, self.rew, self.con, self.pol, self.val]
+    if self._market:
+      self.modules.append(self.qhead)
     if self._valid_mask:
       self.modules.append(self.feas)
     if self._use_map:
@@ -290,6 +312,8 @@ class Agent(embodied.jax.Agent):
       scales.pop('curio', None)
     if not self._valid_mask:
       scales.pop('feas', None)
+    if not self._market:
+      scales.pop('qhead', None)
     if not self._use_mgr:
       scales.pop('gphi', None)
       scales.pop('mpolicy', None)
@@ -472,6 +496,69 @@ class Agent(embodied.jax.Agent):
         jax.nn.one_hot(goal, self._goals),
         jax.nn.one_hot(phase, self._phases)], -1))
 
+  # --- the market (docs/design-market.md) ------------------------------------
+  def _price(self, obs):
+    """(B, T) P* at each step of a batch. Fixed at price0 for now."""
+    return jnp.full(obs['is_first'].shape, self._price0, f32)
+
+  def _alive(self, con):
+    """The survival reward at imagined states: 1 while alive, cut by the
+    continue head. con is trained to (1 - 1/horizon) on live steps when
+    contdisc, so it is rescaled to 1."""
+    top = 1 - 1 / self.config.horizon if self.config.contdisc else 1.0
+    return jnp.clip(f32(con) / top, 0.0, 1.0)
+
+  def _qheads(self, qinp, bdims):
+    """Q_score and Q_life of every action at the actor's input: two (..., 43)
+    arrays in the heads' own (normalised) units. The input is stop-gradient:
+    the Q loss trains the heads only."""
+    out = self.qhead(sg(qinp), bdims)
+    return f32(out['score'].pred()), f32(out['life'].pred())
+
+  def _profit(self, qs, ql, price):
+    """Economic profit of each action, Q(a) - max over b != a of Q(b), at
+    Q = Q_score + P* Q_life in return units. Positive only for the best
+    action (0 for tied best actions). (..., 43), stop-gradient, divided by
+    the game return scale so the critic reads it at order 1. price is P*, its
+    shape the leading dims of qs."""
+    p = price.reshape(price.shape + (1,) * (qs.ndim - price.ndim))
+    q = sg(qs) * self.qsnorm.stats()[1] + p * sg(ql) * self.qlnorm.stats()[1]
+    top = jax.lax.top_k(q, 2)[0]
+    other = jnp.where(q >= top[..., :1], top[..., 1:], top[..., :1])
+    return nn.cast(sg(q - other) / self.retnorm.stats()[1])
+
+  def _q_loss(self, qs, ql, act, rew, alive, con, price, update):
+    """Q_score(s_t, a_t) and Q_life(s_t, a_t) on the imagined lambda-returns
+    of the action taken. Each bootstraps on its own head at the next state
+    and its next sampled action (SARSA: the dream's own policy), with the
+    score reward and the survival reward as the two reward streams. Targets
+    are in units of the head's running return scale. Returns the loss
+    (N, H) and metrics."""
+    cfg = self.config
+    disc = 1 if cfg.contdisc else 1 - 1 / cfg.horizon
+    weight = sg(jnp.cumprod(disc * con, 1) / disc)[:, :-1]
+    last, term = jnp.zeros_like(con), 1 - con
+    a = act['action'][..., None]
+    take = lambda q: jnp.take_along_axis(q, a, -1)[..., 0]
+    loss, mets = 0.0, {}
+    for name, q, r, norm in (('score', qs, rew, self.qsnorm),
+                             ('life', ql, alive, self.qlnorm)):
+      scale = norm.stats()[1]
+      pred = take(q)
+      boot = sg(pred) * scale
+      ret = lambda_return(
+          last, term, f32(r), boot, boot, disc, cfg.imag_loss.lam)
+      norm(ret, update)
+      loss = loss + weight * jnp.square(pred[:, :-1] - sg(ret) / scale)
+      mets[f'q{name}'] = boot.mean()
+      mets[f'q{name}_scale'] = scale
+    profit = self._profit(qs, ql, price[:, None])
+    mets['price'] = price.mean()
+    mets['alive'] = alive.mean()
+    mets['profit_best'] = profit.max(-1).mean()
+    mets['profit_spread'] = profit.std(-1).mean()
+    return loss, mets
+
   def _mgr_input(self, ainp, deter2, flags):
     """Manager input: the actor's view, RSSM-2's state, goals reached so far.
 
@@ -595,23 +682,30 @@ class Agent(embodied.jax.Agent):
     grew = jnp.concatenate([jnp.zeros_like(grew[:, :1]), grew], 1)
     return grew, event
 
-  def _all_goals_input(self, base, deter2, flags):
+  def _all_goals_input(self, base, deter2, flags, price=None):
     """The shared critic's input with every goal set at segment step 0.
 
     base (..., D) is the actor's view, deter2 (..., D2) RSSM-2's state and
     flags (..., G) the goals reached so far, all at the same states. Returns
-    (..., G, D'): the same layout as the critic input on replay.
+    (..., G, D'): the same layout as the critic input on replay. With the
+    market, price (...) is P* at those states and each goal's critic input
+    ends with the economic profit of the Q-heads read under that goal.
     """
     G = self._goals
     allg = self._goalfeat(jnp.arange(G), jnp.zeros(G, i32))  # (G, G + P)
     lead = base.shape[:-1]
     tile = lambda x: jnp.broadcast_to(
         x[..., None, :], (*lead, G, x.shape[-1]))
-    return jnp.concatenate([
-        tile(base), jnp.broadcast_to(allg, (*lead, G, allg.shape[-1])),
-        tile(nn.cast(sg(deter2))), tile(nn.cast(f32(flags)))], -1)
+    allg = jnp.broadcast_to(allg, (*lead, G, allg.shape[-1]))
+    parts = [tile(base), allg, tile(nn.cast(sg(deter2))),
+             tile(nn.cast(f32(flags)))]
+    if price is not None:
+      qinp = jnp.concatenate([parts[0], allg], -1)
+      qs, ql = self._qheads(qinp, len(lead) + 1)
+      parts.append(self._profit(qs, ql, price))
+    return jnp.concatenate(parts, -1)
 
-  def _taste_mgr_evidence(self, base, deter2, obs, ret, last, K):
+  def _taste_mgr_evidence(self, base, deter2, obs, ret, last, K, price=None):
     """Taste's evidence on the manager: what each real goal choice was worth.
 
     At every real step where the manager chose a goal (gphase 0), the
@@ -639,7 +733,9 @@ class Agent(embodied.jax.Agent):
     reached = (take(cut(obs['goalphi'] >= 1.0 - 1e-3))
                & (jnp.arange(self._goals) > 0))
     base, deter2 = take(cut(base)), take(cut(deter2))
-    cinp = self._all_goals_input(base, deter2, flags)          # (M, G, D')
+    if price is not None:
+      price = take(cut(price))
+    cinp = self._all_goals_input(base, deter2, flags, price)   # (M, G, D')
     voffset, vscale = self.valnorm.stats()
     q = f32(self.val(cinp, 2)['game'].pred()) * vscale + voffset
     dist = self._mgr_dist(self._mgr_input(base, deter2, flags), 1, reached)
@@ -654,7 +750,7 @@ class Agent(embodied.jax.Agent):
     return mets
 
   def _mgr_loss_shared(self, imgfeat, goals, phases, flags, reached, weight,
-                       frozen, deter2, rscale):
+                       frozen, deter2, rscale, price=None):
     """The manager actor, judged by the shared critic's game head.
 
     At imagined states 0, 8, ... the game head scores every goal as if set
@@ -671,7 +767,8 @@ class Agent(embodied.jax.Agent):
     I = base.shape[1]
     G = self._goals
     cinp = self._all_goals_input(
-        base, jnp.repeat(deter2[:, None], I, 1), flags[:, idx])
+        base, jnp.repeat(deter2[:, None], I, 1), flags[:, idx],
+        None if price is None else jnp.repeat(price[:, None], I, 1))
     voffset, vscale = self.valnorm.stats()
     heads = self.val(cinp, 3)
     q = f32(heads['game'].pred()) * vscale + voffset   # (N, I, G)
@@ -937,9 +1034,20 @@ class Agent(embodied.jax.Agent):
       ainp = self.actor2tensor(imgfeat, imgmapfeat)
     rew = self.rew(inp, 2).pred()
     con = self.con(inp, 2).prob(1)
+    if self._market:
+      # Valued at P*: the reward the actor-critic and the manager see is the
+      # score plus P* per step alive. One price per rollout, the one at its
+      # starting state, held through the dream.
+      price = self._price(obs)[:, -K:].reshape((B * K,))
+      alive = self._alive(con)
+      rew_score, rew = rew, rew + price[:, None] * alive
     if self._use_mgr:
       ainp = jnp.concatenate([ainp, self._goalfeat(goals, phases)], -1)
       cinp = self._mgr_input(ainp, start2, flags)
+      if self._market:
+        qs, ql = self._qheads(ainp, 2)
+        profit = self._profit(qs, ql, price[:, None])
+        cinp = jnp.concatenate([cinp, profit], -1)
       grew, event = self._goal_stream(inp, goals, reached)
       value, slow = self.val(cinp, 2), self.slowval(cinp, 2)
       streams = {
@@ -970,17 +1078,23 @@ class Agent(embodied.jax.Agent):
       metrics['manager/goal_rew'] = grew.mean()
       mloss, mmets = self._mgr_loss_shared(
           imgfeat, goals, phases, flags, reached, imgloss_out['weight'],
-          frozen, start2, imgloss_out['rscale/game'])
+          frozen, start2, imgloss_out['rscale/game'],
+          price=price if self._market else None)
       losses['mpolicy'] = mloss.mean(1).reshape((B, K))
       metrics.update(prefix(mmets, 'manager'))
     else:
+      cinp = ainp
+      if self._market:
+        qs, ql = self._qheads(ainp, 2)
+        profit = self._profit(qs, ql, price[:, None])
+        cinp = jnp.concatenate([ainp, profit], -1)
       los, imgloss_out, mets = imag_loss(
           imgact,
           rew,
           con,
           self._masked(self.pol(ainp, 2), self._dream_valid(inp, 2)),
-          self.val(ainp, 2),
-          self.slowval(ainp, 2),
+          self.val(cinp, 2),
+          self.slowval(cinp, 2),
           self.retnorm, self.valnorm, self.advnorm,
           update=training,
           contdisc=self.config.contdisc,
@@ -988,6 +1102,11 @@ class Agent(embodied.jax.Agent):
           **self.config.imag_loss)
       losses.update({k: v.mean(1).reshape((B, K)) for k, v in los.items()})
       metrics.update(mets)
+    if self._market:
+      qloss, qmets = self._q_loss(
+          qs, ql, imgact, rew_score, alive, con, price, training)
+      losses['qhead'] = qloss.mean(1).reshape((B, K))
+      metrics.update(prefix(qmets, 'market'))
 
     # Replay
     if self._repval:
@@ -996,6 +1115,10 @@ class Agent(embodied.jax.Agent):
       boot = imgloss_out['ret'][:, 0].reshape(B, K)
       feat, last, term, rew, boot = jax.tree.map(
           lambda x: x[:, -K:], (feat, last, term, rew, boot))
+      if self._market:
+        # The same valuation on the real reward: P* per step alive.
+        rprice = self._price(obs)[:, -K:]
+        rew = rew + rprice * f32(~term)
       inp = self.feat2tensor(feat)
       if self._use_map and self._map_to_actor:
         d2 = deter2_step[:, -K:].reshape((B * K, -1))
@@ -1008,9 +1131,15 @@ class Agent(embodied.jax.Agent):
         inp = jnp.concatenate([inp, self._goalfeat(
             obs['goal'][:, -K:], obs['gphase'][:, -K:])], -1)
         rflags = obs['goalreach'][:, -K:] > 0.5
+        qinp = inp
         inp = self._mgr_input(inp, deter2_step[:, -K:], rflags)
         value = lambda x, b: self.val(x, b)['game']
         slow = lambda x, b: self.slowval(x, b)['game']
+      else:
+        qinp = inp
+      if self._market:
+        qs, ql = self._qheads(qinp, 2)
+        inp = jnp.concatenate([inp, self._profit(qs, ql, rprice)], -1)
       los, reploss_out, mets = repl_loss(
           last, term, rew, boot,
           value(inp, 2),
@@ -1023,7 +1152,8 @@ class Agent(embodied.jax.Agent):
       metrics.update(prefix(mets, 'reploss'))
       if self._taste and training:
         metrics.update(prefix(self._taste_mgr_evidence(
-            base, deter2_step[:, -K:], obs, reploss_out['ret'], last, K),
+            base, deter2_step[:, -K:], obs, reploss_out['ret'], last, K,
+            price=self._price(obs) if self._market else None),
             'taste'))
 
     assert set(losses.keys()) == set(self.scales.keys()), (
