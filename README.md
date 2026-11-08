@@ -149,8 +149,9 @@ best run without the mask is given too.
 | `family/v` | Goal manager: v1-v1.3 (a manager over hand-written tech-tree goals; v1.2 adds a shared two-headed critic and held goals) and v2 (learned goal codebook, RSSM-2 as memory, curiosity) | `mgr`, `mgr2`, `mgr3`, `mgr4`, `mgr3_fix` ×3, `v12_nomask`, `v2`, `v2cur`, `v2_fix` ×3, `v2_norules`, `abl_manager` ×2 | 9.97 ± 0.36 `mgr3` (v1.2) — masked, counted as cheating; without the mask 6.03 ± 0.33 `v12_nomask` |
 | `family/next` | The next agent: v1.2's named goals on v2 (memory RSSM-2, shared critic, curiosity); taste on the manager at `lam_mgr 0`, i.e. no taste | `next_notaste` (crashed), `next_lam0`, `next_nomask` (training now) | 11.20 ± 0.41 `next_lam0` — masked, counted as cheating; `next_nomask` (no mask) not scored yet |
 | `family/taste` | Taste: a per-action logit bias learned from the critic's advantage (taste over actions), or an internal reward on the manager's goal choice (taste on the manager) | `abl_taste`, `v2_taste`, `next_taste` | 9.80 ± 0.42 `next_taste` — masked, counted as cheating; without the mask 5.33 ± 0.19 `v2_taste` |
-| `family/masked` | B1/B2/B3 rule-validity experiments: B1 feeds the action-validity flags to the encoder, B2 masks impossible actions, B3 learns the mask | `expB_input`, `expB_mask`, `expB_mask_fix` ×3, `expB3`, `expB3fix`, `calib_obs`, `calib_latent` | 8.40 ± 0.54 `expB_mask` (B2) — masked, counted as cheating; without the mask 6.30 ± 0.33 `expB_input` (B1, rule flags as input) |
+| `family/masked` | B1/B2/B3 rule-validity experiments: B1 feeds the action-validity flags to the encoder, B2 masks impossible actions, B3 learns the mask | `expB_input`, `expB_mask`, `expB_mask_fix` ×3, `expB3`, `expB3fix`, `calib_obs`, `calib_latent` | 8.40 ± 0.54 `expB_mask` (B2) — masked, counted as cheating. The whole family reads the game's rules (B1 as input, 6.30 ± 0.33 `expB_input`), so all of it counts as cheating; no new work goes here |
 | tag `archive/full-2026-11-08` | The full pre-split code (`49a6bc3`): every family side by side, plus the reward-cause head (off in every run) | every run above | all results together in its `docs/eval_results.json` |
 
-Every run is reproducible from the tag with its flags (`config.yaml` in its
-logdir). Until a family branch exists, use the tag.
+Each family branch runs its runs' exact flags (`config.yaml` in each logdir),
+and so does the tag. Runs from before the 2026-10-11 fixes trained on buggy
+code, which no branch reproduces exactly.
