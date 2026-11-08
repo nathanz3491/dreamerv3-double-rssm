@@ -71,9 +71,10 @@ split, all families together, is in `CHANGELOG.md` at tag
     expB_mask_fix and s1/s2, expB3, expB3fix, calib_obs, calib_latent, plain);
   - the env builds and steps with each of them.
 
-  The CPU equivalence of the built agents (parameters, policy outputs,
-  parameters and metrics after training steps) is not yet verified: the box
-  became unreachable before it ran.
+  PENDING: the CPU equivalence of the built agents against `49a6bc3`
+  (parameters, policy outputs, parameters and metrics after training steps)
+  and a rerun of `test_craftax_valid.py::test_agrees_with_the_game` with
+  `tools/` present. The box became unreachable before either ran.
 
 ### Removed
 - Left on other branches, because no run here used them:
