@@ -1,88 +1,92 @@
 # Changelog
 
-All notable changes to `main` (plain DreamerV3 on Craftax) are recorded here.
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to `family/v` (the goal-manager family: manager v1-v1.3
+and v2 on DreamerV3 for Craftax) are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-The history of the experiment families up to the split (map model, goal
-manager, named and learned goals, taste, rule mask, reward-cause head) is in
-`CHANGELOG.md` at tag `archive/full-2026-11-08`. From now on each family keeps
-its own changelog on its own branch.
+The branch is `main` plus this family; `main`'s own entries (the plain
+Craftax adapter, the scoring tools, the general fixes) are in `main`'s
+`CHANGELOG.md`. The full history up to the split, all families together, is in
+`CHANGELOG.md` at tag `archive/full-2026-11-08`.
 
 ## [Unreleased]
 
+### Added
+- **The goal-manager family, re-added on top of the plain `main`** from the
+  pre-split code (`49a6bc3`). Config keys, module and parameter names, RNG
+  order and loss order are the pre-split ones, so old checkpoints load and the
+  agent behaves the same:
+  - RSSM-2 (`dreamerv3/mapmodel.py`, `agent.mapmodel.*`): map target
+    (`craftax_map.py`, env `mapmodel`, `map_privileged`, `seen_decay`) and
+    memory target (`memhead`), with the 2026-10-11 step-alignment fixes;
+  - manager v1/v1.1 (separate critic, reach bonuses), v1.2 (shared two-headed
+    critic, held goals, `imag_loss_streams`), v1.3 (survival goals,
+    `survival potential+meters`), v2 (learned goal codebook, `goalcodes.py`,
+    with the B06/B08 fixes);
+  - named goals (`craftax_goals.py`, env `goals_obs`, `goals_survival`,
+    `gphihead`);
+  - curiosity (`agent.curiosity.*`, incl. `normalize`/`retlimit`);
+  - potential shaping (`craftax_potential.py`, env `survival potential` and
+    `potential+meters`, `phi_*`, `surv_w0/kappa/ach_ref`), with the B07
+    first-step fix;
+  - the B2 rule mask (`craftax_valid.py`, env `valid_obs`, `agent.valid.mask`,
+    `threshold`, `validhead`), **default off and counted as cheating**.
+- Tests: `test_craftax_goals`, `test_craftax_map`, `test_craftax_potential`,
+  `test_craftax_valid`, `test_mapmodel_step`, and the family parts of
+  `test_audit_fixes` (first shaped step, goal codebook, goal starts).
+- Docs: `docs/design-manager.md`, `docs/design-v2.md`,
+  `docs/architecture-v2.svg`, `docs/rssm2-step-alignment.md`, the family's
+  part of `docs/ablations.md`, and the whole `docs/audit-2026-10-11.md`.
+- Results: `docs/eval_results.json` holds the plain baselines and this
+  family's scored runs (honest first, masked ones marked `[masked]`);
+  `docs/curves/` adds every family run; `tools/plot_training_curves.py` lists
+  them (masked runs as grey context); the training curves and the comparison
+  report are regenerated.
+
 ### Changed
-- **Split: `main` is now plain DreamerV3 on Craftax.** Every experiment family
-  moved out to a branch of its own (indexed in `README.md`); `main` keeps
-  upstream DreamerV3, the general fixes, the plain parts of the Craftax adapter
-  and the scoring tools. Why: the families had piled into one `agent.py`
-  (2126 lines) behind default-off flags, so a fix to the shared parts could not
-  be told apart from a change to one family, and the plain baseline was hard
-  to read. The full pre-split code, with every run reproducible, is the tag
-  `archive/full-2026-11-08`.
-  - The plain agent is unchanged: built from `main` and from the pre-split
-    code with `--configs craftax size50m --env.craftax.survival none`, the
-    parameter tree (names, shapes, dtypes), the initial values, the policy's
-    actions and outputs, every parameter after four train steps, and the train
-    and report metrics are bit-identical on CPU. Old plain checkpoints
-    (`abl_plain`) therefore load on `main`.
-  - Kept for that reason: the craftax preset's `replay.size 4e5`, `obs['ach']`
-    with its exclusion from the encoder and decoder, and the env's `survival`
-    option (only `none` is accepted).
-- `docs/eval_results.json`, `docs/curves/`, the training curves and the
-  comparison report hold the plain runs only (vanilla and `abl_plain`);
-  `tools/plot_training_curves.py` lists them.
-- `tools/make_comparison_report.py` drops the B2 diagnosis page and makes the
-  checkpoint-variance panel optional.
-- `test_craftax_features.py` imports through the package, so
-  `python -m pytest dreamerv3/` collects it.
+- **Split: this branch holds the goal-manager family only.** Against the
+  pre-split code on CPU, the plain flags give a bit-identical agent: parameter
+  names, shapes, dtypes and initial values, policy outputs (train, greedy,
+  probe), parameters after four train steps on fixed batches, and the train
+  and report metrics. The same check for the flags of `v12_nomask`, `v2_fix`,
+  `abl_manager`, `mgr`, `mgr4` and `v2cur` was started but its results were
+  lost when the GPU box became unreachable; it is still to be confirmed. All
+  16 runs' flags parse, and the parsed config equals each run's saved
+  `config.yaml` on every key both have.
+- The rule mask always leaves NOOP, the moves and DO allowed (the pre-split
+  `valid.exempt_basic True`, which every run used).
+- `test_craftax_valid` carries its own game oracle (`make_oracle`) instead of
+  importing it from `tools/action_suppression.py`, which is on
+  `family/masked`.
+- `tools/death_eval.py --greedy` is documented as taking the argmax goal as
+  well as the action.
 
 ### Removed
-- Family code: RSSM-2 / map model with its targets, potential and survival
-  shaping and privileged maps (`mapmodel.py`, `craftax_map.py`,
-  `craftax_potential.py`); the goal manager v1-v1.3 and v2 with learned goals,
-  curiosity and the shared critic (`goalcodes.py`); named goals
-  (`craftax_goals.py`); taste (`taste.py`); the rule mask, `valid_obs` and
-  B1-B3 (`craftax_valid.py`); the reward-cause head and its probe
-  (`rewcause_eval.py`, `embodied/run/rewcause_probe.py`, the phi tables in
-  `craftax_features.py`). Their config keys, env options, tests, tools and
-  docs went with them.
-- `HANDOFF.md`, `REWCAUSE_INTEGRATION.md`, `reports/` and the family docs
-  (design notes, ablations, casebooks, experiment A/B data).
+- Code of other families, kept out of this branch: taste and its hooks
+  (`_masked` taste bias, the replay evidence, the manager's taste reward,
+  `repl_loss`'s `outs['val']`); the B1 encoder input (`valid.input`) and the
+  learned mask B3 (`valid.learned`, `feasclock`, `_feas_learned` and its
+  options); the five-term `shaped` survival reward and its `surv_*` keys; the
+  reward-cause head. This family's runs used none of them; their saved configs
+  have them at the defaults, which `--config-from-run` drops.
 
-### Added
-- Craftax (symbolic) adapter `embodied/envs/craftax.py` and the
-  `--configs craftax` preset (single env, `train_ratio 512`, 1.1M steps).
-  - `obs['ach']`: achievements unlocked this step, read from replay by the
-    scoring tools.
-  - A timeout is a truncation, not a terminal state.
-  - `env.reseed(seed)` builds the next world from the seed alone.
-  - `raw_reward` holds Craftax's own reward.
-  - `save_state()` / `reset_to()` restore a functional EnvState.
-- `policy(mode='greedy')` takes the argmax action; `policy(mode='probe')`
-  also returns the action distribution (`policy_prob`).
-- Scoring and inspection tools: `death_eval.py` (fixed worlds, world hash,
-  endings, cause of death, raw return, `--config-from-run`), `eval_entry.py`,
-  `curves_from_replay.py`, `plot_training_curves.py`, `compare_at_steps.py`,
-  `make_comparison_report.py`, `watch_agent.py`, `action_audit.py`,
-  `craft_probe.py`, `death_diagnostic.py`, `death_math.py`,
-  `strip_replay.py`.
-- `replay.save_skip` keeps the replay_context latents out of saved chunks
-  (~1.4 GB a run instead of ~9.3 GB); a resumed run gets zeros back that the
-  agent overwrites as it trains (`test_restore_save_skip`).
+## History before the split (summary)
 
-### Fixed
-- Audit 2026-10-11 items that apply to the plain agent
-  (`docs/audit-2026-10-11.md`, tests in `dreamerv3/test_audit_fixes.py`):
-  - B05: evaluation worlds depended on how long earlier episodes ran;
-    `death_eval.py` now reseeds each episode and prints a world hash.
-  - B09: `--greedy` sampled; it now takes the argmax.
-  - B10: evaluator cutoffs were counted as deaths; endings are split into
-    death, timeout and cutoff.
-  - 6.1: `report()` dropped its loss metrics (`mets.update(mets)`).
-  - 6.4: raw and shaped return are reported separately.
-- The adapter declared `obs['vector']` in [0, 1], which crashed the first
-  agent to level up; the upper bound is now unbounded.
-- Achievements past index 24 were reported under the wrong names; they are
-  named by enum value everywhere.
-- `run.from_checkpoint_regex` was read by the run scripts but missing from
-  `configs.yaml`, so `--run.from_checkpoint` crashed.
+From the pre-split changelog; numbers as reported then, before the
+evaluation worlds were fixed unless stated.
+- **v1** (`mgr`): a manager over 13 tech-tree goals on top of B2. It never
+  trained its manager: after 900k steps it still chose uniformly.
+- **v1.1** (`mgr2`): reaching the goal pays both levels; the manager reads
+  the reached-this-episode flags and cannot choose goals that already hold.
+- **v1.2** (`mgr3`): one two-headed critic shared by both actors, the exact
+  manager gradient over all goals, goals held until reached; imagination
+  resumes the replay's goal and step (`gphase` stored in replay).
+- **v1.3** (`mgr4`): survival goals and the survival potential: same score,
+  73 steps longer lives.
+- **v2** (`v2`, `v2cur`): learned goals, curiosity, RSSM-2 as a memory; kept
+  B2's mask after the learned mask B3 failed. `curiosity.normalize` added for
+  v2-cur after curiosity carried ~2% of the signal in v2.
+- **2026-10-11 audit**: RSSM-2 fixes (B01-B04) and the v2 goal fixes (B06,
+  B08); `mgr3_fix` and `v2_fix` retrained with three seeds each.
+- **2026-11**: `abl_manager` (two seeds) and `v12_nomask` measured the
+  manager without the mask (`docs/ablations.md`).

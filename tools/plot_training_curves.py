@@ -26,11 +26,29 @@ BIN = 50_000
 TAIL = 100_000
 
 # (run, label, colour or None for grey context, z-order)
-# Main lists the plain runs only; each family branch lists its own runs.
+# The goal-manager family and the plain baselines. Honest runs get a colour;
+# the masked runs read the game's action rules, count as cheating, and are
+# grey context.
 RUNS = [
+    ('mgr', 'v1 (masked)', None, 1),
+    ('mgr2', 'v1.1 (masked)', None, 1),
+    ('mgr3', 'v1.2 (masked)', None, 1),
+    ('mgr4', 'v1.3 (masked)', None, 1),
+    ('mgr3_fix', 'v1.2 fixed (masked)', None, 1),
+    ('mgr3_fix_s1', 'v1.2 fixed s1 (masked)', None, 1),
+    ('mgr3_fix_s2', 'v1.2 fixed s2 (masked)', None, 1),
+    ('v2', 'v2 (masked)', None, 1),
+    ('v2cur', 'v2-cur (masked)', None, 1),
+    ('v2_fix', 'v2 fixed (masked)', None, 1),
+    ('v2_fix_s1', 'v2 fixed s1 (masked)', None, 1),
+    ('v2_fix_s2', 'v2 fixed s2 (masked)', None, 1),
     ('vanilla', 'vanilla DreamerV3 (old code)', '#52514e', 3),
-    ('abl_plain', 'plain DreamerV3 (fixed code)', '#2a78d6', 4),
-    ('abl_plain_s1', 'plain DreamerV3 (fixed code), seed 1', '#eb6834', 4),
+    ('abl_plain', 'plain DreamerV3', '#2a78d6', 4),
+    ('abl_plain_s1', 'plain DreamerV3, seed 1', None, 2),
+    ('abl_manager', 'plain + RSSM-2 + v1.2 manager', '#eb6834', 6),
+    ('abl_manager_s1', 'plain + RSSM-2 + v1.2 manager, seed 1', '#eda100', 6),
+    ('v12_nomask', 'v1.2 fixed, no mask', '#8e5bd0', 7),
+    ('v2_norules', 'v2 fixed, no mask', '#1baf7a', 7),
 ]
 
 plt.rcParams.update({
@@ -61,7 +79,7 @@ def figure(size=(11, 10)):
       2, 1, figsize=size, sharex=True,
       gridspec_kw=dict(height_ratios=[1.7, 1], hspace=0.08))
   fig.subplots_adjust(left=0.07, right=0.68, top=0.90, bottom=0.07)
-  fig.text(0.07, 0.955, 'Training curves: every run', fontsize=15,
+  fig.text(0.07, 0.955, 'Training curves: goal manager vs plain', fontsize=15,
            weight='bold')
   fig.text(0.07, 0.93, "Rebuilt from each run's replay; 50k-step bins; value "
            '= mean of the last 100k steps.', fontsize=8.5,
