@@ -1,5 +1,12 @@
 # Low entropy: skill, or suppressed actions?
 
+> **Branch note (2026-11-08).** This is the design and lab notebook of the
+> masked family (experiments A, B1, B2, B3). Every agent in it reads the
+> game's action rules in some way and is now **counted as cheating**; see
+> `README.md`. Scores in the dated sections are from the original evaluation
+> (worlds not yet fixed); the re-scored numbers on the 30 fixed worlds are in
+> `README.md` and `docs/eval_results.json`.
+
 A reference note on how to read policy entropy in this project, what our data
 says so far, and which experiments tell the explanations apart. Written
 2026-09-27 after reviewing the "human experts collapse too" hypothesis
@@ -102,7 +109,7 @@ suppression.
 
 **B. Tell the agent what is possible.** Add the 43 validity flags as an
 observation key into the encoder, so RSSM-1's latent carries them and every
-imagined step inherits them (see `docs/architecture.svg`; not via
+imagined step inherits them (see `docs/architecture.svg` on the rssm2 branch; not via
 `actor2tensor`, where a frozen input would be stale inside the dream). Compare
 against a hard logit mask applied in both acting and imagination. If deep
 achievements rise without raw entropy rising, the problem was suppression, not
@@ -125,29 +132,6 @@ the start state is the same pose plus noise, so the replay stays meaningful; in
 Craftax every episode is a new map and the same keypresses walk into water. It
 is also an exploitation mechanism — the paper itself reports reduced diversity
 and premature convergence at high repetition.
-
-## Related directions and their status
-
-* **LLM-consolidated long-term memory ("sleep").** Heavily covered (Generative
-  Agents, ExpeL, Reflexion, Voyager, wake–sleep replay). The missing piece in
-  any proposal is how the consolidated memory changes the actor. An LLM summary
-  is a hypothesis, not a fact: keep raw episodes, never summarise a summary,
-  verify rules in the environment.
-* **LLM-written reward functions.** Covered by Auto MC-Reward (CVPR 2024),
-  Eureka (ICLR 2024), CARD, ELLM, OMNI, and on Craftax itself by **SCALAR**
-  (Zabounidis et al., arXiv 2603.09036, March 2026 — verified; reports 88.2%
-  diamond collection on Craftax-Classic and 9.1% Gnomish Mines on full Craftax).
-  The safe form is an LLM-proposed *potential* Φ added to an unchanged task
-  reward — the slot our hand-written `craftax_potential.py` fills. Our own
-  history backs its warnings: SCALAR found the LLM overestimated resource costs
-  from Minecraft priors; we hand-wrote an underestimate (table = 1 wood). The
-  game must check the recipe — hence `test_spine_ingredients_match_the_game`.
-  Φ must also be zero on death (`33ad395`), or shaping pays for dying at high
-  tech.
-* **Dreamer-specific caveat for changing rewards mid-training:** replay stores
-  rewards, and the reward head is trained on them. A new Φ makes every stored
-  reward stale; it needs relabelling (possible — Φ is a function of state) or a
-  fresh buffer.
 
 ## What not to claim
 
@@ -420,6 +404,7 @@ had not learned it when the mask came on. The mask then blocked the action,
 the world model rarely saw it, the label stayed 0, and the block held.
 Tuning the margin cannot fix that.
 
-**Decision:** v2 keeps B2's rule mask. A way out, not built: block an action
-only when a world-model ensemble agrees on its outcome, so that an effect not
-yet learned stays pressable until the model knows it.
+**Decision (2026-10-07):** the later agents (v2, on the `family/v` branch)
+kept B2's rule mask. A way out, not built: block an action only when a
+world-model ensemble agrees on its outcome, so that an effect not yet learned
+stays pressable until the model knows it.

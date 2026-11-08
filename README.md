@@ -1,40 +1,123 @@
-# DreamerV3 on Craftax
+# DreamerV3 on Craftax — family `masked` (rule-validity experiments B1-B3)
 
-Plain [DreamerV3][upstream] trained on symbolic [Craftax][craftax], with the
-fixes this project found along the way. This branch is the baseline and holds
-no experiment code: every agent built on top of it lives on a family branch of
-its own (see [Family branches](#family-branches)).
+> **Counted as cheating. No new work goes on this branch.**
+>
+> Every agent here reads the game's action rules.
+> `dreamerv3/craftax_valid.py` copies each of the 43 actions' preconditions
+> from Craftax's code. The env turns them into `obs['valid']`, and the agent
+> uses it:
+> - **B2** masks impossible actions while acting (`valid.mask`).
+> - **B1** feeds the flags to the encoder (`valid.input`). That is rule
+>   knowledge too, even though nothing is masked.
+>
+> The published 1M-step Craftax baselines use no such knowledge. The rules
+> also pay off more than anything else in the project: the mask was worth
+> **+2.6 to +2.9 achievements wherever it was measured** (B2 vs the same model
+> without it, +2.63 ± 0.38 over three seeds; v1.2 with vs without it, +2.90 ±
+> 0.26 over 60 worlds). That is why these scores are kept out of the headline
+> rankings.
+>
+> The branch exists to reproduce and score the old runs. The one
+> knowledge-free idea in it, the learned mask of **B3**, is still not free of
+> the rules ([below](#is-b3-knowledge-free)).
 
-The original DreamerV3 README is kept at
-[`README-dreamerv3.md`](README-dreamerv3.md); installation and the general run
-interface are unchanged.
+This is plain DreamerV3 (the `main` branch) plus what the B1-B3 runs need.
+For the plain baseline, the shared fixes and the index of all family branches,
+see `main`'s README. The full pre-split code is the tag
+`archive/full-2026-11-08`.
 
-[upstream]: https://github.com/danijar/dreamerv3
-[craftax]: https://github.com/MichaelTMatthews/Craftax
+## What the family is
 
-## What differs from upstream
+Experiment A (`tools/action_suppression.py`) found that unmasked policy
+gradients push an action's logit down in every state where the action does
+nothing. Shared weights carry that suppression into the rare states where the
+action would work. For example, B2's predecessor never placed a furnace in any
+of the 386 states where it could have. Experiment B tests the fix
+(`docs/entropy-and-action-suppression.md` has the full record).
 
-- **Craftax adapter** (`embodied/envs/craftax.py`) and the `--configs craftax`
-  preset: `craftax_symbolic`, one env, `train_ratio 512`, 1.1M steps, replay
-  capped at 4e5 steps (replay lives in host RAM; every scored run used the
-  cap, so it stays). The adapter:
-  - emits `obs['ach']`, the achievements unlocked this step. The scoring tools
-    read it from replay; the agent excludes it from the encoder and decoder;
-  - treats a timeout as a truncation (`is_last`), not a terminal state;
-  - rebuilds the next world from a seed alone (`env.reseed`), so evaluation
-    meets the same fixed worlds whatever the earlier episodes did;
-  - keeps Craftax's own reward in `raw_reward`;
-  - leaves `obs['vector']` unbounded above (Craftax's meters grow past 1).
-- **Acting modes:** `policy(mode='greedy')` takes the argmax action;
-  `policy(mode='probe')` also returns the action distribution.
-- **Fixes:** `report()` keeps its loss metrics; `run.from_checkpoint_regex`
-  exists; `replay.save_skip` keeps the replay_context latents off disk (~1.4 GB
-  a run instead of ~9.3 GB).
-- **Scoring tools** in `tools/` (see [Score](#score)).
+| arm | flags on top of the honest-map base | what changes |
+|---|---|---|
+| B1, tell it | `--env.craftax.valid_obs True --agent.valid.input True` | the 43 validity flags are an encoder input; the decoder reconstructs them |
+| B2, mask it | `--env.craftax.valid_obs True --agent.valid.mask True` | impossible actions get zero probability and zero gradient: `obs['valid']` while acting, a learned `feas` head on the latent inside imagination |
+| B3, learn the mask | B2 + `--agent.valid.learned True` | the `feas` head is trained on the world model's own counterfactual (did NOOP explain the outcome as well?) and masks the actor while acting too |
 
-The world model, actor-critic, losses and hyperparameters are upstream's.
+Every arm runs on the **honest-map configuration**:
+- RSSM-2, a second, slower RSSM trained on a coarse map built from the
+  agent's own observations (`mapmodel.py`, `craftax_map.py`). Its crop feeds
+  the actor.
+- Potential-based shaping over the tech tree (`craftax_potential.py`).
+
+Both are hand-written game knowledge of their own. Their no-mask runs are on
+the `family/rssm2` branch.
+
+### Code on this branch (beyond `main`)
+
+- `dreamerv3/craftax_valid.py`: `valid_actions(obs_vector)`, the rule mask.
+  It reads only the observation (a test pins the signature) and agrees with
+  the game in 77,700 of 77,700 checks (`test_craftax_valid.py`). It also
+  holds `BASIC` (NOOP, the four moves, DO), which are never masked.
+- `dreamerv3/agent.py`:
+  - `valid.*` options, the `feas` head (`validhead`), and `_masked` (adds -1e4
+    to masked logits after the unimix, so no floor leaks back).
+  - `_dream_valid`: the mask inside imagination.
+  - `_feas_learned`: B3's labels.
+  - `Counter` (`feasclock`): B3's warm-up clock, kept with the parameters so
+    acting can read it.
+  - RSSM-2 with its map target, the actor's map crop and the
+    acting/training step `_map_step`, with the 2026-10-11 fixes
+    (`docs/rssm2-step-alignment.md`).
+- `embodied/envs/craftax.py`:
+  - `valid_obs`: emits `obs['valid']`.
+  - `mapmodel`, `map_privileged`, `seen_decay`: the map targets.
+  - `survival none|potential`, `phi_scale`, `phi_gamma`: the shaping.
+- `dreamerv3/configs.yaml`: `agent.valid`, `agent.validhead`,
+  `agent.mapmodel`, and the loss scales `map`, `mappos`, `feas`.
+  - Every option defaults off. With all of them off the agent is `main`'s
+    plain DreamerV3.
+  - Key names, module names and parameter names, RNG order and loss order
+    are those of `49a6bc3`, so old checkpoints load.
+- Left out, because no run here used them:
+  - RSSM-2's memory target (`mapmodel.target`, `memhead`): on `family/rssm2`.
+  - The `shaped` and `potential+meters` survival modes.
+  - The manager, goals, curiosity and taste: on `family/v`, `family/next`
+    and `family/taste`.
+
+### Is B3 knowledge-free?
+
+No, though it comes closest.
+- **The label** uses no rules. It is the world model's own judgement:
+  - latent KL, B3: `valid.label latent`;
+  - or the decoded-observation error against what really came next, B3-fix:
+    `valid.label obs`, `valid.margin`.
+- **Acting** reads the learned head, not `obs['valid']`.
+  - `rule_mix` makes some acting steps follow the rules, but it was only
+    used for label calibration. Every comparison run left it at 0.
+- **But the rules are still in the setup:**
+  - The `feas` head is only built when the env emits `obs['valid']`
+    (`env.craftax.valid_obs True`). The rules then sit in replay and in
+    metrics, although no gradient comes from them.
+  - The six `BASIC` actions are hand-picked as never masked
+    (`valid.exempt_basic True`).
+  - Action 0 is assumed to be NOOP, the reference the label compares against
+    (`valid.reference noop`).
+  - `exempt_basic False` and `reference random` remove the last two, but no
+    run used them.
+- **The metrics depend on the rules:**
+  - `feas/label_precision`, `feas/label_recall`, `feas/evidence_auc` and
+    `feas/tpr_*` / `feas/fpr_*` score the labels against `obs['valid']`.
+  - `valid/recall` and `valid/false_pos` score the mask.
+- B3-fix's margin and threshold (0.5 nats, 0.15) were chosen from a
+  calibration (`calib_obs` / `calib_latent`) that measured the labels
+  against the rules.
+
+A knowledge-free version would need the head without `valid_obs`, and some
+other way to evaluate it. It is still an open idea. Block an action only when
+a world-model ensemble agrees it does nothing, so an effect not yet learned
+stays pressable. Its natural home is a new family branch, not this one.
 
 ## Install
+
+As on `main`:
 
 ```bash
 pip install -U -r requirements.txt
@@ -42,115 +125,149 @@ pip install craftax==1.6.1      # the version every scored run used
 python -c "from dreamerv3.craftax_features import validate_against_craftax as v; print(v())"
 ```
 
-The last line checks that the achievement names embedded in
-`dreamerv3/craftax_features.py` match the installed Craftax.
-
 ## Run
 
-The plain baseline, exactly as `abl_plain` was trained:
+Every run used `--configs craftax size50m` (1.1M env steps, replay 4e5). The
+shared base (`MAP`, the honest-map configuration) is:
 
 ```bash
-python dreamerv3/main.py --logdir ~/logdir/abl_plain \
-  --configs craftax size50m --env.craftax.survival none
+MAP="--configs craftax size50m --env.craftax.mapmodel True --env.craftax.survival potential \
+  --env.craftax.map_privileged False --agent.mapmodel.enabled True --agent.mapmodel.to_actor True \
+  --agent.mapmodel.imag_shift False --agent.mapmodel.hindsight True --agent.imag_length 15"
+B2="$MAP --env.craftax.valid_obs True --agent.valid.mask True"
+
+python dreamerv3/main.py --logdir ~/logdir/expB_input $MAP --env.craftax.valid_obs True --agent.valid.input True   # B1
+python dreamerv3/main.py --logdir ~/logdir/expB_mask_fix $B2                  # B2 (also expB_mask)
+python dreamerv3/main.py --logdir ~/logdir/expB_mask_fix_s1 $B2 --seed 1      # B2, seed 1 (s2: --seed 2)
+python dreamerv3/main.py --logdir ~/logdir/expB3 $B2 \
+  --agent.valid.learned True --agent.valid.threshold 0.02                     # B3
+python dreamerv3/main.py --logdir ~/logdir/expB3fix $B2 --agent.valid.learned True \
+  --agent.valid.detach True --agent.valid.label obs --agent.valid.margin 0.5 \
+  --agent.valid.threshold 0.15                                                # B3-fix
 ```
 
-`--seed 1` gives `abl_plain_s1`. `--env.craftax.survival none` is the default
-(main has no reward shaping) and is kept so the old commands still parse.
+Label calibration (`calib_obs`, `calib_latent`): load B2's trained world model
+with a fresh `feas` head and optimizer, and train briefly:
 
-A finished run takes ~1.4 GB: ~0.8 GB of replay and a ~0.7 GB checkpoint. A
-resumed run gets zeros back for the latents `replay.save_skip` left off disk,
-and refreshes them as it trains. To shrink a run that predates this:
-`python tools/strip_replay.py ~/logdir/<run>` (it refuses a live or unfinished
-run; a stripped run can no longer be resumed).
+```bash
+python dreamerv3/main.py --logdir ~/logdir/calib_obs $B2 \
+  --run.from_checkpoint ~/logdir/expB_mask/ckpt/<ckpt> --run.from_checkpoint_regex '^(?!.*(feas|opt)).*' \
+  --agent.valid.learned True --agent.valid.threshold 0.02 --agent.valid.detach True \
+  --agent.valid.label obs --run.train_ratio 64 --run.steps 8000 --run.log_every 60
+```
+
+Use `--agent.valid.label latent` for `calib_latent`. These are the flags of
+the surviving `calib.sh`.
+`docs/entropy-and-action-suppression.md` describes the calibration with
+`--agent.valid.rule_mix 0.8`, which makes batches hold both valid and invalid
+special actions. `calib.sh` does not pass that flag.
+
+**Which code trained what.** Re-running a command on this branch gives the
+code of `49a6bc3`. No branch reproduces the old runs bit for bit:
+- `expB_input`, `expB_mask` and `expB3` trained before the 2026-10-11 RSSM-2
+  fixes, on code with three RSSM-2 bugs.
+- `expB_mask_fix` (s0-s2) trained on `7df2d36` (`~/vfix`), which has the
+  fixes.
+- `expB3fix` and the calibrations used a snapshot (`~/vb3fix`).
+- This branch keeps every flag those runs passed.
 
 ## Test
 
 ```bash
-python -m pytest dreamerv3/                                   # 6 tests
+python -m pytest dreamerv3/
 python -m pytest embodied/tests/test_replay.py -k save_skip
 ```
 
-`dreamerv3/test_audit_fixes.py` needs JAX, and its env tests need Craftax (they
-are skipped without it). The other tests in `embodied/tests/test_replay.py`
-call `Replay.dataset`, which this `Replay` does not have; they fail the same
-way on the pre-split code.
+The tests:
+- `test_craftax_valid.py`: the rule mask against the game.
+- `test_craftax_map.py`: map targets and decoders.
+- `test_craftax_potential.py`: potential shaping.
+- `test_mapmodel_step.py`: RSSM-2 train/act alignment and resets.
+- `test_audit_fixes.py`: fixed worlds, first shaped step, raw reward, greedy
+  acting.
+
+Notes:
+- The game checks need Craftax and are skipped without it.
+- `test_mapmodel_step.py` and `test_audit_fixes.py` need JAX.
+- The other tests in `embodied/tests/test_replay.py` call `Replay.dataset`,
+  which this `Replay` lacks; they fail the same way at `49a6bc3`.
 
 ## Score
 
-Every result is scored on the same 30 fixed worlds (episode *i* is built from
-seed *i*), so comparisons are paired world by world.
+As on `main`, on the 30 fixed worlds (world hash `9067302a2635`). **Score each
+run from this branch**: `--config-from-run` drops config keys a branch does not
+have, so on `main` a B2 run would be rebuilt without its mask.
 
 ```bash
-# 1. Play 30 episodes; prints achievements, unlock rates, deaths, raw return
-#    and a world hash, which must match across the runs being compared
-#    (9067302a2635 for the default seeds).
-python tools/death_eval.py --logdir ~/logdir/abl_plain --episodes 30 \
-  --configs craftax size50m --env.craftax.survival none > abl_plain.log
-#    or rebuild from the run's own config.yaml:
-#    python tools/death_eval.py --logdir ~/logdir/abl_plain --config-from-run
-
-# 2. Turn the log into an entry for docs/eval_results.json
-python tools/eval_entry.py abl_plain.log --id abl_plain --label "Plain" --short plain
-
-# 3. Training curves from replay, the curve figure and the PDF report
-python tools/curves_from_replay.py ~/logdir/abl_plain --out docs/curves
-python tools/plot_training_curves.py                         # -> docs/training-curves.*
-python tools/make_comparison_report.py                       # -> docs/comparison-report.pdf
-
-# 4. A run still training, against finished ones at the same env steps
-python tools/compare_at_steps.py "plain=docs/curves/abl_plain.json" ...
+python tools/death_eval.py --logdir ~/logdir/expB_mask_fix --episodes 30 --config-from-run > b2.log
+python tools/eval_entry.py b2.log --id expB_mask_fix --label "B2, fixed RSSM-2 [masked]" --short "B2 fix"
+python tools/curves_from_replay.py ~/logdir/expB_mask_fix --out docs/curves
+python tools/plot_training_curves.py         # -> docs/training-curves.*
+python tools/make_comparison_report.py       # -> docs/comparison-report.pdf
 ```
 
-`--config-from-run` drops the keys this branch's `configs.yaml` lacks, so a
-family run would be rebuilt as the plain agent. **Score each run from its own
-branch.**
+A 30-world score moves by about ±0.55 between world sets, so a gap under ~1.1
+between two single runs is not evidence.
 
-A 30-world score moves by about ±0.55 between world sets: a gap under ~1.1
-between two single runs is not evidence. Use 60 worlds and several training
-seeds.
-
-Inspection: `tools/watch_agent.py` (watch a checkpoint play),
-`tools/action_audit.py` (what it spends its actions on),
-`tools/craft_probe.py` (does it craft when crafting is one keypress away),
-`tools/death_diagnostic.py` and `tools/death_math.py` (deaths of a random
-policy, and survival bounds).
+Family analyses. Each reads a run's replay or plays a checkpoint:
+- `tools/action_suppression.py` (experiment A): valid-action mass, entropy,
+  and each key's probability where it would work.
+- `tools/diagnose_run.py`: tech-tree funnel, stone-pickaxe ingredients and
+  deaths, written to `docs/diagnosis.json`.
+- `tools/episode_cases.py` and `tools/make_casebook.py`: B2's shortfalls
+  shown step by step (`docs/cases/`, `docs/b2-casebook.pdf`).
 
 ## Results
 
-30 fixed worlds, 1.1M env steps, `size50m`
-([`docs/eval_results.json`](docs/eval_results.json),
-[`docs/comparison-report.pdf`](docs/comparison-report.pdf),
-[`docs/training-curves.png`](docs/training-curves.png)):
+30 fixed worlds, 1.1M env steps, `size50m` (`docs/eval_results.json`,
+`docs/comparison-report.pdf`, `docs/training-curves.png`).
 
-| run | code | achievements ± SE | normalized return | lifespan |
-|---|---|---|---|---|
-| `vanilla` | original code, before the 2026-10 fixes | 4.63 ± 0.22 | 1.65% | 295 |
-| `abl_plain` | this branch (seed 0) | 4.77 ± 0.28 | 1.71% | 265 |
+**Honest runs** (no rule knowledge), for reference; they live on `main`:
 
-The two are level. Both stay at the wood tier: no stone in any episode.
-`abl_plain_s1` is recorded at 4.77 as well; its training curve stops at 0.9M
-steps.
-
-## Family branches
-
-**Convention.** Each new agent version goes on one family branch, with its own
-code, tests, docs, results and changelog. `main` holds only the plain agent and
-what every family shares; its docs only index the families. Shared fixes are
-made on `main` and merged into the family branches.
-
-Best result = test achievements on the 30 fixed worlds
-(`docs/eval_results.json` at `archive/full-2026-11-08`). The rule mask reads
-the game's action rules, so **masked runs count as cheating**; for those the
-best run without the mask is given too.
-
-| branch | family | runs | best result |
+| run | achievements ± SE | normalized return | lifespan |
 |---|---|---|---|
-| `family/rssm2` | Map model: a second, slower RSSM (RSSM-2) that predicts a coarse map of the level (honest or privileged targets) or serves as a memory (memory target), with potential and survival reward shaping | `map_stage5`, `map_survive`, `map_potential`, `map_noshift`, `map_pot_fixed`, `priv_map`, `honest_map`, `honest_map_fix`, `abl_rssm2` | 6.17 ± 0.34 `honest_map` (pre-fix code; `priv_map` also 6.17); fixed code 5.70 ± 0.21 `honest_map_fix` |
-| `family/v` | Goal manager: v1-v1.3 (a manager over hand-written tech-tree goals; v1.2 adds a shared two-headed critic and held goals) and v2 (learned goal codebook, RSSM-2 as memory, curiosity) | `mgr`, `mgr2`, `mgr3`, `mgr4`, `mgr3_fix` ×3, `v12_nomask`, `v2`, `v2cur`, `v2_fix` ×3, `v2_norules`, `abl_manager` ×2 | 9.97 ± 0.36 `mgr3` (v1.2) — masked, counted as cheating; without the mask 6.03 ± 0.33 `v12_nomask` |
-| `family/next` | The next agent: v1.2's named goals on v2 (memory RSSM-2, shared critic, curiosity); taste on the manager at `lam_mgr 0`, i.e. no taste | `next_notaste` (crashed), `next_lam0`, `next_nomask` (training now) | 11.20 ± 0.41 `next_lam0` — masked, counted as cheating; `next_nomask` (no mask) not scored yet |
-| `family/taste` | Taste: a per-action logit bias learned from the critic's advantage (taste over actions), or an internal reward on the manager's goal choice (taste on the manager) | `abl_taste`, `v2_taste`, `next_taste` | 9.80 ± 0.42 `next_taste` — masked, counted as cheating; without the mask 5.33 ± 0.19 `v2_taste` |
-| `family/masked` | B1/B2/B3 rule-validity experiments: B1 feeds the action-validity flags to the encoder, B2 masks impossible actions, B3 learns the mask | `expB_input`, `expB_mask`, `expB_mask_fix` ×3, `expB3`, `expB3fix`, `calib_obs`, `calib_latent` | 8.40 ± 0.54 `expB_mask` (B2) — masked, counted as cheating; without the mask 6.30 ± 0.33 `expB_input` (B1, rule flags as input) |
-| tag `archive/full-2026-11-08` | The full pre-split code (`49a6bc3`): every family side by side, plus the reward-cause head (off in every run) | every run above | all results together in its `docs/eval_results.json` |
+| `vanilla` (original code) | 4.63 ± 0.22 | 1.65% | 295 |
+| `abl_plain` (fixed code, seed 0) | 4.77 ± 0.28 | 1.71% | 265 |
 
-Every run is reproducible from the tag with its flags (`config.yaml` in its
-logdir). Until a family branch exists, use the tag.
+**This family: every run counted as cheating.** These rows are not
+comparable with the honest runs above or with the published baselines.
+
+| run | reads the rules how | achievements ± SE | normalized return | lifespan |
+|---|---|---|---|---|
+| `expB_input` (B1) | flags as encoder input (no mask) | 6.30 ± 0.33 | 2.39% | 295 |
+| `expB3` (B3) | learned mask; rules in the setup (see above) | 5.97 ± 0.28 | 2.24% | 269 |
+| `expB_mask` (B2) | **masked** by the rules | 8.40 ± 0.54 | 3.32% | 282 |
+| `expB_mask_fix` (B2, fixed RSSM-2) | **masked** by the rules | 8.27 ± 0.44 (seeds 8.27 / 7.70 / 9.03, mean 8.33) | 3.32% | 274 |
+| `expB3fix` (B3-fix) | learned mask; rules in the setup | stopped at ~254k steps, not scored | | |
+| `calib_obs`, `calib_latent` | label calibration from B2's checkpoint, 8k steps | not scored (label metrics only) | | |
+
+What the family showed:
+- **Masking works, and it costs the rules.** B2 vs the same model without
+  the mask (the honest map, `family/rssm2`):
+  - +2.63 ± 0.38 on the fixed code, three seeds;
+  - +2.23 on the old code.
+
+  Frontier keys that sat at exactly 0% where they worked (furnace, placing
+  stone) come off zero. This is valid-action suppression.
+- **Telling is not masking.** B1 is level with the honest map on the fixed
+  worlds (6.30 vs 6.17).
+- **The learned mask failed.**
+  - B3: its latent labels fed back into the world model, and 87% of its
+    "did something" labels were wrong.
+  - B3-fix: at 254k steps its mask let through only 45% of the possible
+    special actions. Its label cannot tell "does nothing" from "not learned
+    yet".
+- **The RSSM-2 fixes did not move B2** (8.27 vs 8.40). Its three seeds
+  spread by 1.3.
+
+## Docs
+
+- `docs/entropy-and-action-suppression.md`: the question, the mechanism,
+  experiment A, and B1-B3 with their results and calibration.
+- `docs/experiment_a/`: experiment A per run.
+- `docs/b2-casebook.pdf` with `docs/cases/`, and `docs/diagnosis.json`:
+  where B2 falls short.
+- `docs/rssm2-step-alignment.md`: the three RSSM-2 bugs, fixed 2026-10-11.
+- `docs/audit-2026-10-11.md`: the outside audit (shared with `main`).
+- `docs/eval_results.json`, `docs/curves/`, `docs/comparison-report.pdf`,
+  `docs/training-curves.*`: the scores and curves above.

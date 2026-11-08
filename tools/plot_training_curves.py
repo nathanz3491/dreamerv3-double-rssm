@@ -26,11 +26,19 @@ BIN = 50_000
 TAIL = 100_000
 
 # (run, label, colour or None for grey context, z-order)
-# Main lists the plain runs only; each family branch lists its own runs.
+# This branch lists the plain baselines and the masked family's runs. Every
+# family run reads the game's action rules (counted as cheating); its label
+# says how.
 RUNS = [
     ('vanilla', 'vanilla DreamerV3 (old code)', '#52514e', 3),
-    ('abl_plain', 'plain DreamerV3 (fixed code)', '#2a78d6', 4),
-    ('abl_plain_s1', 'plain DreamerV3 (fixed code), seed 1', '#eb6834', 4),
+    ('abl_plain', 'plain DreamerV3 (fixed code)', '#8a8984', 4),
+    ('abl_plain_s1', 'plain DreamerV3 (fixed code), seed 1', None, 2),
+    ('expB_input', 'B1: rule flags as input (rules)', '#1baf7a', 5),
+    ('expB3', 'B3: learned mask (rules in setup)', '#eb6834', 6),
+    ('expB_mask', 'B2: rule mask (old code)', None, 2),
+    ('expB_mask_fix', 'B2: rule mask, fixed RSSM-2', '#2a78d6', 7),
+    ('expB_mask_fix_s1', 'B2 fixed, seed 1', None, 2),
+    ('expB_mask_fix_s2', 'B2 fixed, seed 2', None, 2),
 ]
 
 plt.rcParams.update({
