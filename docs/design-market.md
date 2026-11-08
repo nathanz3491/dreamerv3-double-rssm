@@ -7,6 +7,7 @@ code had to choose, the choice is recorded there as "chosen: …".
 
 | part | status | flag (default off) |
 |---|---|---|
+| §4 slope quota | built | `env.craftax.quota.enabled` |
 | §5 survival goals | built | `env.craftax.goals_survival` |
 
 ## The idea in one paragraph
@@ -129,6 +130,30 @@ describe the base. Taste stays at `lam_mgr 0`, where it is inert.
   against `next_nomask`.
 - **No soft floor.** The Cobb-Douglas share α was dropped; the quota is the
   only floor.
+- **Built:** `--env.craftax.quota.enabled True` (`dreamerv3/quota.py`, pure
+  numpy; the env adds the term to `reward`, so it is part of the score good the
+  world model predicts; `raw_reward` and `log/reward` stay Craftax's own).
+  Group `{enabled, k 1.0, margin 2.0, lnom mean, init 200, rate 0.05,
+  min_obs 5}`. Chosen, where the design left it open:
+  - *N before statistics exist.* A count n with fewer than `min_obs` recorded
+    gaps borrows the window of the nearest lower count that has them, never
+    below `init` = 200 steps; with no statistics at all N = `init`. Why: a
+    lenient window early (when the agent is random and achievements are rare)
+    keeps the penalty from being a constant drip that the return normaliser
+    then absorbs; 200 is about one wood-gathering time.
+  - *The running mean* is an EMA (rate 0.05, debiased) over the gaps of the
+    last ~20 episodes at that count, so the window follows the agent as it
+    improves. Only completed gaps count (an episode ending before the next
+    achievement adds none); simultaneous unlocks record one gap.
+  - *L_nom* defaults to the running mean lifespan (the proposal; an old agent
+    can then escape the charge by living short, which is the stated risk);
+    `lnom 3000` gives a fixed one. With `lnom mean` no death is charged until
+    the first episode has ended. Timeouts (`is_last` without terminal) are
+    never charged.
+  - *Pacing.* The window restarts after every penalty, so a quiet agent pays
+    once per N steps, not every step.
+  - The statistics live in the env process and are not checkpointed; a resumed
+    run relearns them in a few episodes.
 
 ### 5. Survival goals for the manager
 

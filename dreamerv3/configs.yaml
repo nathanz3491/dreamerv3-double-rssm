@@ -37,7 +37,14 @@ defaults:
     # (agent.valid.mask), which counts as cheating. goals_obs: obs['goalphi']
     # and obs['goalreach'] for the manager's named goals; goals_survival
     # (v1.3, the market agent) adds DRINK and EAT after the 13.
-    craftax: {logs: False, use_seed: True, valid_obs: False, goals_obs: False, goals_survival: False, survival: none}
+    # quota: the market agent's slope quota (dreamerv3/quota.py,
+    # design-market.md §4): penalty k when margin x the running mean gap at
+    # the current achievement count passes with no new achievement; at death
+    # k x ceil((L_nom - t) / N). lnom 'mean' (running mean lifespan) or a
+    # number. A count with fewer than min_obs gaps borrows the window below
+    # it, at least init steps; rate is the running means' EMA rate.
+    craftax: {logs: False, use_seed: True, valid_obs: False, goals_obs: False, goals_survival: False, survival: none,
+              quota: {enabled: False, k: 1.0, margin: 2.0, lnom: mean, init: 200.0, rate: 0.05, min_obs: 5}}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}

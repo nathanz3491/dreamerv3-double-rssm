@@ -24,6 +24,11 @@ repo's own crafter.py. Beyond a plain wrapper:
      from the observation vector alone; neither reaches the encoder. With
      ``goals_survival`` (v1.3, ported from family/v) the two survival goals
      DRINK and EAT follow the 13, so both vectors have 15 entries.
+  8. ``quota``: the market agent's slope quota (dreamerv3/quota.py, design
+     §4) adds a penalty to ``reward`` when a window passes with no new
+     achievement, and charges the skipped windows at death. It reads
+     ``obs['ach']`` and the step count only. ``raw_reward`` and
+     ``log/reward`` stay Craftax's own.
 
 dreamerv3's embodied.jax installs a global ``jax_transfer_guard='disallow'`` to
 catch stray host<->device transfers inside the agent. The env legitimately
@@ -50,7 +55,7 @@ class Craftax(embodied.Env):
 
   def __init__(self, task='symbolic', size=None, seed=0, logs=False,
                valid_obs=False, goals_obs=False, goals_survival=False,
-               survival='none'):
+               survival='none', quota=None):
     # Reward shaping lives on family/rssm2 and family/v; this branch has the
     # stock reward only. The argument stays so `--env.craftax.survival none`
     # still parses.
@@ -79,6 +84,13 @@ class Craftax(embodied.Env):
       self._goals_survival = bool(goals_survival)
       self._n_goals = len(craftax_goals.names(self._goals_survival))
       self._goalreach = np.zeros(self._n_goals, bool)
+    # The slope quota keeps its running statistics across this env's
+    # episodes; `quota` is the config group env.craftax.quota.
+    self._quota = None
+    if quota and quota.get('enabled', False):
+      from dreamerv3 import quota as quotalib
+      kw = {k: v for k, v in dict(quota).items() if k != 'enabled'}
+      self._quota = quotalib.Quota(**kw)
 
     # Everything here touches the host<->device boundary (params pytree, space
     # bounds, RNG key), so it runs under an allow scope; see module docstring.
@@ -174,10 +186,15 @@ class Craftax(embodied.Env):
       timeout = bool(np.asarray(self._state.timestep) >= self._max_timesteps)
     self._reward += reward
     self._length += 1
-    return self._obs(
+    obs = self._obs(
         obs, reward, self._state,
         is_last=self._done,
         is_terminal=self._done and not timeout)
+    if self._quota is not None:
+      obs['reward'] = np.float32(reward + self._quota.step(
+          int(obs['ach'].sum()), terminal=obs['is_terminal'],
+          last=obs['is_last']))
+    return obs
 
   def _reset(self):
     with self._jax.transfer_guard('allow'):
@@ -191,6 +208,8 @@ class Craftax(embodied.Env):
     self._length = 0
     self._reward = 0.0
     self._prev_ach = np.zeros(self._num_ach, np.float32)
+    if self._quota is not None:
+      self._quota.begin()
     return self._obs(obs, 0.0, self._state, is_first=True)
 
   # --- achievement featurization ---------------------------------------------
@@ -253,6 +272,8 @@ class Craftax(embodied.Env):
     self._done = False
     self._length = 0
     self._reward = 0.0
+    if self._quota is not None:
+      self._quota.begin()
     with self._jax.transfer_guard('allow'):
       obs = np.asarray(self._get_obs_fn(state), np.float32)
       ach_sum = np.int32(np.asarray(state.achievements).sum())

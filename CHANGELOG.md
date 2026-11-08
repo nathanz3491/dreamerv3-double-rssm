@@ -12,6 +12,11 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **Slope quota** (design §4): `--env.craftax.quota.enabled True` adds a
+  penalty `k` to the reward when a window (`margin` x the running mean gap at
+  the current achievement count) passes without a new achievement, and at death
+  charges `k x ceil((L_nom - t) / N)`. `dreamerv3/quota.py` is pure numpy;
+  tests in `dreamerv3/test_quota.py` (the env ones need Craftax). Default off.
 - **Survival goals for the manager** (design §5), ported from `family/v`'s
   v1.3: `--env.craftax.goals_survival True` appends DRINK and EAT to the 13
   named goals in `obs['goalphi']` and `obs['goalreach']`; the agent reads its
