@@ -1,11 +1,13 @@
-"""Fixes from the 2026-10-11 audit (round 2) that apply to the plain agent:
-fixed evaluation worlds (B05), raw reward kept apart (6.4), greedy acting
-(B09). The fixes for the family code are tested on the family branches.
+"""Fixes from the 2026-10-11 audit (round 2) that apply to this branch:
+fixed evaluation worlds (B05), the first shaped step (B07), raw reward kept
+apart (6.4), greedy acting (B09). The RSSM-2 fixes (B01-B04) are tested in
+test_mapmodel_step.py.
 
 Run: python -m pytest dreamerv3/test_audit_fixes.py
 The env tests need Craftax installed.
 """
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -52,7 +54,22 @@ def test_different_seeds_give_different_worlds():
   assert not np.array_equal(o1, o2)
 
 
-# --- 6.4: raw reward is kept apart ---------------------------------------------
+# --- B07 and 6.4: the first step is shaped; raw reward is kept apart -----------
+def test_first_step_is_shaped_from_the_start_state():
+  env = _env(survival='potential')
+  env.reseed(3)
+  _reset(env)
+  phi0 = env._prev_phi
+  assert phi0 is not None
+  with jax.transfer_guard('allow'):
+    assert phi0 == pytest.approx(env._potential(env._state))
+  obs = _act(env, 0)
+  with jax.transfer_guard('allow'):
+    phi1 = env._potential(env._state)
+  shaping = float(obs['reward']) - env.raw_reward
+  assert shaping == pytest.approx(env._phi_gamma * phi1 - phi0, abs=1e-5)
+
+
 def test_raw_reward_equals_reward_without_shaping():
   env = _env(survival='none')
   env.reseed(4)

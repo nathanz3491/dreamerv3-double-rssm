@@ -1,0 +1,182 @@
+[
+ {
+  "flaw": 1,
+  "title": "At the table with wood and stone; makes the wood sword instead",
+  "start": 751,
+  "steps": [
+   190,
+   191,
+   192,
+   193,
+   194,
+   195,
+   196,
+   197,
+   198,
+   199
+  ],
+  "actions": [
+   "DO",
+   "RIGHT",
+   "UP",
+   "DO",
+   "RIGHT",
+   "PLACE_TABLE",
+   "MAKE_WOOD_SWORD",
+   "UP",
+   "RIGHT",
+   "DO"
+  ],
+  "note": "the sword spends its only wood; the pickaxe chance is gone"
+ },
+ {
+  "flaw": 1,
+  "title": "Holding both, a table in sight; walks off",
+  "start": 6458,
+  "steps": [
+   126,
+   129,
+   132,
+   135,
+   138,
+   141,
+   144,
+   147,
+   150,
+   153
+  ],
+  "actions": [
+   "UP",
+   "LEFT",
+   "UP",
+   "LEFT",
+   "DO",
+   "RIGHT",
+   "LEFT",
+   "NOOP",
+   "LEFT",
+   "LEFT"
+  ],
+  "note": "every third step shown"
+ },
+ {
+  "flaw": 2,
+  "title": "Places a second table beside the first",
+  "start": 4998,
+  "steps": [
+   201,
+   202,
+   203,
+   204,
+   205,
+   206,
+   207,
+   208,
+   209,
+   210
+  ],
+  "actions": [
+   "DO",
+   "DOWN",
+   "UP",
+   "DO",
+   "PLACE_PLANT",
+   "DOWN",
+   "PLACE_TABLE",
+   "SLEEP",
+   "RIGHT",
+   "RIGHT"
+  ],
+  "note": "both logs go into another table; nothing left for the pickaxe"
+ },
+ {
+  "flaw": 3,
+  "title": "Drink at zero, water 1 tile away",
+  "start": 1397,
+  "steps": [
+   211,
+   212,
+   213,
+   214,
+   215,
+   216,
+   217,
+   218,
+   219,
+   220
+  ],
+  "actions": [
+   "RIGHT",
+   "DO",
+   "RIGHT",
+   "DO",
+   "DO",
+   "DO",
+   "DO",
+   "DO",
+   "DO",
+   "DO"
+  ],
+  "note": "it does not turn to the water"
+ },
+ {
+  "flaw": 3,
+  "title": "Killed beside a hostile mob",
+  "start": 530,
+  "steps": [
+   211,
+   212,
+   213,
+   214,
+   215,
+   216,
+   217,
+   218,
+   219,
+   220
+  ],
+  "actions": [
+   "UP",
+   "DOWN",
+   "DO",
+   "RIGHT",
+   "DOWN",
+   "DO",
+   "LEFT",
+   "DO",
+   "RIGHT",
+   "NOOP"
+  ],
+  "note": "last steps of the episode"
+ },
+ {
+  "flaw": 4,
+  "title": "Walks into the same blocked tile",
+  "start": 2622,
+  "steps": [
+   152,
+   153,
+   154,
+   155,
+   156,
+   157,
+   158,
+   159,
+   160,
+   161
+  ],
+  "actions": [
+   "RIGHT",
+   "RIGHT",
+   "RIGHT",
+   "RIGHT",
+   "RIGHT",
+   "RIGHT",
+   "RIGHT",
+   "RIGHT",
+   "RIGHT",
+   "LEFT"
+  ],
+  "note": "the move is repeated into a solid tile"
+ }
+]
