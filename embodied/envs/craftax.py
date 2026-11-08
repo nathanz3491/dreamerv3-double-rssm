@@ -11,9 +11,21 @@ repo's own crafter.py. Beyond a plain wrapper:
      and the boss ending are ``is_terminal``.
   3. ``reseed(seed)`` builds the next world from the seed alone, so evaluation
      can score every agent on the same fixed worlds (tools/death_eval.py).
-  4. ``raw_reward`` holds Craftax's own reward for the last step.
+  4. ``raw_reward`` holds Craftax's own reward for the last step, before any
+     shaping.
   5. ``save_state()`` / ``reset_to()`` checkpoint and restore the functional
      Craftax EnvState (used by tools/craft_probe.py).
+
+The map-model family adds:
+
+  6. With ``mapmodel=True``, the RSSM-2 map TARGETS ``obs['map12'|'mappos'|
+     'mapseen'|'mapknown']`` (craftax_map). Supervision only: agent.py
+     excludes them from the encoder and decoder exactly like ``ach``. Honest
+     by default (built from what the agent observed); ``map_privileged=True``
+     reinstates the full true map.
+  7. Reward shaping, ``survival``: 'none' (stock reward), 'shaped' (five
+     hand-written survival terms) or 'potential' (a potential over the
+     tech-tree spine, craftax_potential).
 
 dreamerv3's embodied.jax installs a global ``jax_transfer_guard='disallow'`` to
 catch stray host<->device transfers inside the agent. The env legitimately
@@ -39,10 +51,11 @@ import numpy as np
 class Craftax(embodied.Env):
 
   def __init__(self, task='symbolic', size=None, seed=0, logs=False,
-               survival='none'):
-    # Reward shaping lives on the family branches; main has the stock reward
-    # only. The argument stays so `--env.craftax.survival none` still parses.
-    assert survival == 'none', survival
+               mapmodel=False, seen_decay=0.99, map_privileged=False,
+               survival='none',
+               surv_alive=0.005, surv_death=5.0, surv_restore=0.3,
+               surv_threshold=3.0, surv_kill=0.5, surv_idle=1.0,
+               surv_idle_steps=30, phi_scale=4.0, phi_gamma=0.997):
     assert task in ('symbolic',), task  # pixels: add 'Craftax-Pixels-v1' below
     import jax
     from craftax.craftax_env import make_craftax_env_from_name
@@ -52,6 +65,98 @@ class Craftax(embodied.Env):
     self._env = make_craftax_env_from_name(
         'Craftax-Symbolic-v1', auto_reset=False)
     self._num_ach = NUM_ACHIEVEMENTS
+
+    self._mapmodel = bool(mapmodel)
+    self._seen_decay = float(seen_decay)
+    # False (default): the map target is a mosaic of the agent's own lit 9x11
+    # windows, so no gradient ever reaches cells it has not observed. True
+    # reinstates full-map ground truth on every cell, kept only to reproduce the
+    # original runs as an ablation -- run it with agent.mapmodel.hindsight False
+    # too, since the old targets were never hindsighted. See craftax_map.
+    self._map_privileged = bool(map_privileged)
+    if self._mapmodel:
+      from dreamerv3 import craftax_map
+      self._M = craftax_map
+    self._seen = None
+    self._prev_level = None
+    self._last_action = 0
+    if self._mapmodel:
+      self._observed = self._M.ObservedTargets(self._seen_decay)
+
+    # --- survival shaping ----------------------------------------------------
+    # Craftax pays for COLLECT_DRINK and EAT_COW exactly ONCE. Every drink after
+    # the first is worth zero, so maintenance is unrewarded and -- because a
+    # plateaued agent's future is worth little -- dying is nearly free. Measured
+    # at 689k steps: 45% of deaths are thirst, 23% hunger, and the agent dies
+    # with mean drink 2.45 / food 2.90 still in the tank while knowing exactly
+    # where the water is (map position accuracy 0.73).
+    #
+    # Craftax's own reward is `new_achievements + 0.1 * health_delta` and has NO
+    # terminal term, so dying costs at most -0.9, paid gradually as health
+    # drains. Measured at 1.1M steps: 55% of deaths are thirst, COLLECT_DRINK
+    # fires in only 43% of episodes, and MAKE_WOOD_PICKAXE has never fired in 60
+    # episodes despite a table being built in 35% of them.
+    #
+    #   'none'    stock Craftax reward, bit-for-bit.
+    #   'shaped'  the five terms below, each independently scalable.
+    #
+    # SCALE THE TERMS AGAINST ACHIEVEMENTS, which stay the largest single share
+    # of the budget -- DreamerV3 normalises returns before the policy gradient,
+    # so a term an order of magnitude larger than the rest does not merely
+    # dominate, it scales everything else down into noise. At these defaults, a
+    # ~294-step episode earns roughly:
+    #
+    #   achievements  ~4.3  (48%)   <- still the biggest term
+    #   restore       ~2.4  (26%)   <- the one that answers thirst deaths
+    #   alive         ~1.5  (16%)
+    #   kill          ~0.3
+    #   idle          ~-0.5
+    #   death         -5.0  once
+    #
+    # `alive` at 0.005/step is worth 0.005/(1-gamma) = ~1.7 in value terms at
+    # horizon 333, so being alive is worth about 1.7 achievements at any moment
+    # -- a real pull toward survival that cannot outvote the tech tree.
+    #
+    # `death` at 5.0 is deliberately mild. It makes risking death for an
+    # achievement rational whenever P(death) < ~20%, so the agent will still
+    # fight a zombie it expects to beat; a large penalty buys survival by making
+    # the agent refuse to explore, mine or fight, which is where the remaining
+    # achievements live.
+    #
+    # Shaping changes `reward` only, never `log/achievements`, which is read
+    # straight from the env state -- so achievement counts stay comparable to
+    # unshaped runs and to the leaderboard.
+    # 'potential' is the successor to 'shaped': one potential-based term over
+    # tech-tree progress instead of five hand-written bonuses. It provably
+    # cannot change the optimal policy, so it cannot invent the cheap optima
+    # that made 'shaped' collect HALF the achievements of no shaping at all
+    # (1.73 vs 3.49 at 500k). 'shaped' is kept only to reproduce that result.
+    assert survival in ('none', 'shaped', 'potential'), survival
+    self._survival = survival
+    self._phi_scale = float(phi_scale)
+    self._phi_gamma = float(phi_gamma)
+    self._prev_phi = None
+    self._ach_names = None
+    if survival == 'potential':
+      from dreamerv3 import craftax_potential
+      from craftax.craftax.constants import Achievement
+      self._P = craftax_potential
+      # By index, not iteration order: Craftax's Achievement enum is not
+      # declared in value order (positions 25-66 are shuffled), and the state's
+      # achievements array is indexed by value.
+      self._ach_names = [Achievement(i).name for i in range(len(Achievement))]
+    self._surv = dict(
+        alive=float(surv_alive),          # per step; 0.1 == 1 point per 10 steps
+        death=float(surv_death),          # subtracted once, on death not timeout
+        restore=float(surv_restore),      # per meter refilled while low
+        threshold=float(surv_threshold),  # what counts as "low"
+        kill=float(surv_kill),            # per hostile mob killed with DO
+        idle=float(surv_idle),            # penalty when nothing has changed
+        idle_steps=int(surv_idle_steps))
+    self._prev_meters = None
+    self._prev_hostiles = None
+    self._prev_sig = None
+    self._idle_for = 0
 
     # Everything here touches the host<->device boundary (params pytree, space
     # bounds, RNG key), so it runs under an allow scope; see module docstring.
@@ -94,6 +199,16 @@ class Craftax(embodied.Env):
         'is_last': elements.Space(bool),
         'is_terminal': elements.Space(bool),
     }
+    if self._mapmodel:
+      C, P = self._M.COARSE, self._M.N_PLANES
+      # Privileged TARGETS, never inputs -- agent.py excludes them from
+      # enc/dec alongside 'ach'.
+      spaces['map12'] = elements.Space(np.float32, (C, C, P), 0.0, 1.0)
+      spaces['mappos'] = elements.Space(np.int32, (), 0, self._M.N_CELLS)
+      spaces['mapseen'] = elements.Space(np.float32, (C, C), 0.0, 1.0)
+      # Supervision WEIGHT: fraction of each cell's 16 tiles the agent has
+      # observed. Cells at 0.0 carry no gradient.
+      spaces['mapknown'] = elements.Space(np.float32, (C, C), 0.0, 1.0)
     if self._logs:
       spaces['log/reward'] = elements.Space(np.float32)
       spaces['log/achievements'] = elements.Space(np.int32)
@@ -123,13 +238,13 @@ class Craftax(embodied.Env):
     with self._jax.transfer_guard('allow'):
       key, subkey = self._jax.random.split(self._key)
       self._key = key
-      act = self._jax.numpy.asarray(
-          int(action['action']), self._jax.numpy.int32)
+      self._last_action = int(action['action'])
+      act = self._jax.numpy.asarray(self._last_action, self._jax.numpy.int32)
       obs, self._state, reward, done, info = self._step_fn(
           subkey, self._state, act)
       self._done = bool(done)
       reward = float(reward)
-      self.raw_reward = reward           # Craftax's own reward
+      self.raw_reward = reward           # Craftax's own, before any shaping
       obs = np.asarray(obs, np.float32)
       # Craftax's is_game_over (hence `done`) fires on death, boss-defeat AND
       # timeout, and its `discount` is 0 for all three. For correct value
@@ -138,6 +253,8 @@ class Craftax(embodied.Env):
       # crafter.py encodes via `info['discount'] == 0`; Craftax does not expose
       # timeout separately in `info`, so we derive it from the state timestep).
       timeout = bool(np.asarray(self._state.timestep) >= self._max_timesteps)
+      reward += self._survival_reward(
+          self._state, int(action['action']), self._done and not timeout)
     self._reward += reward
     self._length += 1
     return self._obs(
@@ -145,18 +262,120 @@ class Craftax(embodied.Env):
         is_last=self._done,
         is_terminal=self._done and not timeout)
 
+  def _meters(self, state):
+    return np.array([
+        float(state.player_food), float(state.player_drink),
+        float(state.player_energy)], np.float32)
+
+  ACTION_DO = 5                              # constants.Action.DO
+
+  def _hostiles(self, state):
+    """Alive hostile mobs on the current level."""
+    level = int(state.player_level)
+    total = 0
+    for name in ('melee_mobs', 'ranged_mobs'):
+      mobs = getattr(state, name, None)
+      if mobs is None:
+        continue
+      mask = np.asarray(mobs.mask)
+      total += int(mask[level].sum() if mask.ndim > 1 else mask.sum())
+    return total
+
+  def _progress_signature(self, state):
+    """Scalars that change iff the agent did something that mattered."""
+    inv = state.inventory
+    fields = [getattr(inv, f) for f in (
+        'wood', 'stone', 'coal', 'iron', 'diamond', 'sapling',
+        'pickaxe', 'sword', 'bow', 'arrows', 'armour', 'torches')]
+    return (
+        tuple(np.asarray(state.player_position).reshape(-1).tolist()),
+        int(np.asarray(state.achievements).sum()),
+        tuple(int(np.asarray(f).sum()) for f in fields))
+
+  def _potential(self, state):
+    """PHI(s) for potential shaping. Caller holds the guard."""
+    return self._P.potential(state, self._ach_names, self._phi_scale)
+
+  def _survival_reward(self, state, action, is_terminal):
+    """Shaping reward. Caller already holds the transfer guard.
+
+    Five terms, each independently scalable; see the ctor for the scaling
+    warning. Every term is repeatable on purpose -- Craftax's own achievements
+    fire once, which is exactly why maintenance never became worth doing.
+    """
+    if self._survival == 'none':
+      return 0.0
+    if self._survival == 'potential':
+      phi = self._potential(state)
+      bonus = self._P.shaped(
+          self._prev_phi, phi, self._phi_gamma, terminal=is_terminal)
+      self._prev_phi = phi
+      return bonus
+    bonus = self._surv['alive']            # paid per step, not per 10, so the
+                                           # signal is smooth rather than a
+                                           # sawtooth the critic has to model
+    meters = self._meters(state)
+    if self._prev_meters is not None:
+      # Pay only for a restore that happened while the meter was LOW, so
+      # drinking at full thirst earns nothing. Energy covers sleeping: sleep is
+      # the only thing that refills it.
+      was_low = self._prev_meters <= self._surv['threshold']
+      restored = meters > self._prev_meters
+      bonus += self._surv['restore'] * float((was_low & restored).sum())
+    self._prev_meters = meters
+
+    # Kills: a hostile count that drops on a DO action. Mobs also despawn, but
+    # despawns are not correlated with the player swinging, so gating on DO
+    # keeps the misattribution small.
+    hostiles = self._hostiles(state)
+    if (self._prev_hostiles is not None and action == self.ACTION_DO
+        and hostiles < self._prev_hostiles):
+      bonus += self._surv['kill'] * (self._prev_hostiles - hostiles)
+    self._prev_hostiles = hostiles
+
+    # Idle: nothing moved, nothing was gained, nothing was unlocked. Charged
+    # once per window rather than every step, so standing still is costly but
+    # not unboundedly so. Sleeping is explicitly NOT idle -- it moves nothing by
+    # design, and it is the only thing that refills energy, so counting it would
+    # punish the behaviour the `restore` term pays for.
+    sig = self._progress_signature(state)
+    asleep = bool(np.asarray(state.is_sleeping))
+    if sig != self._prev_sig or asleep:
+      self._idle_for = 0
+    else:
+      self._idle_for += 1
+    self._prev_sig = sig
+    if self._idle_for >= self._surv['idle_steps']:
+      bonus -= self._surv['idle']
+      self._idle_for = 0
+
+    if is_terminal:
+      bonus -= self._surv['death']
+    return bonus
+
   def _reset(self):
     with self._jax.transfer_guard('allow'):
       key, subkey = self._jax.random.split(self._key)
       self._key = key
       obs, self._state = self._reset_fn(subkey)
       obs = np.asarray(obs, np.float32)
+      # PHI of the start state, so the first real step is shaped like every
+      # other: gamma * PHI(s1) - PHI(s0). Leaving it unset paid that step
+      # nothing, which over an episode telescopes to -gamma * PHI(s1) -- a
+      # sum that depends on the first action instead of being a constant.
+      self._prev_phi = (
+          self._potential(self._state)
+          if self._survival == 'potential' else None)
     self._done = False
     self.raw_reward = 0.0
     self._episode += 1
     self._length = 0
     self._reward = 0.0
     self._prev_ach = np.zeros(self._num_ach, np.float32)
+    self._prev_meters = None
+    self._prev_hostiles = None
+    self._prev_sig = None
+    self._idle_for = 0
     return self._obs(obs, 0.0, self._state, is_first=True)
 
   # --- achievement featurization ---------------------------------------------
@@ -183,12 +402,45 @@ class Craftax(embodied.Env):
         is_last=is_last,
         is_terminal=is_terminal,
     )
+    if self._mapmodel:
+      obs.update(self._map_targets(state, vector, is_first))
     if self._logs:
       obs['log/reward'] = np.float32(reward)
       with self._jax.transfer_guard('allow'):
         obs['log/achievements'] = np.int32(
             np.asarray(state.achievements).sum())
     return obs
+
+  # --- map-model targets (training supervision only) --------------------------
+  def _map_targets(self, state, vector, is_first):
+    """Coarse map, coarse position and cumulative visitation for RSSM-2.
+
+    Honest mode (default) hands ``ObservedTargets`` the observation vector and
+    the action just taken -- and nothing else. It never sees ``state``, so no
+    label can contain terrain the agent has not seen or a coordinate it could
+    not have worked out. Privileged mode is the old setup, kept as an ablation:
+    true map on every cell, true coordinates.
+
+    Both are per-episode AND per-level: Craftax has 9 levels, each its own 48x48
+    map, and v1 models only the level the agent is on (design SS7.1).
+    """
+    if not self._map_privileged:
+      return self._observed.step(vector, self._last_action, is_first)
+    with self._jax.transfer_guard('allow'):
+      level = int(state.player_level)
+      if is_first or level != self._prev_level:
+        self._seen = None
+      self._prev_level = level
+      self._seen = self._M.update_seen(self._seen, state, self._seen_decay)
+      # Ground truth everywhere AND every cell supervised. Emitting the observed
+      # fraction here would mask unseen cells away again and quietly turn the
+      # ablation into a copy of the honest run.
+      return dict(
+          map12=self._M.coarse_map(state, self._seen),
+          mappos=self._M.coarse_pos(state),
+          mapseen=self._seen.astype(np.float32),
+          mapknown=np.ones((self._M.COARSE, self._M.COARSE), np.float32),
+      )
 
   # --- checkpoint/restore ----------------------------------------------------
   def save_state(self):
@@ -217,7 +469,10 @@ class Craftax(embodied.Env):
         reward=np.float32(0.0),
         is_first=True, is_last=False, is_terminal=False,
     )
-    # Must match obs_space exactly -- the agent asserts on the key set.
+    # Must match obs_space exactly -- the agent asserts on the key set, and a
+    # restored obs that omits the map targets fails that assert.
+    if self._mapmodel:
+      result.update(self._map_targets(state, obs, is_first=True))
     if self._logs:
       result['log/reward'] = np.float32(0.0)
       result['log/achievements'] = ach_sum

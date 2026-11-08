@@ -11,8 +11,10 @@ the moment of death -- Craftax's observation does not expose which necessity
 ran out, only the agent's own (possibly wrong) belief about it.
 
 Run from the dreamerv3 repo root:
-  python tools/death_eval.py --logdir ~/logdir/abl_plain --episodes 30 \
-      --configs craftax size50m --env.craftax.survival none
+  python tools/death_eval.py --logdir ~/logdir/honest_map_fix --episodes 30 \
+      --configs craftax size50m --env.craftax.mapmodel True \
+      --env.craftax.survival potential --agent.mapmodel.enabled True \
+      --agent.mapmodel.to_actor True --agent.mapmodel.imag_shift False
 Extra flags are passed through to the config exactly as for main.py, so the
 agent is rebuilt with the same architecture the checkpoint was trained with.
 
@@ -42,9 +44,9 @@ def from_run(logdir, argv):
 
   Rebuilds a checkpoint exactly as it was trained, with no flag list to get
   wrong -- the way old checkpoints are re-scored. Keys this branch's
-  configs.yaml lacks are dropped silently, so a run from a family branch (map
-  model, manager, mask, taste) must be scored from its own branch: here it
-  would quietly be rebuilt as the plain agent.
+  configs.yaml lacks are dropped silently, so a run from another family branch
+  (manager, mask, taste) must be scored from its own branch: here it would
+  quietly be rebuilt without that family's parts.
   """
   import ruamel.yaml as yaml
   from dreamerv3 import main as dv3main
