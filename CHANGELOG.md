@@ -101,12 +101,19 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
   `next_taste` (`lam_mgr 1`), are studied on `family/taste`.
 - `tools/death_eval.py --greedy` help text: it takes the argmax goal too.
 - README, results table and report: honest runs first, masked runs marked.
-- **PENDING: equivalence with `49a6bc3` and the JAX/Craftax test run.** The
-  CPU check (parameter tree and initial values, rollout and policy outputs,
-  four train steps, report metrics, for `plain`, `next_lam0`, `next_nomask`
-  and `next_notaste`; `next_lam0` vs `next_notaste` on this branch) was
-  started on the GPU box, which then became unreachable; `pytest dreamerv3/`
-  (needs JAX) has not run. Not verified yet; see `HANDOFF.md`.
+- **Verified against `49a6bc3`** on CPU (seed 0, `size1m`, single-threaded
+  XLA): parameter tree and initial values, a 65-step rollout in two Craftax
+  worlds with every policy output, probe and greedy acting, parameters and
+  metrics after four train steps, and report metrics are bit-identical for
+  `plain`, `next_lam0` and `next_nomask`; the `size50m` initial parameter
+  trees too. `next_notaste` matches through train step 1 and the metrics of
+  steps 1-3, then differs by float rounding (optimizer state 2.9e-4 at step
+  2); on this branch it equals `next_lam0` bit for bit outside taste's own
+  state, so `lam_mgr 0` adds nothing. Multi-threaded XLA adds compile-
+  dependent rounding (up to 0.069 in optimizer state after four steps) that
+  vanishes single-threaded. Tests: `pytest dreamerv3/` 83 passed;
+  `embodied/tests/test_replay.py` only the 53 known `Replay.dataset`
+  failures.
 
 - From `main`:
   - **Split: `main` is now plain DreamerV3 on Craftax.** Every experiment family
@@ -159,6 +166,9 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
     (design notes, ablations, casebooks, experiment A/B data).
 
 ### Fixed
+- `test_craftax_valid.py::test_agrees_with_the_game` imported its game
+  oracle from `tools/action_suppression.py`, which is not on this branch
+  (family/masked); the oracle is now a function in the test.
 - From `main`:
   - Audit 2026-10-11 items that apply to the plain agent
     (`docs/audit-2026-10-11.md`, tests in `dreamerv3/test_audit_fixes.py`):

@@ -11,36 +11,32 @@ DreamerV3) and carries the next family's code, config, env options, tests and
 docs (see `CHANGELOG.md`). Runs of this family were trained on `~/vtmgr` =
 `49a6bc3` on the GPU box and are not retrained here.
 
-**Training now.** `next_nomask`, the next agent **without** the rule mask
+**Not training.** `next_nomask`, the next agent **without** the rule mask
 (`--agent.valid.mask False`, `valid_obs` still True; script `~/run_nomask.sh`),
-started 2026-11-08 09:26 CST and was at about 60k env steps at 10:17. It is the
-honest run: it decides whether the next agent is any good without cheating.
-Not scored yet. The masked runs (`next_lam0` 11.20 ± 0.41 on 30 worlds, 11.30
+started 2026-11-08 09:26 CST. At 11:35 the box ran out of memory (parallel
+CPU check jobs of all five branches) and the kernel killed it at ~74k env
+steps (exit 137); its logdir is `~/logdir/next_nomask_oom`. A fresh restart
+at 11:43 was stopped by request at 11:46. It has to be relaunched (after
+`~/train_guard.sh`; side jobs only through `~/safe_job.sh`). It is the honest
+run: it decides whether the next agent is any good without cheating. The masked runs (`next_lam0` 11.20 ± 0.41 on 30 worlds, 11.30
 ± 0.27 on 60) are counted as cheating and stay out of headline rankings.
 `next_notaste` crashed three times on GPU faults (Xid 69, 13; logdirs
 `next_notaste`, `next_notaste_crash1`, `_crash2`); `next_lam0` is its stand-in.
 
-**Pending checks (box unreachable since ~10:30).** Neither the equivalence
-check against `49a6bc3` nor the JAX test suite has reported. On the box:
-- `~/equiv_next/all.sh` was launched detached at ~10:27 (CPU only, `nice 19`,
-  `taskset -c 28-31`). It runs `run.py` (old = `49a6bc3`, new = this branch)
-  for `plain`, `next_lam0`, `next_nomask`, `next_notaste` at `size1m` (full)
-  and the first three at `size50m` (init only), then writes
-  `~/equiv_next/out/report.txt`; progress in `out/status.txt` (`ALLDONE` at
-  the end). Read the report; if `all.sh` died, rerun it once with
-  `cd ~/equiv_next && setsid nohup ./all.sh > all.out 2>&1 < /dev/null &`.
-  To stop it: `pkill -f equiv_next/all.sh; pkill -f 'run.py /home/bygpu/equiv_next'`.
-  Expect exact equality (max abs diff 0) everywhere for the three flag sets,
-  and `next_lam0` vs `next_notaste` equal outside `taste` variables/metrics.
-  Delete `~/equiv_next` afterwards.
-- Tests: copy this branch to a scratch dir and run
-  `JAX_PLATFORMS=cpu ~/envs/dv3/bin/python -m pytest dreamerv3/` there (and
-  `embodied/tests/test_replay.py -k save_skip`); only the 53 known
-  `Replay.dataset` failures in `test_replay.py` are expected.
-- Then replace the PENDING notes in `README.md` and `CHANGELOG.md`.
+**Checks done (12:10, after the box came back).** Equivalence with
+`49a6bc3` on CPU (each process through `~/safe_job.sh`, one at a time):
+single-threaded, `plain`, `next_lam0` and `next_nomask` are bit-identical
+(parameter tree and initial values, a 65-step rollout in two worlds, probe and
+greedy acting, parameters and metrics after four train steps, report
+metrics); so are the init-only `size50m` trees, and `next_lam0` vs
+`next_notaste` on this branch outside taste's own state. Details in
+`CHANGELOG.md` and `README.md`. Tests: `pytest dreamerv3/` 83 passed (after
+copying the game oracle into `test_craftax_valid.py`); `test_replay.py` has
+only the 53 known `Replay.dataset` failures. `~/equiv_next` is deleted.
 
 **Next steps.**
-1. When `next_nomask` finishes (1.1M env steps), score it from this branch on
+1. Relaunch `next_nomask` (see above). When it finishes (1.1M env steps),
+   score it from this branch on
    60 fixed worlds (`tools/death_eval.py --config-from-run --episodes 60`) and
    compare with `next_lam0` (11.30) and `v12_nomask` (6.03, family/v). Add the
    entry to `docs/eval_results.json`, its curve to `docs/curves/` and

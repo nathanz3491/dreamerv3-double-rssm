@@ -79,12 +79,37 @@ def seeded_states(n=600, seed=0):
   return env, out
 
 
+def make_oracle(env):
+  """jit(key, state) -> (43,) bool: does each action change the game state?
+
+  The game's own answer: step every action from the same state and key and
+  compare with NOOP. (A copy of tools/action_suppression.make_oracle, which
+  lives on family/masked.)
+  """
+  import functools
+  import jax
+  import jax.numpy as jnp
+  cenv, params = env._env, env._params
+
+  def nxt(key, state, a):
+    return cenv.step(key, state, a, params)[1]
+
+  @jax.jit
+  def effects(key, state):
+    acts = jnp.arange(V.N_ACTIONS)
+    after = jax.vmap(lambda a: nxt(key, state, a))(acts)
+    base = nxt(key, state, 0)
+    diff = jax.tree.map(
+        lambda n, b: (n != b[None]).reshape(V.N_ACTIONS, -1).any(-1),
+        after, base)
+    return functools.reduce(jnp.logical_or, jax.tree.leaves(diff))
+
+  return effects
+
+
 def agreement(n=600, seed=0):
   """Per-action agreement between the checker and the game, actions 6..42."""
   import jax
-  import sys
-  sys.path.insert(0, 'tools')
-  from action_suppression import make_oracle
   env, states = seeded_states(n, seed)
   oracle = make_oracle(env)
   hits = np.zeros(V.N_ACTIONS)

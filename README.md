@@ -26,7 +26,7 @@ decisions behind it and the open questions:
 
 ## Base agent
 
-The code here is `family/next`'s (commit `539a795`). Its docs describe the base:
+The code here is `family/next`'s (merged up to `f89e4d9`). Its docs describe the base:
 [docs/design-manager.md](docs/design-manager.md),
 [docs/design-v2.md](docs/design-v2.md) and
 [docs/taste-on-manager.md](docs/taste-on-manager.md). The base run,
@@ -81,3 +81,7 @@ python tools/eval_entry.py <run>.log --id <run> --label "<label>" --short <short
 
 A 30-world score moves by about ±0.55, so a gap under ~1.1 between two single
 runs is not evidence.
+
+`--config-from-run` drops keys that this branch's `configs.yaml` lacks, so score
+each run from the branch it belongs to. `next_nomask`'s results live on
+`family/next`.
