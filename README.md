@@ -164,7 +164,7 @@ between two single runs is not evidence. Use 60 worlds and several seeds.
 
 | run | rule mask | achievements ± SE | 60 worlds | status |
 |---|---|---|---|---|
-| `next_nomask` | no (honest) | not scored | not scored | training since 2026-11-08 09:26 CST (about 60k env steps at 10:17) |
+| `next_nomask` | no (honest) | not scored | not scored | started 2026-11-08 09:26 CST; killed at ~74k env steps by the box's out-of-memory crash (11:35, exit 137; logdir moved to `next_nomask_oom`); a fresh restart was stopped by request at 11:46. Needs relaunching (`~/run_nomask.sh`). |
 | `vanilla` | no | 4.63 ± 0.22 | | original code, before the 2026-10 fixes |
 | `abl_plain` | no | 4.77 ± 0.28 | | `main`'s plain agent (seed 1 also 4.77) |
 | `next_lam0` | **masked: counted as cheating** | 11.20 ± 0.41 | 11.30 ± 0.27 | best run of the project, not a headline result |
@@ -191,19 +191,32 @@ Taste hurt: `next_lam0` leads `next_taste` by +1.92 ± 0.41 on 60 worlds
 
 ## Equivalence with the pre-split code
 
-**PENDING.** The check against `49a6bc3` is written but has not reported
-yet: the GPU box became unreachable while it ran. For each of the flag sets
-`plain`, `next_lam0`, `next_nomask` (and `next_notaste`) it builds the agent
-from both codes on CPU (seed 0) and compares the parameter tree (names,
-shapes, dtypes) and initial values, a 65-step rollout in two seeded Craftax
-worlds (observations, actions, every policy output), probe and greedy
-acting, the parameters and metrics after four train steps on that batch,
-and the report metrics; plus init-only parameter trees at `size50m`. It
-also compares `next_lam0` with `next_notaste` on this branch, which should
-differ only in taste's own variables and `taste/*` metrics (taste at
-`lam_mgr 0` adds exactly zero). Until it has run, treat "behaves exactly as
-the pre-split code" as designed for (same module and parameter names, RNG
-order and loss order) but not yet verified.
+Checked on CPU against `49a6bc3` (seed 0, `size1m`, batch 2 x 65 steps,
+JAX 0.4.33). For each flag set the agent is built from both codes and
+compared on: the parameter tree (names, shapes, dtypes) and initial values;
+a 65-step rollout in two seeded Craftax worlds (observations, actions, every
+policy output, including RSSM-2's state, goal and goal age); probe and greedy
+acting; the parameters and train metrics after four train steps on that
+batch; and the report metrics.
+
+| flag set | result (single-threaded XLA) |
+|---|---|
+| `plain` | bit-identical everywhere (max abs diff 0) |
+| `next_lam0` | bit-identical everywhere |
+| `next_nomask` | bit-identical everywhere |
+| `next_notaste` | identical through the rollout, acting, train step 1 and the train metrics of steps 1-3; afterwards float rounding: optimizer state differs by 2.9e-4 at step 2, 0.021 at step 4, step-4 `grad_norm` by 0.07 |
+| `next_lam0` vs `next_notaste`, both on this branch | bit-identical everywhere outside taste's own variables and `taste/*` metrics: at `lam_mgr 0` taste adds exactly nothing |
+
+At `size50m` the initial parameter trees (names, shapes, dtypes, values) of
+`plain`, `next_lam0` and `next_nomask` are bit-identical too (144.6M, 314.7M
+and 305.9M values). With XLA's default multi-threaded CPU backend the two
+codes compile to slightly different thread partitions, so after the first
+train step the optimizer state picks up float-rounding differences (up to
+0.069 in `plain` after four steps); the same code run twice is bit-identical,
+and single-threaded the differences vanish, so they are compilation rounding,
+not behaviour. `next_notaste`'s residual difference is of the same kind:
+`next_notaste` on this branch equals `next_lam0` on both codes bit for bit.
+Checkpoints of the family's runs therefore load here unchanged.
 
 Runs trained before 2026-10-11 used buggy RSSM-2 code that no branch
 reproduces exactly (`docs/rssm2-step-alignment.md`). None of this family's
