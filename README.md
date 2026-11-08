@@ -1,38 +1,48 @@
-# DreamerV3 on Craftax
+# DreamerV3 on Craftax: the next agent (`family/next`)
 
-Plain [DreamerV3][upstream] trained on symbolic [Craftax][craftax], with the
-fixes this project found along the way. This branch is the baseline and holds
-no experiment code: every agent built on top of it lives on a family branch of
-its own (see [Family branches](#family-branches)).
-
-The original DreamerV3 README is kept at
-[`README-dreamerv3.md`](README-dreamerv3.md); installation and the general run
-interface are unchanged.
+This branch holds one agent family on top of plain [DreamerV3][upstream] on
+[Craftax][craftax]: the **next agent**. It is `main` (plain DreamerV3, the
+Craftax adapter, the scoring tools; see `main`'s README) plus this
+family's code, config, tests and docs. Every other family lives on a branch of
+its own, indexed in `main`'s README. The original DreamerV3 README is
+[`README-dreamerv3.md`](README-dreamerv3.md).
 
 [upstream]: https://github.com/danijar/dreamerv3
 [craftax]: https://github.com/MichaelTMatthews/Craftax
 
-## What differs from upstream
+## The next agent
 
-- **Craftax adapter** (`embodied/envs/craftax.py`) and the `--configs craftax`
-  preset: `craftax_symbolic`, one env, `train_ratio 512`, 1.1M steps, replay
-  capped at 4e5 steps (replay lives in host RAM; every scored run used the
-  cap, so it stays). The adapter:
-  - emits `obs['ach']`, the achievements unlocked this step. The scoring tools
-    read it from replay; the agent excludes it from the encoder and decoder;
-  - treats a timeout as a truncation (`is_last`), not a terminal state;
-  - rebuilds the next world from a seed alone (`env.reseed`), so evaluation
-    meets the same fixed worlds whatever the earlier episodes did;
-  - keeps Craftax's own reward in `raw_reward`;
-  - leaves `obs['vector']` unbounded above (Craftax's meters grow past 1).
-- **Acting modes:** `policy(mode='greedy')` takes the argmax action;
-  `policy(mode='probe')` also returns the action distribution.
-- **Fixes:** `report()` keeps its loss metrics; `run.from_checkpoint_regex`
-  exists; `replay.save_skip` keeps the replay_context latents off disk (~1.4 GB
-  a run instead of ~9.3 GB).
-- **Scoring tools** in `tools/` (see [Score](#score)).
+The next agent is the goal manager of v1.2 on top of the parts of v2:
 
-The world model, actor-critic, losses and hyperparameters are upstream's.
+- **A manager over 13 named goals** (NONE plus 12 tech-tree milestones, from
+  `env.craftax.goals_obs`) picks a goal every time the last one is reached or
+  has been held for 32 steps. The bottom actor sees the goal and is paid for
+  progress toward it. ([`docs/design-manager.md`](docs/design-manager.md))
+- **RSSM-2 as a memory:** a second, slower recurrent model that predicts the
+  future and recalls the past from raw actions, with no game labels; its
+  state is read by the actor, the critic and the manager. Its train and act
+  paths run the same step function
+  ([`docs/design-v2.md`](docs/design-v2.md),
+  [`docs/rssm2-step-alignment.md`](docs/rssm2-step-alignment.md)).
+- **Curiosity:** the disagreement of an ensemble that predicts the next latent
+  is a third reward stream.
+- **One shared critic** with a game head, a goal head and an explore head.
+- **Taste** (`agent.taste`) is in the code only so the flags of `next_lam0` and
+  `next_nomask` still run: they set `lam_mgr 0.0`, which adds exactly zero to
+  the manager's values. Taste itself is studied on `family/taste`; why it hurt
+  is summarised in [`docs/taste-on-manager.md`](docs/taste-on-manager.md).
+
+**The rule mask counts as cheating.** The B2 mask (`env.craftax.valid_obs` and
+`agent.valid.mask`) reads the game's action rules, so a run with it is not an
+honest agent; rule flags as an input would count as rule knowledge too. Its
+code stays here, default off, because `next_lam0` was trained with it. **The
+honest run is `next_nomask`** (mask off); results below list it first, and
+masked results are marked and kept out of any headline ranking.
+
+Defaults differ from `main` and from the pre-split code, and this branch
+accepts only the values the family used (the assertions name the branch that
+holds the others): `manager.critic shared`, `manager.hold 32`,
+`manager.goals named`, `taste.target manager`, `mapmodel.target memory`.
 
 ## Install
 
@@ -47,110 +57,169 @@ The last line checks that the achievement names embedded in
 
 ## Run
 
-The plain baseline, exactly as `abl_plain` was trained:
+Every command is prefixed by
+`python dreamerv3/main.py --logdir ~/logdir/<run> --configs craftax size50m`.
+The plain baseline is `--env.craftax.survival none` (the default; kept so old
+commands parse). Call that **PLAIN**; it is also what `main` trains, so
+`abl_plain` is reproduced from `main`.
 
-```bash
-python dreamerv3/main.py --logdir ~/logdir/abl_plain \
-  --configs craftax size50m --env.craftax.survival none
+**NEXT** (= `next_notaste`) is PLAIN plus:
+
+```
+--env.craftax.valid_obs True --env.craftax.goals_obs True
+--agent.mapmodel.enabled True --agent.mapmodel.to_actor True
+--agent.mapmodel.target memory --agent.valid.mask True
+--agent.manager.enabled True --agent.manager.critic shared
+--agent.manager.hold 32 --agent.manager.goals named
+--agent.curiosity.enabled True
 ```
 
-`--seed 1` gives `abl_plain_s1`. `--env.craftax.survival none` is the default
-(main has no reward shaping) and is kept so the old commands still parse.
+1. **`next_nomask` (honest: no rule mask).** The `next_lam0` flags with
+   `--agent.valid.mask False`; `valid_obs` stays True, so `obs['valid']`
+   reaches nothing but replay and the run matches `next_lam0` everywhere else.
+   Launcher on the box: `~/run_nomask.sh`.
 
-A finished run takes ~1.4 GB: ~0.8 GB of replay and a ~0.7 GB checkpoint. A
-resumed run gets zeros back for the latents `replay.save_skip` left off disk,
-and refreshes them as it trains. To shrink a run that predates this:
-`python tools/strip_replay.py ~/logdir/<run>` (it refuses a live or unfinished
-run; a stripped run can no longer be resumed).
+   ```bash
+   python dreamerv3/main.py --logdir ~/logdir/next_nomask \
+     --configs craftax size50m --env.craftax.survival none \
+     --env.craftax.valid_obs True --env.craftax.goals_obs True \
+     --agent.mapmodel.enabled True --agent.mapmodel.to_actor True \
+     --agent.mapmodel.target memory --agent.valid.mask False \
+     --agent.manager.enabled True --agent.manager.critic shared \
+     --agent.manager.hold 32 --agent.manager.goals named \
+     --agent.curiosity.enabled True \
+     --agent.taste.enabled True --agent.taste.target manager \
+     --agent.taste.center True --agent.taste.pos 1.43 --agent.taste.neg 1.43 \
+     --agent.taste.lam_mgr 0.0
+   ```
+
+2. **`next_lam0` (masked: counted as cheating).** The same with
+   `--agent.valid.mask True` (taste at `lam_mgr 0.0`: no taste).
+3. **`next_notaste` (masked; crashed, no result).** NEXT with no taste flags.
+   It crashed three times on GPU faults (Xid 69 and 13; logdirs `next_notaste`,
+   `next_notaste_crash1`, `_crash2`); `next_lam0` stands in for it, since
+   `lam_mgr 0` adds exactly zero.
+
+All of these were trained with the code directory `~/vtmgr` on the GPU box,
+which is the pre-split code (commit `49a6bc3`, tag `archive/full-2026-11-08`).
+
+A finished run takes ~1.4 GB: ~0.8 GB of replay and a ~0.7 GB checkpoint.
+`replay.save_skip` keeps the replay_context latents (`dyn/`, `enc/`, `dec/`
+and RSSM-2's `map/`) off disk; a resumed run gets zeros back and refreshes
+them as it trains. `python tools/strip_replay.py ~/logdir/<run>` shrinks an
+older run (it refuses a live or unfinished one, and a stripped run can no
+longer be resumed).
 
 ## Test
 
 ```bash
-python -m pytest dreamerv3/                                   # 6 tests
+python -m pytest dreamerv3/
 python -m pytest embodied/tests/test_replay.py -k save_skip
 ```
 
-`dreamerv3/test_audit_fixes.py` needs JAX, and its env tests need Craftax (they
-are skipped without it). The other tests in `embodied/tests/test_replay.py`
-call `Replay.dataset`, which this `Replay` does not have; they fail the same
-way on the pre-split code.
+`test_audit_fixes.py`, `test_taste.py` and `test_mapmodel_step.py` need JAX;
+the craftax tests (`test_craftax_{features,goals,map,potential,valid}.py` and
+the env tests) are skipped without Craftax. The other tests in
+`embodied/tests/test_replay.py` call `Replay.dataset`, which this `Replay` does
+not have: 53 of them fail with `'Replay' object has no attribute 'dataset'`,
+and they fail the same way at `49a6bc3`.
 
 ## Score
 
 Every result is scored on the same 30 fixed worlds (episode *i* is built from
-seed *i*), so comparisons are paired world by world.
+seed *i*; world hash `9067302a2635` for the default seeds), so comparisons are
+paired world by world.
 
 ```bash
 # 1. Play 30 episodes; prints achievements, unlock rates, deaths, raw return
-#    and a world hash, which must match across the runs being compared
-#    (9067302a2635 for the default seeds).
-python tools/death_eval.py --logdir ~/logdir/abl_plain --episodes 30 \
-  --configs craftax size50m --env.craftax.survival none > abl_plain.log
-#    or rebuild from the run's own config.yaml:
-#    python tools/death_eval.py --logdir ~/logdir/abl_plain --config-from-run
+#    and the world hash, which must match across the runs being compared.
+#    Rebuild the agent from the run's own config.yaml:
+python tools/death_eval.py --logdir ~/logdir/next_nomask --episodes 30 --config-from-run > next_nomask.log
+#    (60 worlds: --episodes 60)
 
 # 2. Turn the log into an entry for docs/eval_results.json
-python tools/eval_entry.py abl_plain.log --id abl_plain --label "Plain" --short plain
+python tools/eval_entry.py next_nomask.log --id next_nomask --label "Next, no mask" --short next-nomask
 
-# 3. Training curves from replay, the curve figure and the PDF report
-python tools/curves_from_replay.py ~/logdir/abl_plain --out docs/curves
+# 3. Curves, figure and report
+python tools/curves_from_replay.py ~/logdir/next_nomask --out docs/curves
 python tools/plot_training_curves.py                         # -> docs/training-curves.*
 python tools/make_comparison_report.py                       # -> docs/comparison-report.pdf
-
-# 4. A run still training, against finished ones at the same env steps
-python tools/compare_at_steps.py "plain=docs/curves/abl_plain.json" ...
 ```
 
-`--config-from-run` drops the keys this branch's `configs.yaml` lacks, so a
-family run would be rebuilt as the plain agent. **Score each run from its own
-branch.**
+`--config-from-run` drops keys that this branch's `configs.yaml` lacks, so a
+run of another family would be rebuilt as a different agent. **Score each run
+from the branch it belongs to**: runs of this family from here.
+`tools/plot_training_curves.py` lists the curves it draws; add a run there when
+its curve is in `docs/curves/`.
 
 A 30-world score moves by about ±0.55 between world sets: a gap under ~1.1
-between two single runs is not evidence. Use 60 worlds and several training
-seeds.
-
-Inspection: `tools/watch_agent.py` (watch a checkpoint play),
-`tools/action_audit.py` (what it spends its actions on),
-`tools/craft_probe.py` (does it craft when crafting is one keypress away),
-`tools/death_diagnostic.py` and `tools/death_math.py` (deaths of a random
-policy, and survival bounds).
+between two single runs is not evidence. Use 60 worlds and several seeds.
 
 ## Results
 
 30 fixed worlds, 1.1M env steps, `size50m`
 ([`docs/eval_results.json`](docs/eval_results.json),
 [`docs/comparison-report.pdf`](docs/comparison-report.pdf),
-[`docs/training-curves.png`](docs/training-curves.png)):
+[`docs/training-curves.png`](docs/training-curves.png)). Honest runs first.
 
-| run | code | achievements ± SE | normalized return | lifespan |
+| run | rule mask | achievements ± SE | 60 worlds | status |
 |---|---|---|---|---|
-| `vanilla` | original code, before the 2026-10 fixes | 4.63 ± 0.22 | 1.65% | 295 |
-| `abl_plain` | this branch (seed 0) | 4.77 ± 0.28 | 1.71% | 265 |
+| `next_nomask` | no (honest) | not scored | not scored | training since 2026-11-08 09:26 CST (about 60k env steps at 10:17) |
+| `vanilla` | no | 4.63 ± 0.22 | | original code, before the 2026-10 fixes |
+| `abl_plain` | no | 4.77 ± 0.28 | | `main`'s plain agent (seed 1 also 4.77) |
+| `next_lam0` | **masked: counted as cheating** | 11.20 ± 0.41 | 11.30 ± 0.27 | best run of the project, not a headline result |
+| `next_notaste` | masked | none | | crashed three times on GPU faults; `next_lam0` stands in |
 
-The two are level. Both stay at the wood tier: no stone in any episode.
-`abl_plain_s1` is recorded at 4.77 as well; its training curve stops at 0.9M
-steps.
+`next_nomask` decides whether the next agent is any good without cheating:
+score it on 60 worlds and read it against `next_lam0`, against `v12_nomask`
+below, and against plain (4.77).
 
-## Family branches
+Comparison points from other families (their runs and docs are on their own
+branches; 30 worlds unless noted; a single-run gap under ~1.1 is not
+evidence):
 
-**Convention.** Each new agent version goes on one family branch, with its own
-code, tests, docs, results and changelog. `main` holds only the plain agent and
-what every family shares; its docs only index the families. Shared fixes are
-made on `main` and merged into the family branches.
-
-Best result = test achievements on the 30 fixed worlds
-(`docs/eval_results.json` at `archive/full-2026-11-08`). The rule mask reads
-the game's action rules, so **masked runs count as cheating**; for those the
-best run without the mask is given too.
-
-| branch | family | runs | best result |
+| run | branch | rule mask | achievements |
 |---|---|---|---|
-| `family/rssm2` | Map model: a second, slower RSSM (RSSM-2) that predicts a coarse map of the level (honest or privileged targets) or serves as a memory (memory target), with potential and survival reward shaping | `map_stage5`, `map_survive`, `map_potential`, `map_noshift`, `map_pot_fixed`, `priv_map`, `honest_map`, `honest_map_fix`, `abl_rssm2` | 6.17 ± 0.34 `honest_map` (pre-fix code; `priv_map` also 6.17); fixed code 5.70 ± 0.21 `honest_map_fix` |
-| `family/v` | Goal manager: v1-v1.3 (a manager over hand-written tech-tree goals; v1.2 adds a shared two-headed critic and held goals) and v2 (learned goal codebook, RSSM-2 as memory, curiosity) | `mgr`, `mgr2`, `mgr3`, `mgr4`, `mgr3_fix` ×3, `v12_nomask`, `v2`, `v2cur`, `v2_fix` ×3, `v2_norules`, `abl_manager` ×2 | 9.97 ± 0.36 `mgr3` (v1.2) — masked, counted as cheating; without the mask 6.03 ± 0.33 `v12_nomask` |
-| `family/next` | The next agent: v1.2's named goals on v2 (memory RSSM-2, shared critic, curiosity); taste on the manager at `lam_mgr 0`, i.e. no taste | `next_notaste` (crashed), `next_lam0`, `next_nomask` (training now) | 11.20 ± 0.41 `next_lam0` — masked, counted as cheating; `next_nomask` (no mask) not scored yet |
-| `family/taste` | Taste: a per-action logit bias learned from the critic's advantage (taste over actions), or an internal reward on the manager's goal choice (taste on the manager) | `abl_taste`, `v2_taste`, `next_taste` | 9.80 ± 0.42 `next_taste` — masked, counted as cheating; without the mask 5.33 ± 0.19 `v2_taste` |
-| `family/masked` | B1/B2/B3 rule-validity experiments: B1 feeds the action-validity flags to the encoder, B2 masks impossible actions, B3 learns the mask | `expB_input`, `expB_mask`, `expB_mask_fix` ×3, `expB3`, `expB3fix`, `calib_obs`, `calib_latent` | 8.40 ± 0.54 `expB_mask` (B2) — masked, counted as cheating; without the mask 6.30 ± 0.33 `expB_input` (B1, rule flags as input) |
-| tag `archive/full-2026-11-08` | The full pre-split code (`49a6bc3`): every family side by side, plus the reward-cause head (off in every run) | every run above | all results together in its `docs/eval_results.json` |
+| `v12_nomask`: manager v1.2 without the mask | `family/v` | no | 6.03 ± 0.33 |
+| `abl_manager`: RSSM-2 + the v1.2 manager, no curiosity, no mask | `family/v` | no | 5.77 |
+| `abl_rssm2`: RSSM-2 alone | `family/rssm2` | no | 5.33 |
+| `mgr3_fix`: manager v1.2 | `family/v` | masked | 8.77 |
+| `next_taste`: the next agent with taste on the manager | `family/taste` | masked | 9.80 ± 0.42 (60 worlds: 9.38) |
 
-Every run is reproducible from the tag with its flags (`config.yaml` in its
-logdir). Until a family branch exists, use the tag.
+Taste hurt: `next_lam0` leads `next_taste` by +1.92 ± 0.41 on 60 worlds
+([`docs/taste-on-manager.md`](docs/taste-on-manager.md)).
+
+## Equivalence with the pre-split code
+
+**PENDING.** The check against `49a6bc3` is written but has not reported
+yet: the GPU box became unreachable while it ran. For each of the flag sets
+`plain`, `next_lam0`, `next_nomask` (and `next_notaste`) it builds the agent
+from both codes on CPU (seed 0) and compares the parameter tree (names,
+shapes, dtypes) and initial values, a 65-step rollout in two seeded Craftax
+worlds (observations, actions, every policy output), probe and greedy
+acting, the parameters and metrics after four train steps on that batch,
+and the report metrics; plus init-only parameter trees at `size50m`. It
+also compares `next_lam0` with `next_notaste` on this branch, which should
+differ only in taste's own variables and `taste/*` metrics (taste at
+`lam_mgr 0` adds exactly zero). Until it has run, treat "behaves exactly as
+the pre-split code" as designed for (same module and parameter names, RNG
+order and loss order) but not yet verified.
+
+Runs trained before 2026-10-11 used buggy RSSM-2 code that no branch
+reproduces exactly (`docs/rssm2-step-alignment.md`). None of this family's
+runs is affected: all were trained on `~/vtmgr` = `49a6bc3`, which has the
+fixes.
+
+## Docs
+
+- [`docs/design-manager.md`](docs/design-manager.md): the manager, goals, the
+  shared critic, the goal stream.
+- [`docs/design-v2.md`](docs/design-v2.md): RSSM-2 as a memory, curiosity.
+- [`docs/rssm2-step-alignment.md`](docs/rssm2-step-alignment.md): why training
+  and acting read the same RSSM-2 state.
+- [`docs/taste-on-manager.md`](docs/taste-on-manager.md): why `lam_mgr 0` is
+  the no-taste control, and why taste hurt.
+- [`docs/audit-2026-10-11.md`](docs/audit-2026-10-11.md): the outside audit.
+- [`HANDOFF.md`](HANDOFF.md): working log of this family; the full log is in
+  `HANDOFF.md` at tag `archive/full-2026-11-08`.
+- [`CHANGELOG.md`](CHANGELOG.md).

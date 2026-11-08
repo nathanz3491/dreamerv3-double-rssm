@@ -26,11 +26,14 @@ BIN = 50_000
 TAIL = 100_000
 
 # (run, label, colour or None for grey context, z-order)
-# Main lists the plain runs only; each family branch lists its own runs.
+# family/next lists the plain baselines and next_lam0. next_lam0 uses the rule
+# mask (counted as cheating), so its label says so; next_nomask, the honest
+# run, joins this list once it has finished and its curve is in docs/curves/.
 RUNS = [
     ('vanilla', 'vanilla DreamerV3 (old code)', '#52514e', 3),
     ('abl_plain', 'plain DreamerV3 (fixed code)', '#2a78d6', 4),
     ('abl_plain_s1', 'plain DreamerV3 (fixed code), seed 1', '#eb6834', 4),
+    ('next_lam0', 'next, no taste (masked: cheating)', '#1baf7a', 4),
 ]
 
 plt.rcParams.update({
