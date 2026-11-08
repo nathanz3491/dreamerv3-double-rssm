@@ -146,10 +146,12 @@ python -m pytest embodied/tests/test_replay.py -k save_skip
   reward, the goal codebook on empty batches, goal starts at replay
   boundaries, greedy acting.
 
-The other tests in `embodied/tests/test_replay.py` call `Replay.dataset`,
-which this `Replay` does not have; they fail the same way on `main` and on
-the pre-split code. `embodied/tests/test_parallel.py` and `test_train.py`
-need the `zerofun` package (upstream).
+The other tests in `embodied/tests/test_replay.py` (53) call
+`Replay.dataset`, which this `Replay` does not have, and two in
+`embodied/tests/test_driver.py` fail with a `KeyError`; all of them fail the
+same way on the pre-split code. `embodied/tests/test_parallel.py` and
+`test_train.py` need the `zerofun` package (upstream). The whole suite
+otherwise passes (259 tests, CPU, Craftax installed).
 
 ## Score
 

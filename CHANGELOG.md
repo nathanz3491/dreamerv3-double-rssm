@@ -44,15 +44,27 @@ Craftax adapter, the scoring tools, the general fixes) are in `main`'s
   report are regenerated.
 
 ### Changed
-- **Split: this branch holds the goal-manager family only.** Against the
-  pre-split code on CPU, the plain flags give a bit-identical agent: parameter
-  names, shapes, dtypes and initial values, policy outputs (train, greedy,
-  probe), parameters after four train steps on fixed batches, and the train
-  and report metrics. The same check for the flags of `v12_nomask`, `v2_fix`,
-  `abl_manager`, `mgr`, `mgr4` and `v2cur` was started but its results were
-  lost when the GPU box became unreachable; it is still to be confirmed. All
-  16 runs' flags parse, and the parsed config equals each run's saved
-  `config.yaml` on every key both have.
+- **Split: this branch holds the goal-manager family only.** Checked against
+  the pre-split code on CPU (parameter names, shapes, dtypes and initial
+  values; policy outputs in train, greedy and probe mode; parameters and
+  optimizer state after three and four train steps on fixed batches; train
+  and report metrics):
+  - bit-identical for the plain flags and those of `v2_fix` and
+    `abl_manager`;
+  - `v12_nomask`, `mgr`, `mgr4`, `v2cur`: identical except 1-5 recorded
+    elements of the initial arrays (a ~1e-310 denormal in a zero-initialised
+    optimizer slot; or a few weights out of millions, by up to 6e-5). Every
+    value computed from those arrays is identical, including the same weights
+    after training, and the denormal also differs between two runs of the
+    pre-split code, so these are faults in the recorded copy, not code
+    differences. The box segfaulted in `xla_extension.so` in about one run in
+    four during these checks.
+
+  All 16 runs' flags parse, and the parsed config equals each run's saved
+  `config.yaml` on every key both have. Tests: `pytest dreamerv3
+  embodied/tests` (without the two `zerofun` modules) gives 259 passed, 55
+  failed; the 55 (53 in `test_replay.py`, `Replay.dataset`; 2 in
+  `test_driver.py`, a `KeyError`) fail the same way on the pre-split code.
 - The rule mask always leaves NOOP, the moves and DO allowed (the pre-split
   `valid.exempt_basic True`, which every run used).
 - `test_craftax_valid` carries its own game oracle (`make_oracle`) instead of
