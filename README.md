@@ -1,9 +1,10 @@
 # DreamerV3 on Craftax: the market agent (`family/market`)
 
-**Status: being built, not trained yet.** Built so far: the survival goals
-(`env.craftax.goals_survival`), the slope quota (`env.craftax.quota.enabled`)
-and the Q-heads at a fixed price (`agent.market.enabled`). Every new part is
-behind a flag that defaults off, so with the defaults the code is
+**Status: built, not trained yet.** Every part of the design is built: the
+survival goals (`env.craftax.goals_survival`), the slope quota
+(`env.craftax.quota.enabled`), the Q-heads at a fixed price
+(`agent.market.enabled`) and the moving price (`agent.market.shift`). None has
+been run. Every new part is behind a flag that defaults off, so with the defaults the code is
 `family/next`'s agent. The design is
 [docs/design-market.md](docs/design-market.md); its table says which parts are
 built. The base, `next_nomask`, is the honest next agent from `family/next`. For
@@ -53,6 +54,31 @@ python dreamerv3/main.py --logdir ~/logdir/next_nomask \
 Taste at `lam_mgr 0.0` adds exactly zero. Its runs and results live on
 `family/next`.
 
+## The three ablation runs
+
+Each adds to `next_nomask`'s flags (below as `$NEXT`) the survival goals and
+one more layer of the market. The rule mask stays off. The runs are
+cumulative; one run each, about 16 h:
+
+```bash
+NEXT="--configs craftax size50m --env.craftax.survival none   --env.craftax.valid_obs True --env.craftax.goals_obs True   --agent.mapmodel.enabled True --agent.mapmodel.to_actor True   --agent.mapmodel.target memory --agent.valid.mask False   --agent.manager.enabled True --agent.manager.critic shared   --agent.manager.hold 32 --agent.manager.goals named   --agent.curiosity.enabled True   --agent.taste.enabled True --agent.taste.target manager   --agent.taste.center True --agent.taste.pos 1.43 --agent.taste.neg 1.43   --agent.taste.lam_mgr 0.0 --env.craftax.goals_survival True"
+
+# 1. Quota only: does the floor alone help or hurt?
+python dreamerv3/main.py --logdir ~/logdir/market_quota $NEXT   --env.craftax.quota.enabled True
+
+# 2. Quota + Q-heads at a fixed price P* = 0.01: does valuing survival help?
+python dreamerv3/main.py --logdir ~/logdir/market_fixed $NEXT   --env.craftax.quota.enabled True --agent.market.enabled True
+
+# 3. The full market: does a moving price beat a fixed one?
+python dreamerv3/main.py --logdir ~/logdir/market_full $NEXT   --env.craftax.quota.enabled True --agent.market.enabled True   --agent.market.shift True
+```
+
+Constants (`env.craftax.quota.*`, `agent.market.*`) are untuned defaults; each
+is documented in `dreamerv3/configs.yaml` and chosen in
+[docs/design-market.md](docs/design-market.md). With none of the flags the code
+is `family/next`'s agent. The box's own launch rules (memory guard, detached
+start) apply.
+
 ## Install
 
 ```bash
@@ -68,7 +94,10 @@ python -m pytest dreamerv3/
 python -m pytest embodied/tests/test_replay.py -k save_skip
 ```
 
-`test_audit_fixes.py`, `test_taste.py` and `test_mapmodel_step.py` need JAX.
+`test_audit_fixes.py`, `test_taste.py`, `test_mapmodel_step.py` and
+`test_market.py` need JAX. `test_quota.py`, `test_market_math.py` and
+`test_market_config.py` run without it (the two env tests in `test_quota.py`
+need Craftax).
 The craftax tests are skipped without Craftax. The other tests in
 `embodied/tests/test_replay.py` fail with
 `'Replay' object has no attribute 'dataset'` here and at `49a6bc3` alike.

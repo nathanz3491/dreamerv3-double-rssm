@@ -14,6 +14,7 @@ from . import mapmodel as mapmod
 from . import rssm
 from . import craftax_valid as cvalid
 from . import craftax_goals as cgoals
+from . import market as mktlib
 from . import taste
 from embodied.jax import outs as jouts
 
@@ -274,9 +275,10 @@ class Agent(embodied.jax.Agent):
     # the imagined lambda-returns of the action actually taken (_q_loss), each
     # against its own running return scale.
     self._market = bool(config.market.enabled)
+    self._shift = self._market and bool(config.market.shift)
+    assert self._market or not config.market.shift, 'shift needs market.enabled'
     if self._market:
       mk = config.market
-      assert not mk.shift, 'the moving price is the next stage'
       assert not self._valid_mask, 'the rule mask counts as cheating'
       self._price0 = float(mk.price0)
       qspace = elements.Space(np.float32, (self._n_act,))
@@ -285,11 +287,31 @@ class Agent(embodied.jax.Agent):
           **config.qhead, name='qhead')
       self.qsnorm = embodied.jax.Normalize(**config.retnorm, name='qsnorm')
       self.qlnorm = embodied.jax.Normalize(**config.retnorm, name='qlnorm')
+    # The moving price (market.py, design §3). A small net reads how the
+    # observation changed over the last k steps and outputs the mean of a
+    # Gaussian over two curve shifts. It acts (policy_keys), so it runs on the
+    # policy device; the draw, its input and the price are written to replay,
+    # and it learns from the stored draws (_market_loss): its own loss, its own
+    # parameters, no gradient from anywhere else.
+    if self._shift:
+      assert self._use_map, 'the observation history rides in the RSSM-2 carry'
+      assert obs_space['vector'].shape == (mktlib.M.OBS_LEN,), obs_space
+      self._mk = mk
+      self.mkt = embodied.jax.MLPHead(
+          elements.Space(np.float32, (2,)), 'mse', layers=int(mk.layers),
+          units=int(mk.hidden), act='silu', norm='rms', outscale=0.0,
+          winit='trunc_normal_in', name='mkt')
+      # The REINFORCE baseline: a running mean of the window return.
+      self.mbase = embodied.jax.Normalize(
+          impl='meanstd', rate=float(mk.brate), limit=1e-8, debias=True,
+          name='mbase')
 
     self.modules = [
         self.dyn, self.enc, self.dec, self.rew, self.con, self.pol, self.val]
     if self._market:
       self.modules.append(self.qhead)
+    if self._shift:
+      self.modules.append(self.mkt)
     if self._valid_mask:
       self.modules.append(self.feas)
     if self._use_map:
@@ -314,6 +336,8 @@ class Agent(embodied.jax.Agent):
       scales.pop('feas', None)
     if not self._market:
       scales.pop('qhead', None)
+    if not self._shift:
+      scales.pop('mkt', None)
     if not self._use_mgr:
       scales.pop('gphi', None)
       scales.pop('mpolicy', None)
@@ -330,6 +354,8 @@ class Agent(embodied.jax.Agent):
       keys.append('mapmodel')
     if self._use_mgr:
       keys.append('mgr')            # the manager picks goals while acting
+    if self._shift:
+      keys.append('mkt')            # and the market sets the price
     return '^(' + '|'.join(keys) + ')/'
 
   @property
@@ -342,6 +368,13 @@ class Agent(embodied.jax.Agent):
       # it: imagination and the replay value loss resume from them.
       spaces['goal'] = elements.Space(np.int32, (), 0, self._goals)
       spaces['gphase'] = elements.Space(np.int32, (), 0, self._hold)
+    if self._shift:
+      # The price when the step was acted, the market net's draw behind it and
+      # its input: value and replay losses read the price, the net's own loss
+      # reads the draw.
+      spaces['pstar'] = elements.Space(np.float32)
+      spaces['mshift'] = elements.Space(np.float32, (2,))
+      spaces['mfeat'] = elements.Space(np.float32, (mktlib.N_FEAT,))
     if self.config.replay_context:
       entries = dict(
           enc=self.enc.entry_space,
@@ -399,7 +432,13 @@ class Agent(embodied.jax.Agent):
       # in the RSSM-2 carry because the manager reads RSSM-2.
       carry['goal'] = jnp.zeros((batch_size,), i32)
       carry['gphase'] = jnp.zeros((batch_size,), i32)
-    return nn.cast(carry)
+    carry = nn.cast(carry)
+    if self._shift:
+      # The last k observations, oldest first, kept in f32: the market reads
+      # their differences.
+      carry['mhist'] = jnp.zeros(
+          (batch_size, int(self._mk.k), mktlib.M.OBS_LEN), f32)
+    return carry
 
   def init_train(self, batch_size):
     return self.init_policy(batch_size)
@@ -447,6 +486,9 @@ class Agent(embodied.jax.Agent):
     if self._use_mgr:
       out['goal'] = goal
       out['gphase'] = phase
+    if self._shift:
+      map_carry, mout = self._market_act(map_carry, obs, reset)
+      out.update(mout)
     carry = (enc_carry, dyn_carry, dec_carry, map_carry, act)
     if self.config.replay_context:
       entries = dict(enc=enc_entry, dyn=dyn_entry, dec=dec_entry)
@@ -498,8 +540,75 @@ class Agent(embodied.jax.Agent):
 
   # --- the market (docs/design-market.md) ------------------------------------
   def _price(self, obs):
-    """(B, T) P* at each step of a batch. Fixed at price0 for now."""
+    """(B, T) P* at each step of a batch: the price stored when the step was
+    acted (the market's), or price0 where it is fixed."""
+    if self._shift:
+      return f32(obs['pstar'])
     return jnp.full(obs['is_first'].shape, self._price0, f32)
+
+  def _market_mean(self, x, bdims):
+    """The market net's mean draw (..., 2) from Delta-env features (..., F).
+    The change is symlog-squashed: some scalars move by tenths, others by whole
+    units."""
+    return f32(self.mkt(nn.cast(nn.symlog(f32(x))), bdims).pred())
+
+  def _market_price(self, z):
+    """(..., 2) draws -> (log P*, log Q*, shifts)."""
+    mk = self._mk
+    sh = mktlib.shifts(f32(z), float(mk.bound), float(mk.dead), jnp)
+    logp, logq = mktlib.equilibrium(
+        sh[..., 0], sh[..., 1], float(mk.price0), float(mk.eps_s),
+        float(mk.eps_d), float(mk.a_s), float(mk.a_d), jnp)
+    return logp, logq, sh
+
+  def _market_act(self, carry, obs, reset):
+    """One acting step of the market. Delta-env is this observation against
+    the one k steps ago (a new episode has no past: it compares with itself,
+    so the change is zero and the price sits at its baseline); the net's mean
+    plus Gaussian noise is the draw; the draw sets the shifts and the price.
+    Returns the carry with the history pushed, and what replay stores."""
+    vec = f32(obs['vector'])
+    hist = f32(carry['mhist'])
+    old = jnp.where(reset[:, None], vec, hist[:, 0])
+    x = mktlib.delta_env(vec, old, jnp)
+    mu = self._market_mean(x, 1)
+    z = mu
+    if not self._greedy:
+      z = mu + float(self._mk.sigma) * jax.random.normal(nj.seed(), mu.shape)
+    logp, _, _ = self._market_price(z)
+    pushed = jnp.concatenate([hist[:, 1:], vec[:, None]], 1)
+    fresh = jnp.broadcast_to(vec[:, None], pushed.shape)
+    carry = {**carry, 'mhist': jnp.where(reset[:, None, None], fresh, pushed)}
+    return carry, {'pstar': jnp.exp(logp), 'mshift': z, 'mfeat': x}
+
+  def _market_loss(self, obs, update):
+    """REINFORCE on the stored draws: -(R - b) log pi(z | x), R the
+    achievements in the next `window` steps (within the sequence and the
+    episode), b a running mean of R. The draw is the net's action, the
+    achievements are its return; steps without a full window carry no loss.
+    Also logs the price and the quantity the curves cross at. (B, T) loss."""
+    mk = self._mk
+    z, x = f32(obs['mshift']), f32(obs['mfeat'])
+    logpi = mktlib.gauss_logp(
+        z, self._market_mean(x, 2), float(mk.sigma), jnp)
+    ach = f32(obs['ach']).sum(-1)
+    # A report batch is shorter than a training one: clamp the window to it.
+    window = min(int(mk.window), ach.shape[1] - 1)
+    ret, ok = mktlib.window_returns(ach, obs['is_first'], window, jnp)
+    ok = f32(ok)
+    base = self.mbase.stats()[0]
+    n = ok.sum()
+    mean = jnp.where(n > 0, (ret * ok).sum() / jnp.maximum(n, 1.0), base)
+    if update:
+      self.mbase.update(mean)
+    loss = -sg(ret - base) * logpi * ok
+    logp, logq, sh = self._market_price(z)
+    mets = {'ret': mean, 'baseline': base, 'logpi': logpi.mean(),
+            'logp': logp.mean(), 'logp_std': logp.std(), 'logq': logq.mean(),
+            'shift_s': jnp.abs(sh[..., 0]).mean(),
+            'shift_d': jnp.abs(sh[..., 1]).mean(),
+            'valid_frac': ok.mean()}
+    return loss, mets
 
   def _alive(self, con):
     """The survival reward at imagined states: 1 while alive, cut by the
@@ -990,6 +1099,11 @@ class Agent(embodied.jax.Agent):
       metrics['memory/recall'] = rec
       metrics['memory/gate'] = self.mapmodel.gate()
 
+    if self._shift:
+      mloss, mmets = self._market_loss(obs, training)
+      losses['mkt'] = mloss
+      metrics.update(prefix(mmets, 'market'))
+
     B, T = reset.shape
     shapes = {k: v.shape for k, v in losses.items()}
     assert all(x == (B, T) for x in shapes.values()), ((B, T), shapes)
@@ -1238,6 +1352,8 @@ class Agent(embodied.jax.Agent):
     keys = list(self.obs_space)
     if self._use_mgr:
       keys += ['goal', 'gphase']      # what the agent pursued at each step
+    if self._shift:
+      keys += ['pstar', 'mshift', 'mfeat']    # the market at each step
     obs = {k: data[k] for k in keys}
     prepend = lambda x, y: jnp.concatenate([x[:, None], y[:, :-1]], 1)
     prevact = {k: prepend(prevact[k], data[k]) for k in self.act_space}

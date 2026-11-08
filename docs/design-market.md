@@ -1,6 +1,6 @@
 # Design: the market agent (`family/market`)
 
-Status: **being built, not trained yet.** Decided with the user on 2026-11-08.
+Status: **built, not trained yet.** Decided with the user on 2026-11-08.
 Points marked *proposed* are implementation choices still open to change. The
 [Open questions](#open-questions) section lists what is undecided; where the
 code had to choose, the choice is recorded there as "chosen: …".
@@ -8,6 +8,7 @@ code had to choose, the choice is recorded there as "chosen: …".
 | part | status | flag (default off) |
 |---|---|---|
 | §1, §2 Q-heads, fixed P\* | built | `agent.market.enabled` |
+| §3 the market (moving price) | built | `agent.market.shift` (needs `agent.market.enabled`) |
 | §4 slope quota | built | `env.craftax.quota.enabled` |
 | §5 survival goals | built | `env.craftax.goals_survival` |
 
@@ -141,6 +142,50 @@ describe the base. Taste stays at `lam_mgr 0`, where it is inert.
   - *Proposed:* treat the two shifts as a stochastic action of a tiny policy.
     Train it by REINFORCE on real experience, rewarded by achievements over the
     next window, with a running baseline.
+- **Built** (`--agent.market.enabled True --agent.market.shift True`; needs
+  the RSSM-2 memory, since the history rides in its carry; `market.py` holds
+  the maths, `agent.py` `_market_act` / `_market_loss`). Chosen, where the
+  design left it open (constants are untuned; sweep them):
+  - *Sensing.* `delta_env`: the 51-scalar block after the 9×11 tile grid
+    (`craftax_map` layout constants) is subtracted, x_t − x_{t−8}; the grid is
+    one number, 1 − cos(view_t, view_{t−8}) (0 for two empty views, 1 for one
+    empty view). 52 features. The agent keeps the last 8 raw observations in
+    the policy carry (`mhist`, f32, in the RSSM-2 carry dict); a new episode
+    fills it with its first observation, so its first 8 steps compare with the
+    episode start (zero change at step 0, price at its baseline).
+  - *Net.* `mkt`: a 2-layer, 64-wide MLP (its first layer is the linear
+    projection) on symlog of the features, output = the mean of a Gaussian over
+    the two shifts (zero-initialised, so it starts at the baseline price). The
+    draw z ~ N(μ, 0.1²) is the net's action; each shift is
+    `bound · tanh(deadzone(z))` with bound B = 2.3 (price at most ×/÷10 from
+    the baseline) and dead zone 0.05 (half the noise std: a draw that small
+    does not move the price). Greedy acting uses z = μ.
+  - *Curves.* ε_s = ε_d = 1, A_s = 1, A_d derived so that with no shift the
+    curves cross at `price0` (0.01): log A_d = (ε_s + ε_d) · log price0.
+    log P\* = ((log A_d + Δd) − (log A_s + Δs)) / (ε_s + ε_d); log Q\* =
+    log A_s + Δs + ε_s · log P\*. Both are logged (`market/logp`,
+    `market/logq`); only P\* acts.
+  - *P\* in replay.* Computed on the real observation in `policy()` and stored
+    with the step (`pstar`, plus the draw `mshift` and the features `mfeat`, so
+    the loss needs no history). Imagination holds the value at each rollout's
+    starting state; the replay value loss uses each step's own.
+  - *Training (open question 1).* REINFORCE on real experience only, no
+    imagination: loss −(R − b) · log π(z | x), where R = achievements in the
+    next `window` = 32 steps inside the training sequence (64 long) and the same
+    episode, b = a running mean of R (rate 0.01, debiased). Steps without a full
+    window carry no loss (about half of each sequence). The net's loss is its
+    own and no gradient reaches it from elsewhere.
+  - **Known weakness, not fixed here.** The price at step t reaches the actor
+    only through the weights trained at that step's rollouts (the actor does not
+    see P\*; only the critic and the value targets do). So R, the achievements
+    after step t, depends on the draw z_t only very weakly, and the REINFORCE
+    gradient is mostly noise. A price that is *consistent* in a kind of state
+    (what the net can learn) matters more than the per-step draw, but nothing
+    credits it directly. If the full-market run does no better than the fixed
+    price, suspect this before the constants. The cheap structural fixes, not
+    built: hold the draw for a whole episode (credit = that episode's
+    achievements), or feed log P\* to the actor so that acting under a price is
+    a thing the actor can learn.
 
 ### 4. Slope quota
 
@@ -221,13 +266,16 @@ describe the base. Taste stays at `lam_mgr 0`, where it is inert.
 ## Open questions
 
 1. **Market-net training.** Is REINFORCE on real experience enough, or does it
-   need imagination? What window and baseline does its reward use?
+   need imagination? What window and baseline does its reward use? Chosen:
+   real experience, a 32-step window, a running-mean baseline (§3); see its
+   known weakness.
 2. **L_nom** for the death charge (chosen: the running mean, §4):
    - a fixed number;
    - or the agent's running mean lifespan, which lets old agents escape
      (proposed).
 3. **Constants.** The baselines A_s and A_d, elasticities ε_s and ε_d, tanh
-   bound B, and dead-zone width.
+   bound B, and dead-zone width. Chosen, untuned: A_s = 1, A_d from `price0`,
+   ε = 1 and 1, B = 2.3, dead zone 0.05, σ = 0.1 (§3).
 4. **Q-head output:** scalar or distributional? Shared trunk with the critic?
    Chosen: scalar, own trunk (§2).
 5. **Mid-life change test:**

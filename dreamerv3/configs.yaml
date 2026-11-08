@@ -103,7 +103,7 @@ defaults:
     coordinator_address: ''
 
   agent:
-    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, feas: 1.0, gphi: 1.0, mpolicy: 1.0, memfut: 1.0, memrec: 1.0, curio: 1.0, qhead: 1.0}
+    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, feas: 1.0, gphi: 1.0, mpolicy: 1.0, memfut: 1.0, memrec: 1.0, curio: 1.0, qhead: 1.0, mkt: 1.0}
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
@@ -163,8 +163,19 @@ defaults:
     # (Q(a) minus the best other action's Q) as an input, stop-gradient. price0
     # is P*, the survival bought by one unit of score: fixed at price0 unless
     # shift. Per step alive 1 x 0.01 against achievements worth 1-8 every few
-    # hundred steps keeps survival from swamping score. shift is not built yet.
-    market: {enabled: False, shift: False, price0: 0.01}
+    # hundred steps keeps survival from swamping score.
+    # shift (needs mapmodel): P* moves (design section 3). A net (hidden wide,
+    # `layers` deep) reads the observation's change over the last `k` steps
+    # (non-view part subtracted, the view as 1 - cos) and outputs the mean of a
+    # Gaussian (std `sigma`) over two shifts, d log A_supply and d log A_demand;
+    # each is bound x tanh after a dead zone `dead`. Curves are log-linear:
+    # log P* = (log A_d - log A_s) / (eps_s + eps_d). a_s is the supply
+    # baseline, a_d the demand baseline (0: derived so that the baseline price
+    # is price0). The draw, P* and the net's input are stored in replay; the net
+    # is trained by REINFORCE: -(R - b) log pi, R the achievements in the next
+    # `window` steps inside the sequence, b a running mean (rate `brate`).
+    # window must be below batch_length - replay_context. Untuned constants.
+    market: {enabled: False, shift: False, price0: 0.01, k: 8, a_s: 1.0, a_d: 0.0, eps_s: 1.0, eps_d: 1.0, bound: 2.3, dead: 0.05, sigma: 0.1, window: 32, brate: 0.01, hidden: 64, layers: 2}
     qhead: {layers: 2, units: 512, act: silu, norm: rms, outscale: 0.0, winit: trunc_normal_in}
     memhead: {layers: 2, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in}
     gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}

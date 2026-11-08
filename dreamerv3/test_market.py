@@ -160,3 +160,153 @@ def test_q_loss_weights_a_dream_by_its_survival():
                    jnp.ones((N, T)), con)
   loss = np.asarray(loss)
   assert loss[0, 0] > 0 and (loss[0, 1:] == 0).all()
+
+
+# --- the moving price ------------------------------------------------------------
+from dreamerv3 import craftax_map as M  # noqa: E402
+from dreamerv3 import market as K  # noqa: E402
+
+
+class _Base:
+  """The REINFORCE baseline, fixed, remembering what it was updated with."""
+
+  def __init__(self, b=0.0):
+    self.b, self.seen = b, []
+
+  def stats(self):
+    return f32(self.b), f32(1.0)
+
+  def update(self, x):
+    self.seen.append(float(x))
+
+
+def _market(mu=(0.0, 0.0), base=0.0, **kw):
+  cfg = dict(k=8, sigma=0.3, bound=2.3, dead=0.05, price0=0.01, eps_s=1.0,
+             eps_d=1.0, a_s=1.0, a_d=0.0, window=4)
+  cfg.update(kw)
+  mu = f32(mu)
+  a = types.SimpleNamespace(
+      _mk=types.SimpleNamespace(**cfg), _greedy=True, _shift=True,
+      mkt=lambda x, bdims: types.SimpleNamespace(
+          pred=lambda: jnp.broadcast_to(mu, (*x.shape[:-1], 2))),
+      mbase=_Base(base), _price0=cfg['price0'])
+  for name in ('_market_mean', '_market_price'):
+    setattr(a, name, functools.partial(getattr(agentlib.Agent, name), a))
+  return a
+
+
+def _carry(k=8, B=1):
+  return {'mhist': jnp.zeros((B, k, M.OBS_LEN), f32)}
+
+
+def test_market_compares_with_the_observation_k_steps_ago():
+  a = _market()
+  rng = np.random.default_rng(0)
+  T = 14
+  vecs = rng.random((T, 1, M.OBS_LEN)).astype(np.float32)
+  firsts = np.zeros(T, bool)
+  firsts[0] = firsts[10] = True
+  carry, start = _carry(), 0
+  for t in range(T):
+    if firsts[t]:
+      start = t
+    carry, out = agentlib.Agent._market_act(
+        a, carry, {'vector': jnp.asarray(vecs[t])}, jnp.array([firsts[t]]))
+    want = K.delta_env(vecs[t], vecs[max(start, t - 8)])
+    np.testing.assert_allclose(np.asarray(out['mfeat']), want, atol=1e-5)
+
+
+def test_market_price_is_the_baseline_when_nothing_changes():
+  a = _market()
+  v = jnp.asarray(np.random.default_rng(1).random((1, M.OBS_LEN)), f32)
+  carry, out = agentlib.Agent._market_act(a, _carry(), {'vector': v},
+                                          jnp.array([True]))
+  np.testing.assert_allclose(np.asarray(out['pstar']), 0.01, rtol=1e-5)
+  carry, out = agentlib.Agent._market_act(a, carry, {'vector': v},
+                                          jnp.array([False]))
+  np.testing.assert_allclose(np.asarray(out['pstar']), 0.01, rtol=1e-5)
+
+
+def test_market_price_follows_the_draw():
+  # Greedy: the draw is the net's mean. Demand shifted up raises the price.
+  a = _market(mu=(0.0, 0.5))
+  v = jnp.zeros((1, M.OBS_LEN), f32)
+  _, out = agentlib.Agent._market_act(a, _carry(), {'vector': v},
+                                      jnp.array([True]))
+  sh = 2.3 * np.tanh(0.45)
+  want = 0.01 * np.exp(sh / 2)
+  np.testing.assert_allclose(np.asarray(out['pstar']), want, rtol=1e-4)
+  np.testing.assert_allclose(np.asarray(out['mshift']), [[0.0, 0.5]])
+
+
+def test_market_history_is_f32_and_keeps_its_shape():
+  a = _market()
+  v = jnp.ones((2, M.OBS_LEN), f32)
+  carry, _ = agentlib.Agent._market_act(
+      a, _carry(B=2), {'vector': v}, jnp.array([True, False]))
+  assert carry['mhist'].shape == (2, 8, M.OBS_LEN)
+  assert carry['mhist'].dtype == jnp.float32
+  assert float(carry['mhist'][:, -1].min()) == 1.0
+
+
+def _loss_batch(T=8, ach_at=(), firsts=(0,), z=(0.4, -0.2)):
+  ach = np.zeros((1, T, 22), np.float32)
+  for t in ach_at:
+    ach[0, t, 0] = 1.0
+  first = np.zeros((1, T), bool)
+  first[0, list(firsts)] = True
+  return {'mshift': jnp.broadcast_to(f32(z), (1, T, 2)),
+          'mfeat': jnp.zeros((1, T, K.N_FEAT), f32),
+          'ach': jnp.asarray(ach), 'is_first': jnp.asarray(first)}
+
+
+def test_market_loss_rewards_draws_followed_by_achievements():
+  obs = _loss_batch(ach_at=(3,))          # windows (0,3], (1,4], (2,5] hold it
+  def total(mu):
+    a2 = _market(mu=mu, window=3, sigma=0.5)
+    loss, _ = agentlib.Agent._market_loss(a2, obs, False)
+    return loss.sum(), loss
+  (val, loss), grad = jax.value_and_grad(total, has_aux=True)(f32([0.0, 0.0]))
+  loss = np.asarray(loss)[0]
+  # Only steps with a window that holds the achievement have a nonzero loss;
+  # the steps after t = 5 have no full window.
+  assert (loss[:3] != 0).all() and (loss[3:] == 0).all()
+  # The draw (0.4, -0.2) was followed by an achievement: descent moves the
+  # mean toward it, so d loss / d mu points away from the draw.
+  g = np.asarray(grad)
+  assert g[0] < 0 and g[1] > 0
+
+
+def test_market_loss_penalises_draws_when_the_baseline_was_higher():
+  obs = _loss_batch(ach_at=())            # nothing follows; baseline expects 1
+  a = _market(base=1.0, window=3, sigma=0.5)
+  loss, mets = agentlib.Agent._market_loss(a, obs, True)
+  assert (np.asarray(loss)[0, :5] != 0).all()
+  assert a.mbase.seen == [0.0]            # the baseline tracks the mean return
+  assert float(mets['valid_frac']) == pytest.approx(5 / 8)
+
+
+def test_market_loss_skips_windows_into_the_next_episode():
+  a = _market(window=3)
+  obs = _loss_batch(ach_at=(1,), firsts=(0, 4))
+  loss, mets = agentlib.Agent._market_loss(a, obs, False)
+  ok = np.asarray(loss)[0] != 0
+  # t = 1..3 would end at 4..6, in the new episode; t = 4, 5 start in it.
+  assert not ok[1:4].any()
+
+
+def test_market_loss_logs_the_price_and_quantity():
+  a = _market(window=3)
+  _, mets = agentlib.Agent._market_loss(a, _loss_batch(), False)
+  sh = K.shifts(np.array([0.4, -0.2]), 2.3, 0.05)
+  logp, logq = K.equilibrium(sh[0], sh[1], 0.01, 1.0, 1.0)
+  assert float(mets['logp']) == pytest.approx(float(logp), abs=1e-4)
+  assert float(mets['logq']) == pytest.approx(float(logq), abs=1e-4)
+
+
+def test_the_stored_price_is_what_value_reads():
+  a = _market()
+  obs = {'is_first': jnp.zeros((2, 3), bool),
+         'pstar': jnp.full((2, 3), 0.07, f32)}
+  got = np.asarray(agentlib.Agent._price(a, obs))
+  assert (got == np.float32(0.07)).all()

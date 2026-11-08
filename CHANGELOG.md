@@ -12,6 +12,15 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **The moving price** (design §3): `--agent.market.shift True` (with
+  `agent.market.enabled`; needs the RSSM-2 memory). A small net reads the
+  observation's change over 8 steps (non-view subtracted, the view as 1 - cos)
+  and draws two curve shifts; log-linear supply and demand cross at P*. P* is
+  computed in `policy()`, stored in replay with the draw, held through each
+  imagined rollout, and logged with Q* (`market/logp`, `market/logq`). The net
+  learns by REINFORCE on the achievements in the next 32 steps. `dreamerv3/market.py`
+  (pure numpy maths); tests `test_market_math.py` (no JAX) and
+  `test_market.py` (JAX). See the design's known weakness on credit.
 - **Q-heads and a fixed price P\*** (design §1, §2): `--agent.market.enabled
   True` adds Q_score and Q_life (43 scalar outputs each, their own small MLP on
   the actor's input, trained on imagined lambda-returns of the action taken).
