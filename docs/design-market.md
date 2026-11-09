@@ -9,7 +9,7 @@ code had to choose, the choice is recorded there as "chosen: …".
 |---|---|---|
 | §1, §2 Q-heads, fixed P\* | built | `agent.market.enabled` |
 | §3 the market (moving price) | built | `agent.market.shift` (needs `agent.market.enabled`) |
-| §4 slope quota | built | `env.craftax.quota.enabled` |
+| §4 slope quota (v1 `window`, v2 `log`) | built | `env.craftax.quota.enabled`, `.mode` |
 | §5 survival goals | built | `env.craftax.goals_survival` |
 
 ## The idea in one paragraph
@@ -237,6 +237,59 @@ describe the base. Taste stays at `lam_mgr 0`, where it is inert.
     once per N steps, not every step.
   - The statistics live in the env process and are not checkpointed; a resumed
     run relearns them in a few episodes.
+
+#### Quota v2: a logarithmic floor (`env.craftax.quota.mode log`)
+
+v1 is kept as `mode window` (the default, so v1 runs reproduce exactly). Why a
+second version: in the first v1 run (`market_quota`) the agent got fewer
+achievements per life than its base (3.5 against 4.4 at 322k steps) and its
+early ones came later. Two flaws of the design above:
+
+1. **The per-window clock rewards pacing.** The window restarts at each
+   achievement, so grabbing several early uses their windows up and spreading
+   them out saves penalty.
+2. **The death charge is one big lump** (-10 or more: every window left up to
+   L_nom), far larger than anything else in the reward.
+
+- **The measured curve.** On 50 lives of the trained base agent, the
+  achievements unlocked so far against the step within the life fit
+  `2.24 * ln(1 + t/11.5)` best (R^2 0.72; a straight line has R^2 0.10). Fast
+  at first, then flat: most of a life's achievements come early, and lives are
+  short (median about 245 steps). A floor should have that shape, so that it
+  asks for a lot early, little later, and never the impossible.
+- **The formula.** F(t) = frac * a * ln(1 + t/c), t the step within the life.
+  (a, c) are fitted to the agent's own recent lives (bounded memory): the unlock
+  points (t_k, k) of the last `fit_lives` completed lives, refitted by least
+  squares at every life's end. For each c on a log-spaced grid of 64 values from
+  0.5 to 500 the best a is closed form, a = sum(k g) / sum(g^2) with
+  g = ln(1 + t/c); the lowest residual wins and a finer grid between its
+  neighbours refines it (no scipy). A life with no achievement counts as a life
+  but adds no points. Until `min_lives` lives are recorded there is no floor and
+  no penalty. The floor follows the agent: as it improves, the bar rises.
+- **The check.** Every `every` steps of a life, if the count of achievements
+  unlocked this life is below F(t), the reward gets -k. An achievement restarts
+  nothing: being ahead banks credit, so there is no reason to hold achievements
+  back (flaw 1), and a burst early then a pause stays free while the count is
+  above F.
+- **Death.** At death (terminal, not a timeout), -k * `death_cap` if the count is
+  below F(t), else 0: one capped charge instead of a lump (flaw 2). It is paid
+  on top of a check on the same step. *Chosen:* the simple form; charging the
+  failing checks up to a nominal life was left out.
+- **Keys** (`mode log`; each mode ignores the other's keys): `frac 0.5`,
+  `every 100`, `death_cap 1`, `fit_lives 50`, `min_lives 5`; `k` is shared.
+  `frac 0.5` because the fit is the average life: half of it is a floor the
+  agent can clear in most lives, not the median.
+- **Logging (both modes).** Metrics only; they change neither the reward nor
+  what the agent sees. With `logs` the env emits, per step, `log/quota_pen`
+  (the check penalty, positive), `log/quota_death` (the death charge, positive),
+  `log/quota_floor` (non-zero on a life's last step only: F(t) in v2, the
+  window N(n) in v1) and, in v2, `log/quota_a` and `log/quota_c` (the fit in
+  force during the life). The run's metrics aggregate each per life as
+  `<key>/sum`, `/avg` and `/max`: read `pen` and `death` at `/sum`, `floor` at
+  `/sum` (its end-of-life value) and `a`, `c` at `/max`.
+- **Built:** `dreamerv3/quota.py` (`LogQuota`, `make`), tests in
+  `dreamerv3/test_quota.py` (fit recovery, no penalty before `min_lives`,
+  banking, capped death charge, v1 unchanged).
 
 ### 5. Survival goals for the manager
 

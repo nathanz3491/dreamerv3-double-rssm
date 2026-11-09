@@ -17,6 +17,8 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
   AttributeError. A test-only fix; no agent code changed.
 
 ### Changed
+- `market_fixed` and `market_full` now run on quota v2 (their README launch
+  commands add `--env.craftax.quota.mode log`); `market_quota` stays v1.
 - The market's consumers now read the price: `log(P*/price0)` (stop-gradient)
   joins the actor's, the critic's (and slow critic's) and the manager's input
   whenever `agent.market.enabled`; constant 0 under the fixed price. Needs
@@ -24,6 +26,19 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
   price net's per-step credit was mostly noise. Off changes nothing.
 
 ### Added
+- **Quota v2** (design §4): `--env.craftax.quota.mode log` (`LogQuota` in
+  `dreamerv3/quota.py`). A logarithmic floor F(t) = frac * a * ln(1 + t/c),
+  (a, c) refitted at each life's end by least squares (closed-form a on a
+  log-spaced c grid, no scipy) to the unlock points of the last `fit_lives`
+  lives; every `every` steps a count below F(t) costs -k, with no restart on an
+  achievement (so no pacing), and a death below F(t) costs one capped
+  -k * `death_cap` instead of v1's lump. No floor before `min_lives` lives. New
+  keys `mode` (`window`, the default: v1 unchanged), `frac 0.5`, `every 100`,
+  `death_cap 1`, `fit_lives 50`, `min_lives 5`. Tests in `test_quota.py`.
+- Quota logging, both modes: `log/quota_pen`, `log/quota_death`,
+  `log/quota_floor` (and `log/quota_a`, `log/quota_c` in v2) with `logs`.
+  Metrics only: the reward and the observations are unchanged.
+- Launch `market_quota2` (market_quota's flags + `--env.craftax.quota.mode log`).
 - **The moving price** (design §3): `--agent.market.shift True` (with
   `agent.market.enabled`; needs the RSSM-2 memory). A small net reads the
   observation's change over 8 steps (non-view subtracted, the view as 1 - cos)

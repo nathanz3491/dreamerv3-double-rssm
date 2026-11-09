@@ -2,7 +2,7 @@
 
 **Status: built, not trained yet.** Every part of the design is built: the
 survival goals (`env.craftax.goals_survival`), the slope quota
-(`env.craftax.quota.enabled`), the Q-heads at a fixed price
+(`env.craftax.quota.enabled`, v1 `mode window` or v2 `mode log`), the Q-heads at a fixed price
 (`agent.market.enabled`) and the moving price (`agent.market.shift`). None has
 been run. Every new part is behind a flag that defaults off, so with the defaults the code is
 `family/next`'s agent. The design is
@@ -20,8 +20,9 @@ market:
   survival one unit of score is worth.
 - **Who uses it.** The critic, the actor and the manager all value things at
   P\*, through per-action Q-heads for score and for life.
-- **The floor.** A slope quota, at least one achievement per window, keeps the
-  agent pursuing score.
+- **The floor.** A quota keeps the agent pursuing score. v1 (`mode window`):
+  at least one achievement per window. v2 (`mode log`): at least a logarithmic
+  floor fitted to the agent's own recent lives (design §4).
 - **The manager's goals** get v1.3's survival goals (DRINK, EAT) beside the 13
   named goals, so that it can act on a high price for survival.
 
@@ -66,12 +67,21 @@ NEXT="--configs craftax size50m --env.craftax.survival none   --env.craftax.vali
 # 1. Quota only: does the floor alone help or hurt?
 python dreamerv3/main.py --logdir ~/logdir/market_quota $NEXT   --env.craftax.quota.enabled True
 
+# 1b. The same on quota v2, the logarithmic floor (market_quota's flags + mode log)
+python dreamerv3/main.py --logdir ~/logdir/market_quota2 $NEXT   --env.craftax.quota.enabled True --env.craftax.quota.mode log
+
 # 2. Quota + Q-heads at a fixed price P* = 0.01: does valuing survival help?
-python dreamerv3/main.py --logdir ~/logdir/market_fixed $NEXT   --env.craftax.quota.enabled True --agent.market.enabled True
+python dreamerv3/main.py --logdir ~/logdir/market_fixed $NEXT   --env.craftax.quota.enabled True --env.craftax.quota.mode log --agent.market.enabled True
 
 # 3. The full market: does a moving price beat a fixed one?
-python dreamerv3/main.py --logdir ~/logdir/market_full $NEXT   --env.craftax.quota.enabled True --agent.market.enabled True   --agent.market.shift True
+python dreamerv3/main.py --logdir ~/logdir/market_full $NEXT   --env.craftax.quota.enabled True --env.craftax.quota.mode log --agent.market.enabled True   --agent.market.shift True
 ```
+
+`market_fixed` and `market_full` run on quota v2 (`--env.craftax.quota.mode
+log`); `market_quota` is the v1 run (`mode window`, the default), kept as the
+comparison. The quota's per-life penalty, death charge, floor and fit are logged
+as `log/quota_pen`, `_death`, `_floor` (and `_a`, `_c` in v2), each as
+`<key>/sum`, `/avg`, `/max`.
 
 Constants (`env.craftax.quota.*`, `agent.market.*`) are untuned defaults; each
 is documented in `dreamerv3/configs.yaml` and chosen in
