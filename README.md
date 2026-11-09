@@ -164,15 +164,17 @@ between two single runs is not evidence. Use 60 worlds and several seeds.
 
 | run | rule mask | achievements ± SE | 60 worlds | status |
 |---|---|---|---|---|
-| `next_nomask` | no (honest) | not scored | not scored | started 2026-11-08 09:26 CST; killed at ~74k env steps by the box's out-of-memory crash (11:35, exit 137; logdir moved to `next_nomask_oom`); a fresh restart was stopped by request at 11:46. Needs relaunching (`~/run_nomask.sh`). |
+| `next_nomask` | no (honest) | 5.63 ± 0.27 | 5.82 ± 0.17 | run 2026-11-09 00:22–17:42 CST (`~/run_market.sh`); level with `v12_nomask`, ~1 above plain |
 | `vanilla` | no | 4.63 ± 0.22 | | original code, before the 2026-10 fixes |
 | `abl_plain` | no | 4.77 ± 0.28 | | `main`'s plain agent (seed 1 also 4.77) |
 | `next_lam0` | **masked: counted as cheating** | 11.20 ± 0.41 | 11.30 ± 0.27 | best run of the project, not a headline result |
 | `next_notaste` | masked | none | | crashed three times on GPU faults; `next_lam0` stands in |
 
-`next_nomask` decides whether the next agent is any good without cheating:
-score it on 60 worlds and read it against `next_lam0`, against `v12_nomask`
-below, and against plain (4.77).
+`next_nomask` is the honest measure of the next agent. On 60 worlds it scores
+5.82 ± 0.17: level with `v12_nomask` (6.13 on the same 60 worlds), about one
+achievement above plain (4.77), and 5.5 below `next_lam0`. Without the mask the
+next agent's parts add nothing over manager v1.2. Its lives are short (mean 249
+steps; 17 of 30 deaths from thirst).
 
 Comparison points from other families (their runs and docs are on their own
 branches; 30 worlds unless noted; a single-run gap under ~1.1 is not

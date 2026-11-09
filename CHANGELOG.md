@@ -12,6 +12,11 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **`next_nomask`'s score**, the honest measure of the next agent: 5.63 ± 0.27 on
+  the 30 fixed worlds, 5.82 ± 0.17 on 60 (rerun 2026-11-09 00:22–17:42 CST).
+  Level with `v12_nomask` (6.13 on the same 60 worlds) and 5.5 below
+  `next_lam0`, so without the mask the next agent adds nothing over manager
+  v1.2. Entry in `docs/eval_results.json`; README results updated.
 - **Branch `family/next`: the next agent**, re-added on top of `main` from the
   pre-split code (`49a6bc3`, tag `archive/full-2026-11-08`): v1.2's named-goal
   manager on v2's parts.
