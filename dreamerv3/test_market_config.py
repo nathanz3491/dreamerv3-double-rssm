@@ -28,6 +28,13 @@ def test_the_quota_is_off_by_default():
   assert _defaults()['env']['craftax']['quota']['enabled'] is False
 
 
+def test_the_quota_defaults_to_v1_and_v2_has_its_keys():
+  q = _defaults()['env']['craftax']['quota']
+  assert q['mode'] == 'window'            # v1 runs reproduce exactly
+  assert (q['frac'], q['every'], q['death_cap']) == (0.5, 100, 1.0)
+  assert (q['fit_lives'], q['min_lives']) == (50, 5)
+
+
 def test_market_constants_are_sane():
   cfg, full = _defaults()['agent'], _defaults()
   mk = cfg['market']

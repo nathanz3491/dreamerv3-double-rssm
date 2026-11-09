@@ -24,11 +24,14 @@ repo's own crafter.py. Beyond a plain wrapper:
      from the observation vector alone; neither reaches the encoder. With
      ``goals_survival`` (v1.3, ported from family/v) the two survival goals
      DRINK and EAT follow the 13, so both vectors have 15 entries.
-  8. ``quota``: the market agent's slope quota (dreamerv3/quota.py, design
-     §4) adds a penalty to ``reward`` when a window passes with no new
-     achievement, and charges the skipped windows at death. It reads
-     ``obs['ach']`` and the step count only. ``raw_reward`` and
-     ``log/reward`` stay Craftax's own.
+  8. ``quota``: the market agent's quota (dreamerv3/quota.py, design §4)
+     adds a penalty to ``reward``: ``mode window`` (v1) when a window passes
+     with no new achievement, charging the skipped windows at death;
+     ``mode log`` (v2) when the count of achievements is below a logarithmic
+     floor fitted to the agent's recent lives. It reads ``obs['ach']`` and
+     the step count only. ``raw_reward`` and ``log/reward`` stay Craftax's
+     own. With ``logs`` it also emits ``log/quota_pen``, ``_death``,
+     ``_floor`` (and ``_a``, ``_c`` in v2): metrics only.
 
 dreamerv3's embodied.jax installs a global ``jax_transfer_guard='disallow'`` to
 catch stray host<->device transfers inside the agent. The env legitimately
@@ -90,7 +93,7 @@ class Craftax(embodied.Env):
     if quota and quota.get('enabled', False):
       from dreamerv3 import quota as quotalib
       kw = {k: v for k, v in dict(quota).items() if k != 'enabled'}
-      self._quota = quotalib.Quota(**kw)
+      self._quota = quotalib.make(**kw)
 
     # Everything here touches the host<->device boundary (params pytree, space
     # bounds, RNG key), so it runs under an allow scope; see module docstring.
@@ -143,6 +146,9 @@ class Craftax(embodied.Env):
     if self._logs:
       spaces['log/reward'] = elements.Space(np.float32)
       spaces['log/achievements'] = elements.Space(np.int32)
+      if self._quota is not None:
+        for name in self._quota.LOGS:
+          spaces[f'log/quota_{name}'] = elements.Space(np.float32)
     return spaces
 
   @property
@@ -194,6 +200,7 @@ class Craftax(embodied.Env):
       obs['reward'] = np.float32(reward + self._quota.step(
           int(obs['ach'].sum()), terminal=obs['is_terminal'],
           last=obs['is_last']))
+      obs.update(self._quota_logs(self._quota.info))
     return obs
 
   def _reset(self):
@@ -245,7 +252,18 @@ class Craftax(embodied.Env):
       with self._jax.transfer_guard('allow'):
         obs['log/achievements'] = np.int32(
             np.asarray(state.achievements).sum())
+      if is_first:
+        obs.update(self._quota_logs())
     return obs
+
+  def _quota_logs(self, info=None):
+    """The quota's ``log/quota_*`` metrics (zeros at a life's first step).
+    Read-only: they reach the run's metrics, not the reward or the agent."""
+    if not (self._logs and self._quota is not None):
+      return {}
+    info = info or {}
+    return {f'log/quota_{name}': np.float32(info.get(name, 0.0))
+            for name in self._quota.LOGS}
 
   def _goal_obs(self, vector, is_first):
     phi = self._G.progress(vector, self._goals_survival)
@@ -291,4 +309,5 @@ class Craftax(embodied.Env):
     if self._logs:
       result['log/reward'] = np.float32(0.0)
       result['log/achievements'] = ach_sum
+      result.update(self._quota_logs())
     return result

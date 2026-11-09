@@ -43,8 +43,14 @@ defaults:
     # k x ceil((L_nom - t) / N). lnom 'mean' (running mean lifespan) or a
     # number. A count with fewer than min_obs gaps borrows the window below
     # it, at least init steps; rate is the running means' EMA rate.
+    # quota.mode: window (v1, the default; the keys above) or log (v2, design
+    # §4): every `every` steps of a life, penalty k if the achievements so far
+    # are below frac x a x ln(1 + t/c), (a, c) fitted to the last `fit_lives`
+    # lives (no floor before `min_lives`); at death k x death_cap if below it.
+    # Each mode ignores the other's keys.
     craftax: {logs: False, use_seed: True, valid_obs: False, goals_obs: False, goals_survival: False, survival: none,
-              quota: {enabled: False, k: 1.0, margin: 2.0, lnom: mean, init: 200.0, rate: 0.05, min_obs: 5}}
+              quota: {enabled: False, mode: window, k: 1.0, margin: 2.0, lnom: mean, init: 200.0, rate: 0.05, min_obs: 5,
+                      frac: 0.5, every: 100, death_cap: 1.0, fit_lives: 50, min_lives: 5}}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}
