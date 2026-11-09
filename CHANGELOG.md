@@ -11,6 +11,8 @@ its own changelog on its own branch.
 ## [Unreleased]
 
 ### Changed
+- Family index: `next_nomask` scored (5.63 ± 0.27; 5.82 ± 0.17 on 60 worlds);
+  `family/market` is built and its runs are training.
 - **Split: `main` is now plain DreamerV3 on Craftax.** Every experiment family
   moved out to a branch of its own (indexed in `README.md`); `main` keeps
   upstream DreamerV3, the general fixes, the plain parts of the Craftax adapter
