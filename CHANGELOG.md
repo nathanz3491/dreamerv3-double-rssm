@@ -11,6 +11,13 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 
 ## [Unreleased]
 
+### Added
+- **`market_quota`'s score** (quota v1 only): 6.03 ± 0.24 on the 30 fixed
+  worlds, 6.05 ± 0.18 on 60. That is level with `next_nomask` (5.82 ± 0.17),
+  a paired gap of +0.23 ± 0.23, so the floor alone neither helps nor hurts. The
+  README gains a Results section. `docs/eval_results.json` now holds
+  `next_nomask` and `market_quota`; its text was still `family/next`'s.
+
 ### Fixed
 - `test_market.py::test_fixed_price_is_price0_everywhere`: the agent stand-in
   lacked `_shift` (added with the moving price), so `Agent._price` raised

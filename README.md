@@ -89,6 +89,24 @@ is documented in `dreamerv3/configs.yaml` and chosen in
 is `family/next`'s agent. The box's own launch rules (memory guard, detached
 start) apply.
 
+## Results
+
+| run | quota | achievements ± SE | 60 worlds | status |
+|---|---|---|---|---|
+| `next_nomask` | none | 5.63 ± 0.27 | 5.82 ± 0.17 | the base agent (`family/next`) |
+| `market_quota` | v1 | 6.03 ± 0.24 | 6.05 ± 0.18 | run 2026-11-09 17:42 – 2026-11-10 11:08 CST |
+| `market_quota2` | v2 | | | training since 2026-11-10 18:38 CST |
+| `market_fixed` | v2 | | | queued after `market_quota2` |
+| `market_full` | v2 | | | queued after `market_fixed` |
+
+The quota alone is level with the base agent. Paired world by world on 60
+worlds, `market_quota` is +0.23 ± 0.23 over `next_nomask`. Its lives are
+slightly longer (272 steps against 256). Its deaths split evenly between food,
+drink and mobs, where `next_nomask` mostly died of thirst. During training it
+trailed `next_nomask` by 0.6–1.2 achievements per episode up to 800k env steps.
+It caught up only in the last stretch. Entries are in
+`docs/eval_results.json`.
+
 ## Install
 
 ```bash
