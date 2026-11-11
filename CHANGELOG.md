@@ -12,6 +12,11 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **`market_quota2`'s score** (quota v2 only): 5.30 ± 0.21 on the 30 fixed
+  worlds, 5.38 ± 0.16 on 60. Paired, that is −0.67 ± 0.23 against
+  `market_quota` (v1) and −0.43 ± 0.23 against `next_nomask`. With one run
+  each this gives no sign that the log floor helps. It is added to the README
+  results and to `docs/eval_results.json`.
 - **`market_quota`'s score** (quota v1 only): 6.03 ± 0.24 on the 30 fixed
   worlds, 6.05 ± 0.18 on 60. That is level with `next_nomask` (5.82 ± 0.17),
   a paired gap of +0.23 ± 0.23, so the floor alone neither helps nor hurts. The
@@ -24,6 +29,12 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
   AttributeError. A test-only fix; no agent code changed.
 
 ### Changed
+- The ablations are now a full grid: quota v1 and v2 × {quota only, fixed
+  price, moving price}. `market_fixed_q1` and `market_full_q1` are the v1
+  versions of `market_fixed` and `market_full`. They are queued after
+  `market_fixed`, then `market_full` (v2) runs. Why: quota v2 scored below v1
+  on its own (above), so the best quota for the market layers has to be
+  measured, not assumed.
 - `market_fixed` and `market_full` now run on quota v2 (their README launch
   commands add `--env.craftax.quota.mode log`); `market_quota` stays v1.
 - The market's consumers now read the price: `log(P*/price0)` (stop-gradient)

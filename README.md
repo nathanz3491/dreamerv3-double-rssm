@@ -55,11 +55,13 @@ python dreamerv3/main.py --logdir ~/logdir/next_nomask \
 Taste at `lam_mgr 0.0` adds exactly zero. Its runs and results live on
 `family/next`.
 
-## The three ablation runs
+## The ablation grid
 
 Each adds to `next_nomask`'s flags (below as `$NEXT`) the survival goals and
-one more layer of the market. The rule mask stays off. The runs are
-cumulative; one run each, about 16 h:
+one or more layers of the market. The rule mask stays off. The layers are
+cumulative (quota only, then Q-heads at a fixed price, then a moving price).
+Each layer runs on both quotas, v1 and v2, which gives six runs, one each,
+about 17.5 h apiece:
 
 ```bash
 NEXT="--configs craftax size50m --env.craftax.survival none   --env.craftax.valid_obs True --env.craftax.goals_obs True   --agent.mapmodel.enabled True --agent.mapmodel.to_actor True   --agent.mapmodel.target memory --agent.valid.mask False   --agent.manager.enabled True --agent.manager.critic shared   --agent.manager.hold 32 --agent.manager.goals named   --agent.curiosity.enabled True   --agent.taste.enabled True --agent.taste.target manager   --agent.taste.center True --agent.taste.pos 1.43 --agent.taste.neg 1.43   --agent.taste.lam_mgr 0.0 --env.craftax.goals_survival True"
@@ -75,11 +77,17 @@ python dreamerv3/main.py --logdir ~/logdir/market_fixed $NEXT   --env.craftax.qu
 
 # 3. The full market: does a moving price beat a fixed one?
 python dreamerv3/main.py --logdir ~/logdir/market_full $NEXT   --env.craftax.quota.enabled True --env.craftax.quota.mode log --agent.market.enabled True   --agent.market.shift True
+
+# 2b, 3b. The same two on quota v1 (mode window, the default)
+python dreamerv3/main.py --logdir ~/logdir/market_fixed_q1 $NEXT   --env.craftax.quota.enabled True --agent.market.enabled True
+python dreamerv3/main.py --logdir ~/logdir/market_full_q1 $NEXT   --env.craftax.quota.enabled True --agent.market.enabled True   --agent.market.shift True
 ```
 
-`market_fixed` and `market_full` run on quota v2 (`--env.craftax.quota.mode
-log`); `market_quota` is the v1 run (`mode window`, the default), kept as the
-comparison. The quota's per-life penalty, death charge, floor and fit are logged
+Runs without a suffix after `market_quota` use quota v2 (`--env.craftax.quota.mode
+log`). `market_quota` and the `_q1` runs use v1 (`mode window`). The box's runs
+also pass `--env.craftax.logs True`, which adds metrics only. The v2 and `_q1`
+runs use code 93873d1. `market_quota` used 297635f, whose v1 quota code is the
+same. The quota's per-life penalty, death charge, floor and fit are logged
 as `log/quota_pen`, `_death`, `_floor` (and `_a`, `_c` in v2), each as
 `<key>/sum`, `/avg`, `/max`.
 
@@ -95,17 +103,24 @@ start) apply.
 |---|---|---|---|---|
 | `next_nomask` | none | 5.63 ± 0.27 | 5.82 ± 0.17 | the base agent (`family/next`) |
 | `market_quota` | v1 | 6.03 ± 0.24 | 6.05 ± 0.18 | run 2026-11-09 17:42 – 2026-11-10 11:08 CST |
-| `market_quota2` | v2 | | | training since 2026-11-10 18:38 CST |
-| `market_fixed` | v2 | | | queued after `market_quota2` |
-| `market_full` | v2 | | | queued after `market_fixed` |
+| `market_quota2` | v2 | 5.30 ± 0.21 | 5.38 ± 0.16 | run 2026-11-10 18:38 – 2026-11-11 12:13 CST |
+| `market_fixed` | v2 | | | training since 2026-11-11 12:13 CST |
+| `market_fixed_q1` | v1 | | | queued next (`~/run_market3.sh`) |
+| `market_full_q1` | v1 | | | queued |
+| `market_full` | v2 | | | queued last |
 
 The quota alone is level with the base agent. Paired world by world on 60
 worlds, `market_quota` is +0.23 ± 0.23 over `next_nomask`. Its lives are
 slightly longer (272 steps against 256). Its deaths split evenly between food,
 drink and mobs, where `next_nomask` mostly died of thirst. During training it
 trailed `next_nomask` by 0.6–1.2 achievements per episode up to 800k env steps.
-It caught up only in the last stretch. Entries are in
-`docs/eval_results.json`.
+It caught up only in the last stretch.
+
+Quota v2 gives no sign of helping. Paired on 60 worlds, `market_quota2` is
+0.67 ± 0.23 below `market_quota` and 0.43 ± 0.23 below `next_nomask`. It led v1
+slightly up to ~300k env steps. It then stayed near 4.2 achievements per
+training episode until ~950k, while v1 climbed. These are single runs, so this
+does not show that v2 is worse. Entries are in `docs/eval_results.json`.
 
 ## Install
 
