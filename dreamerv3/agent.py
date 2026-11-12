@@ -47,9 +47,11 @@ class Agent(embodied.jax.Agent):
     #   'goalphi'    the goal-progress head's training target;
     #   'goalreach'  read by the manager alone;
     #   'valid'      the rule flags (env.craftax.valid_obs): the label of the
-    #                mask head when valid.mask is on, otherwise unused.
+    #                mask head when valid.mask is on, otherwise unused;
+    #   'shape'      the potential shaping (env.craftax.survival potential):
+    #                the `shp` head's target, a reward term like 'reward'.
     exclude = ('is_first', 'is_last', 'is_terminal', 'reward', 'ach',
-               'goalphi', 'goalreach', 'valid')
+               'goalphi', 'goalreach', 'valid', 'shape')
     enc_space = {k: v for k, v in obs_space.items() if k not in exclude}
     dec_space = {k: v for k, v in obs_space.items() if k not in exclude}
     self.enc = {
@@ -236,6 +238,13 @@ class Agent(embodied.jax.Agent):
 
     self.rew = embodied.jax.MLPHead(scalar, **config.rewhead, name='rew')
     self.con = embodied.jax.MLPHead(binary, **config.conhead, name='con')
+    # The potential shaping (env.craftax.survival potential) comes as its own
+    # key and gets its own head, built like 'rew'. In imagination it is added
+    # to what the critic and the manager see, but never to the score the
+    # market's Q-head learns: that stays the game reward plus the quota.
+    self._shape = 'shape' in obs_space
+    if self._shape:
+      self.shp = embodied.jax.MLPHead(scalar, **config.rewhead, name='shp')
 
     d1, d2 = config.policy_dist_disc, config.policy_dist_cont
     outs = {k: d1 if v.discrete else d2 for k, v in act_space.items()}
@@ -313,6 +322,8 @@ class Agent(embodied.jax.Agent):
         self.dyn, self.enc, self.dec, self.rew, self.con, self.pol, self.val]
     if self._market:
       self.modules.append(self.qhead)
+    if self._shape:
+      self.modules.append(self.shp)
     if self._shift:
       self.modules.append(self.mkt)
     if self._valid_mask:
@@ -339,6 +350,8 @@ class Agent(embodied.jax.Agent):
       scales.pop('feas', None)
     if not self._market:
       scales.pop('qhead', None)
+    if not self._shape:
+      scales.pop('shp', None)
     if not self._shift:
       scales.pop('mkt', None)
     if not self._use_mgr:
@@ -1024,6 +1037,8 @@ class Agent(embodied.jax.Agent):
         dec_carry, repfeat, reset, training)
     inp = sg(self.feat2tensor(repfeat), skip=self.config.reward_grad)
     losses['rew'] = self.rew(inp, 2).loss(obs['reward'])
+    if self._shape:
+      losses['shp'] = self.shp(inp, 2).loss(obs['shape'])
     if self._use_mgr:
       # Goal progress from the latent, so the actor's goal reward exists inside
       # imagination. Trained like 'rew': from the world-model feature, never
@@ -1172,11 +1187,15 @@ class Agent(embodied.jax.Agent):
       ainp = self.actor2tensor(imgfeat, imgmapfeat)
     rew = self.rew(inp, 2).pred()
     con = self.con(inp, 2).prob(1)
+    rew_score = rew                  # the score: game reward plus the quota
+    if self._shape:
+      rew = rew + self.shp(inp, 2).pred()
     if self._market:
       # Valued at P*: the reward the actor-critic and the manager see is the
-      # score plus P* per step alive, at the rollout's held price.
+      # score (plus the shaping) plus P* per step alive, at the rollout's held
+      # price. The score Q-head learns from rew_score alone.
       alive = self._alive(con)
-      rew_score, rew = rew, rew + price[:, None] * alive
+      rew = rew + price[:, None] * alive
     if self._use_mgr:
       ainp = jnp.concatenate([ainp, self._goalfeat(goals, phases)], -1)
       cinp = self._mgr_input(ainp, start2, flags)
@@ -1249,6 +1268,8 @@ class Agent(embodied.jax.Agent):
       feat = sg(repfeat, skip=self.config.repval_grad)
       last, term, rew = [obs[k] for k in ('is_last', 'is_terminal', 'reward')]
       boot = imgloss_out['ret'][:, 0].reshape(B, K)
+      if self._shape:
+        rew = rew + obs['shape']     # what the critic learns in imagination
       feat, last, term, rew, boot = jax.tree.map(
           lambda x: x[:, -K:], (feat, last, term, rew, boot))
       if self._market:

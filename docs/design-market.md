@@ -307,6 +307,45 @@ early ones came later. Two flaws of the design above:
 - Like the named goals, they are hand-written: game knowledge accepted for now,
   as in `next`.
 
+### 6. market12: v1.2's tech-tree potential (2026-11-12)
+
+What the grid showed:
+- The scored market runs trail `v12_nomask` mostly on WAKE_UP (sleep), saplings
+  and the stone line.
+- Without WAKE_UP, quota v2 alone is level with every honest run.
+- All market runs nearly stopped sleeping by 200k env steps, `next_nomask`
+  did not. The quota alone does not explain it: its charges are about 0.2 to
+  0.3 per life, and a sleep lasts about 16 steps.
+
+What market12 keeps and drops:
+- **Kept:** the market as built here.
+- **Taken from v1.2:** the one piece that is not a map label, the tech-tree
+  potential.
+- **Dropped:** curiosity, which v2 used instead of that potential.
+
+Choices, each made with the user:
+- **Potential only.** v1.2's map labels and map target are not ported. They
+  are a large `agent.py` change, and they would replace the memory RSSM-2 that
+  the moving price needs. v1.2's lead over `next_nomask` (+0.31 on 60 worlds)
+  is within noise, so neither piece is shown to matter.
+- **Shaping kept out of the score.** The env sends F = γ·Φ(s′) − Φ(s) as
+  `obs['shape']`, not in `reward`. Φ is handed back at a true death, so dying
+  never keeps the climb.
+  - The agent's `shp` head learns it from the world-model feature, like `rew`.
+  - The critic, the manager and the replay value see game + quota + shaping
+    (+ P\*·alive).
+  - The score Q-head sees game + quota only, so §1's "score" stays the game's.
+- **Quota v1 and a fixed price.** These are the best scored quota and the
+  simpler market.
+- **No curiosity**, as in v1.2.
+
+Open:
+- Three death charges stack: Φ's hand-back, quota v1's skipped windows, and
+  the end of P\*·alive. Their sum is untuned.
+- Φ is game knowledge (the tech-tree spine), like the named goals.
+- Nothing here targets sleep directly. If market12 still does not sleep, a
+  SLEEP (energy) goal beside DRINK and EAT is the next step.
+
 ## How it will be judged
 
 - **Headline.** Achievements on the 30 fixed test worlds

@@ -12,6 +12,18 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **`market12`: the market on v1.2's tech-tree potential.** It uses
+  `env.craftax.survival potential`, ported from `family/v`'s env (the potential
+  only, no map labels or map target), plus quota v1 and the Q-heads at a fixed
+  price, with curiosity off. The shaping goes out as its own observation key,
+  `shape`, not into `reward`. A new head, `shp` (loss scale `shp`), learns it.
+  In imagination and in the replay value it is added for the critic and the
+  manager, never for the score Q-head. New keys: `env.craftax.phi_scale` and
+  `phi_gamma` (family/v's defaults). New tests: `dreamerv3/test_shaping.py`.
+  With `survival none` nothing changes.
+- **Why `market12`:** on 60 worlds the market runs lose most of their gap to
+  `v12_nomask` on WAKE_UP (sleep), saplings and the stone line. Without
+  WAKE_UP, quota v2 alone matches every honest run.
 - **`market_fixed`'s score** (quota v2 + Q-heads at a fixed price): 5.10 ±
   0.30 on the 30 fixed worlds, 5.37 ± 0.19 on 60, with the longest lives yet
   (285 steps). Paired on 60 worlds: −0.02 ± 0.27 against `market_quota2`,
@@ -27,6 +39,12 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
   a paired gap of +0.23 ± 0.23, so the floor alone neither helps nor hurts. The
   README gains a Results section. `docs/eval_results.json` now holds
   `next_nomask` and `market_quota`; its text was still `family/next`'s.
+
+### Changed
+- **The grid drops `market_full` (quota v2 + moving price) and adds
+  `market12`.** Quota v2 stopped the agent sleeping (WAKE_UP 0.00 in training
+  from 200k env steps), so another v2 run was judged not worth 19 GPU hours.
+  The queue is now `market_fixed_q1` → `market12` → `market_full_q1`.
 
 ### Fixed
 - **A NaN in one observation no longer kills a run.** `market_fixed_q1` died

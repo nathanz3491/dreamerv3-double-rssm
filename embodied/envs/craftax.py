@@ -32,6 +32,9 @@ repo's own crafter.py. Beyond a plain wrapper:
      the step count only. ``raw_reward`` and ``log/reward`` stay Craftax's
      own. With ``logs`` it also emits ``log/quota_pen``, ``_death``,
      ``_floor`` (and ``_a``, ``_c`` in v2): metrics only.
+  9. ``survival potential``: v1.2's tech-tree potential shaping (ported from
+     family/v), sent as its own key ``obs['shape']`` and never added to
+     ``reward``. The agent's ``shp`` head learns it (market12, README).
 
 dreamerv3's embodied.jax installs a global ``jax_transfer_guard='disallow'`` to
 catch stray host<->device transfers inside the agent. The env legitimately
@@ -58,11 +61,15 @@ class Craftax(embodied.Env):
 
   def __init__(self, task='symbolic', size=None, seed=0, logs=False,
                valid_obs=False, goals_obs=False, goals_survival=False,
-               survival='none', quota=None):
-    # Reward shaping lives on family/rssm2 and family/v; this branch has the
-    # stock reward only. The argument stays so `--env.craftax.survival none`
-    # still parses.
-    assert survival == 'none', survival
+               survival='none', phi_scale=4.0, phi_gamma=0.997, quota=None):
+    # Reward shaping. 'none' is the stock reward. 'potential' is v1.2's
+    # tech-tree potential (family/v, craftax_potential.potential): F =
+    # gamma * PHI(s') - PHI(s), with PHI handed back at a true death. Unlike
+    # family/v it is NOT added to `reward`: it goes out as its own key
+    # `shape`, so the market's score Q-head can learn from the game reward
+    # plus the quota alone while the critic and the manager get both
+    # (agent.py, `shp`). The meters mode (v1.3) is not ported.
+    assert survival in ('none', 'potential'), survival
     assert task in ('symbolic',), task  # pixels: add 'Craftax-Pixels-v1' below
     import jax
     from craftax.craftax_env import make_craftax_env_from_name
@@ -87,6 +94,17 @@ class Craftax(embodied.Env):
       self._goals_survival = bool(goals_survival)
       self._n_goals = len(craftax_goals.names(self._goals_survival))
       self._goalreach = np.zeros(self._n_goals, bool)
+    self._survival = survival
+    self._phi_scale = float(phi_scale)
+    self._phi_gamma = float(phi_gamma)
+    self._prev_phi = None
+    if survival == 'potential':
+      from dreamerv3 import craftax_potential
+      from craftax.craftax.constants import Achievement
+      self._P = craftax_potential
+      # By index, not iteration order: Craftax's Achievement enum is not
+      # declared in value order, and the state's achievements are by value.
+      self._ach_names = [Achievement(i).name for i in range(len(Achievement))]
     # The slope quota keeps its running statistics across this env's
     # episodes; `quota` is the config group env.craftax.quota.
     self._quota = None
@@ -138,6 +156,8 @@ class Craftax(embodied.Env):
     }
     if self._valid_obs:
       spaces['valid'] = elements.Space(np.float32, (self._num_actions,), 0.0, 1.0)
+    if self._survival == 'potential':
+      spaces['shape'] = elements.Space(np.float32)
     if self._goals_obs:
       spaces['goalphi'] = elements.Space(
           np.float32, (self._n_goals,), 0.0, 1.0)
@@ -190,12 +210,13 @@ class Craftax(embodied.Env):
       # crafter.py encodes via `info['discount'] == 0`; Craftax does not expose
       # timeout separately in `info`, so we derive it from the state timestep).
       timeout = bool(np.asarray(self._state.timestep) >= self._max_timesteps)
+      shape = self._shaping(self._state, self._done and not timeout)
     self._reward += reward
     self._length += 1
     obs = self._obs(
         obs, reward, self._state,
         is_last=self._done,
-        is_terminal=self._done and not timeout)
+        is_terminal=self._done and not timeout, shape=shape)
     if self._quota is not None:
       obs['reward'] = np.float32(reward + self._quota.step(
           int(obs['ach'].sum()), terminal=obs['is_terminal'],
@@ -209,6 +230,10 @@ class Craftax(embodied.Env):
       self._key = key
       obs, self._state = self._reset_fn(subkey)
       obs = self._finite(np.asarray(obs, np.float32))
+      # PHI of the start state, so the first real step is shaped like every
+      # other (family/v: leaving it unset made the episode's shaping sum
+      # depend on the first action).
+      self._prev_phi = self._phi(self._state)
     self._done = False
     self.raw_reward = 0.0
     self._episode += 1
@@ -218,6 +243,23 @@ class Craftax(embodied.Env):
     if self._quota is not None:
       self._quota.begin()
     return self._obs(obs, 0.0, self._state, is_first=True)
+
+  def _phi(self, state):
+    """PHI(s) under 'potential', else None. Caller holds the guard."""
+    if self._survival != 'potential':
+      return None
+    return self._P.potential(state, self._ach_names, self._phi_scale)
+
+  def _shaping(self, state, is_terminal):
+    """gamma * PHI(s') - PHI(s), PHI = 0 at a true death; 0.0 under 'none'.
+    Caller holds the guard."""
+    if self._survival != 'potential':
+      return 0.0
+    phi = self._phi(state)
+    bonus = self._P.shaped(
+        self._prev_phi, phi, self._phi_gamma, terminal=is_terminal)
+    self._prev_phi = phi
+    return bonus
 
   def _finite(self, vector):
     """Replace NaN in Craftax's observation with 0 and say where it was.
@@ -246,7 +288,7 @@ class Craftax(embodied.Env):
     return new
 
   def _obs(self, vector, reward, state,
-           is_first=False, is_last=False, is_terminal=False):
+           is_first=False, is_last=False, is_terminal=False, shape=0.0):
     if is_first:
       ach = np.zeros(self._num_ach, np.float32)
     else:
@@ -261,6 +303,8 @@ class Craftax(embodied.Env):
     )
     if self._valid_obs:
       obs['valid'] = self._V.valid_actions(vector).astype(np.float32)
+    if self._survival == 'potential':
+      obs['shape'] = np.float32(shape)
     if self._goals_obs:
       obs.update(self._goal_obs(vector, is_first))
     if self._logs:
@@ -311,6 +355,7 @@ class Craftax(embodied.Env):
     with self._jax.transfer_guard('allow'):
       obs = self._finite(np.asarray(self._get_obs_fn(state), np.float32))
       ach_sum = np.int32(np.asarray(state.achievements).sum())
+      self._prev_phi = self._phi(state)
     result = dict(
         vector=obs,
         ach=np.zeros(self._num_ach, np.float32),
@@ -320,6 +365,8 @@ class Craftax(embodied.Env):
     # Must match obs_space exactly -- the agent asserts on the key set.
     if self._valid_obs:
       result['valid'] = self._V.valid_actions(obs).astype(np.float32)
+    if self._survival == 'potential':
+      result['shape'] = np.float32(0.0)
     if self._goals_obs:
       result.update(self._goal_obs(obs, is_first=True))
     if self._logs:

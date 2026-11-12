@@ -1,11 +1,13 @@
 # DreamerV3 on Craftax: the market agent (`family/market`)
 
-**Status: built, not trained yet.** Every part of the design is built: the
-survival goals (`env.craftax.goals_survival`), the slope quota
-(`env.craftax.quota.enabled`, v1 `mode window` or v2 `mode log`), the Q-heads at a fixed price
-(`agent.market.enabled`) and the moving price (`agent.market.shift`). None has
-been run. Every new part is behind a flag that defaults off, so with the defaults the code is
-`family/next`'s agent. The design is
+**Status: the quota × market grid is training; three of its six runs are
+scored (see Results).** Every part of the design is built: the survival goals
+(`env.craftax.goals_survival`), the slope quota (`env.craftax.quota.enabled`,
+v1 `mode window` or v2 `mode log`), the Q-heads at a fixed price
+(`agent.market.enabled`) and the moving price (`agent.market.shift`). So is
+`market12` (v1.2's tech-tree potential, `env.craftax.survival potential`; see
+below). Every new part is behind a flag that defaults off, so with the
+defaults the code is `family/next`'s agent. The design is
 [docs/design-market.md](docs/design-market.md); its table says which parts are
 built. The base, `next_nomask`, is the honest next agent from `family/next`. For
 the plain baseline and the index of every family, see `main`.
@@ -98,6 +100,43 @@ is documented in `dreamerv3/configs.yaml` and chosen in
 is `family/next`'s agent. The box's own launch rules (memory guard, detached
 start) apply.
 
+## market12: the market on v1.2's shaping
+
+The grid suggests the market loses most where it stops sleeping and climbing
+past wood, while v1.2 (`v12_nomask` on `family/v`, 6.13 on 60 worlds) is the
+best honest agent so far. `market12` combines the parts chosen on 2026-11-12:
+
+- **v1.2's tech-tree potential** (`--env.craftax.survival potential`),
+  ported from `family/v` without its map labels or map target, so RSSM-2
+  stays the honest memory model. It is potential-based shaping, F = γ·Φ(s′) −
+  Φ(s) with Φ handed back at a true death, so it cannot change the optimal
+  policy. Φ is built from the tech-tree spine, which is game knowledge.
+- **The shaping is kept out of the score.** The env sends it as its own key,
+  `shape`, and leaves `reward` (game reward plus quota) alone. The agent
+  learns it with its own head, `shp`, and adds it to what the critic and the
+  manager see. The market's score Q-head learns from the game reward plus the
+  quota only.
+- **Quota v1** (`mode window`) and **the Q-heads at a fixed price**
+  (`agent.market.enabled`, P\* = 0.01).
+- **No curiosity**, as in v1.2 (v2 used curiosity in place of the potential).
+  Taste (inert at `lam_mgr 0`) and `valid_obs` (unused with the mask off)
+  are dropped too.
+
+```bash
+python dreamerv3/main.py --logdir ~/logdir/market12 \
+  --configs craftax size50m --env.craftax.survival potential \
+  --env.craftax.goals_obs True --env.craftax.goals_survival True \
+  --agent.mapmodel.enabled True --agent.mapmodel.to_actor True \
+  --agent.mapmodel.target memory --agent.valid.mask False \
+  --agent.manager.enabled True --agent.manager.critic shared \
+  --agent.manager.hold 32 --agent.manager.goals named \
+  --env.craftax.quota.enabled True --agent.market.enabled True
+```
+
+Against `market_fixed_q1` it differs in the shaping and in curiosity being off.
+With `survival none` the code trains exactly as before: no `shape` key, no
+`shp` head. Tests: `dreamerv3/test_shaping.py` (needs Craftax).
+
 ## Results
 
 | run | quota | achievements ± SE | 60 worlds | status |
@@ -107,8 +146,9 @@ start) apply.
 | `market_quota2` | v2 | 5.30 ± 0.21 | 5.38 ± 0.16 | run 2026-11-10 18:38 – 2026-11-11 12:13 CST |
 | `market_fixed` | v2 | 5.10 ± 0.30 | 5.37 ± 0.19 | run 2026-11-11 12:13 – 2026-11-12 07:05 CST |
 | `market_fixed_q1` | v1 | | | training, resumed at 90k after a NaN crash |
-| `market_full_q1` | v1 | | | queued |
-| `market_full` | v2 | | | queued last |
+| `market12` | v1 | | | queued next (`~/run_market5.sh`): v1.2's potential, fixed price |
+| `market_full_q1` | v1 | | | queued after `market12` |
+| `market_full` | v2 | | | dropped 2026-11-12: quota v2 stopped the agent sleeping |
 
 The quota alone is level with the base agent. Paired world by world on 60
 worlds, `market_quota` is +0.23 ± 0.23 over `next_nomask`. Its lives are
@@ -147,6 +187,7 @@ python -c "from dreamerv3.craftax_features import validate_against_craftax as v;
 ```bash
 python -m pytest dreamerv3/
 python -m pytest embodied/tests/test_replay.py -k save_skip
+python -m pytest dreamerv3/test_shaping.py      # needs Craftax
 ```
 
 `test_audit_fixes.py`, `test_taste.py`, `test_mapmodel_step.py` and
