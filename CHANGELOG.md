@@ -24,6 +24,15 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
   `next_nomask` and `market_quota`; its text was still `family/next`'s.
 
 ### Fixed
+- **A NaN in one observation no longer kills a run.** `market_fixed_q1` died
+  at 99,990 env steps on the trainer's NaN assert, with a NaN in a sampled
+  `vector`, although every replay chunk saved to disk was finite. The Craftax
+  env now replaces a NaN in its observation with 0 and prints
+  `[craftax] NaN in obs` with the dims, so a run's log shows whether Craftax
+  is the source; finite observations pass unchanged. The trainer's assert
+  now reports the NaN positions instead of the whole array. The rest of the
+  grid runs on this code (the box's `~/vmarket3`); the run resumed from its
+  90k-step checkpoint.
 - `test_market.py::test_fixed_price_is_price0_everywhere`: the agent stand-in
   lacked `_shift` (added with the moving price), so `Agent._price` raised
   AttributeError. A test-only fix; no agent code changed.

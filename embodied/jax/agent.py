@@ -327,7 +327,9 @@ class Agent(embodied.Agent):
     def fn(data):
       for key, value in data.items():
         if np.issubdtype(value.dtype, np.floating):
-          assert not np.isnan(value).any(), (key, value)
+          bad = np.isnan(value)
+          assert not bad.any(), (
+              key, value.shape, int(bad.sum()), np.argwhere(bad)[:20].tolist())
       data = internal.device_put(data, self.train_sharded)
       with self.n_batches.lock:
         counter = self.n_batches.value

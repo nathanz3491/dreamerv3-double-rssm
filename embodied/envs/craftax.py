@@ -182,7 +182,7 @@ class Craftax(embodied.Env):
       self._done = bool(done)
       reward = float(reward)
       self.raw_reward = reward           # Craftax's own reward
-      obs = np.asarray(obs, np.float32)
+      obs = self._finite(np.asarray(obs, np.float32))
       # Craftax's is_game_over (hence `done`) fires on death, boss-defeat AND
       # timeout, and its `discount` is 0 for all three. For correct value
       # bootstrapping we mark only non-timeout endings as terminal -- a timeout
@@ -208,7 +208,7 @@ class Craftax(embodied.Env):
       key, subkey = self._jax.random.split(self._key)
       self._key = key
       obs, self._state = self._reset_fn(subkey)
-      obs = np.asarray(obs, np.float32)
+      obs = self._finite(np.asarray(obs, np.float32))
     self._done = False
     self.raw_reward = 0.0
     self._episode += 1
@@ -218,6 +218,22 @@ class Craftax(embodied.Env):
     if self._quota is not None:
       self._quota.begin()
     return self._obs(obs, 0.0, self._state, is_first=True)
+
+  def _finite(self, vector):
+    """Replace NaN in Craftax's observation with 0 and say where it was.
+
+    market_fixed_q1 died at 100k env steps on the trainer's NaN assert with a
+    NaN in a sampled `vector`, while every chunk saved to disk was finite. If
+    Craftax itself emits a NaN, this keeps one bad step from killing a 19 h
+    run and prints the dims, so the source shows in the run's log. Finite
+    observations pass through unchanged."""
+    bad = np.isnan(vector)
+    if bad.any():
+      print(f'[craftax] NaN in obs: episode {self._episode} step {self._length}'
+            f' dims {np.flatnonzero(bad)[:20].tolist()} ({int(bad.sum())})',
+            flush=True)
+      vector = np.where(bad, np.float32(0), vector)
+    return vector
 
   # --- achievement featurization ---------------------------------------------
   def _newly_unlocked(self, state):
@@ -293,7 +309,7 @@ class Craftax(embodied.Env):
     if self._quota is not None:
       self._quota.begin()
     with self._jax.transfer_guard('allow'):
-      obs = np.asarray(self._get_obs_fn(state), np.float32)
+      obs = self._finite(np.asarray(self._get_obs_fn(state), np.float32))
       ach_sum = np.int32(np.asarray(state.achievements).sum())
     result = dict(
         vector=obs,
