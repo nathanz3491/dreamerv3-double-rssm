@@ -86,7 +86,8 @@ python dreamerv3/main.py --logdir ~/logdir/market_full_q1 $NEXT   --env.craftax.
 Runs without a suffix after `market_quota` use quota v2 (`--env.craftax.quota.mode
 log`). `market_quota` and the `_q1` runs use v1 (`mode window`). The box's runs
 also pass `--env.craftax.logs True`, which adds metrics only. The v2 and `_q1`
-runs use code 93873d1. `market_quota` used 297635f, whose v1 quota code is the
+runs use code 93873d1; from `market_fixed_q1`'s resume on, with the NaN
+guard (see Results). `market_quota` used 297635f, whose v1 quota code is the
 same. The quota's per-life penalty, death charge, floor and fit are logged
 as `log/quota_pen`, `_death`, `_floor` (and `_a`, `_c` in v2), each as
 `<key>/sum`, `/avg`, `/max`.
@@ -104,8 +105,8 @@ start) apply.
 | `next_nomask` | none | 5.63 ± 0.27 | 5.82 ± 0.17 | the base agent (`family/next`) |
 | `market_quota` | v1 | 6.03 ± 0.24 | 6.05 ± 0.18 | run 2026-11-09 17:42 – 2026-11-10 11:08 CST |
 | `market_quota2` | v2 | 5.30 ± 0.21 | 5.38 ± 0.16 | run 2026-11-10 18:38 – 2026-11-11 12:13 CST |
-| `market_fixed` | v2 | | | training since 2026-11-11 12:13 CST |
-| `market_fixed_q1` | v1 | | | queued next (`~/run_market3.sh`) |
+| `market_fixed` | v2 | 5.10 ± 0.30 | 5.37 ± 0.19 | run 2026-11-11 12:13 – 2026-11-12 07:05 CST |
+| `market_fixed_q1` | v1 | | | training, resumed at 90k after a NaN crash |
 | `market_full_q1` | v1 | | | queued |
 | `market_full` | v2 | | | queued last |
 
@@ -121,6 +122,17 @@ Quota v2 gives no sign of helping. Paired on 60 worlds, `market_quota2` is
 slightly up to ~300k env steps. It then stayed near 4.2 achievements per
 training episode until ~950k, while v1 climbed. These are single runs, so this
 does not show that v2 is worse. Entries are in `docs/eval_results.json`.
+
+The Q-heads at a fixed price buy a little life and no score on quota v2.
+Paired on 60 worlds, `market_fixed` is −0.02 ± 0.27 against `market_quota2`
+and −0.45 ± 0.22 against `next_nomask`. Its lives are the longest of the grid
+so far (285 steps, +21 ± 15 over `market_quota2`). Its deaths are mostly
+hunger (31 of 60), then mobs (16) and thirst (13).
+
+`market_fixed_q1` died at 99,990 env steps on a NaN in a sampled observation;
+the replay saved on disk was finite, so the source is unknown. The env now
+zeroes a NaN in Craftax's observation and logs `[craftax] NaN in obs` with the
+dims (the box's `~/vmarket3`, used from `market_fixed_q1`'s resume on).
 
 ## Install
 

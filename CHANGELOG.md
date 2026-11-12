@@ -12,6 +12,11 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **`market_fixed`'s score** (quota v2 + Q-heads at a fixed price): 5.10 ±
+  0.30 on the 30 fixed worlds, 5.37 ± 0.19 on 60, with the longest lives yet
+  (285 steps). Paired on 60 worlds: −0.02 ± 0.27 against `market_quota2`,
+  −0.45 ± 0.22 against `next_nomask`, −0.68 ± 0.27 against `market_quota`.
+  The Q-heads add nothing to quota v2's score and ~20 steps of life.
 - **`market_quota2`'s score** (quota v2 only): 5.30 ± 0.21 on the 30 fixed
   worlds, 5.38 ± 0.16 on 60. Paired, that is −0.67 ± 0.23 against
   `market_quota` (v1) and −0.43 ± 0.23 against `next_nomask`. With one run
