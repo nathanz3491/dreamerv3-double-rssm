@@ -12,6 +12,10 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **`market_fixed_q1`'s score** (quota v1 + Q-heads at a fixed price): 5.27 ±
+  0.23 on the 30 fixed worlds, 4.95 ± 0.19 on 60, the lowest honest run.
+  Paired on 60 worlds: −1.10 ± 0.27 against `market_quota`, −0.87 ± 0.28
+  against `next_nomask`. It almost never sleeps (WAKE_UP 0.04).
 - **`market12`: the market on v1.2's tech-tree potential.** It uses
   `env.craftax.survival potential`, ported from `family/v`'s env (the potential
   only, no map labels or map target), plus quota v1 and the Q-heads at a fixed

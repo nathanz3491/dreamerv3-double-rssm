@@ -145,8 +145,8 @@ With `survival none` the code trains exactly as before: no `shape` key, no
 | `market_quota` | v1 | 6.03 ± 0.24 | 6.05 ± 0.18 | run 2026-11-09 17:42 – 2026-11-10 11:08 CST |
 | `market_quota2` | v2 | 5.30 ± 0.21 | 5.38 ± 0.16 | run 2026-11-10 18:38 – 2026-11-11 12:13 CST |
 | `market_fixed` | v2 | 5.10 ± 0.30 | 5.37 ± 0.19 | run 2026-11-11 12:13 – 2026-11-12 07:05 CST |
-| `market_fixed_q1` | v1 | | | training, resumed at 90k after a NaN crash |
-| `market12` | v1 | | | queued next (`~/run_market5.sh`): v1.2's potential, fixed price |
+| `market_fixed_q1` | v1 | 5.27 ± 0.23 | 4.95 ± 0.19 | run 2026-11-12 07:05 – 2026-11-13 04:13 CST (NaN crash at 100k, resumed from 90k) |
+| `market12` | v1 | | | training since 2026-11-13 04:13 CST (`~/run_market5.sh`): v1.2's potential, fixed price |
 | `market_full_q1` | v1 | | | queued after `market12` |
 | `market_full` | v2 | | | dropped 2026-11-12: quota v2 stopped the agent sleeping |
 
@@ -168,6 +168,13 @@ Paired on 60 worlds, `market_fixed` is −0.02 ± 0.27 against `market_quota2`
 and −0.45 ± 0.22 against `next_nomask`. Its lives are the longest of the grid
 so far (285 steps, +21 ± 15 over `market_quota2`). Its deaths are mostly
 hunger (31 of 60), then mobs (16) and thirst (13).
+
+On quota v1 the Q-heads at a fixed price hurt. `market_fixed_q1` is the
+lowest honest run so far: paired on 60 worlds it is −1.10 ± 0.27 against
+`market_quota` (the same quota without the Q-heads) and −0.87 ± 0.28 against
+`next_nomask`, with lives of about the same length (274 steps). It almost never
+sleeps (WAKE_UP in 4% of test lives, 1% in training from 1M env steps), and
+without WAKE_UP it is still 0.38 below `market_quota`.
 
 `market_fixed_q1` died at 99,990 env steps on a NaN in a sampled observation;
 the replay saved on disk was finite, so the source is unknown. The env now
