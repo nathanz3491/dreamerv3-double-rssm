@@ -391,6 +391,7 @@ class Agent(embodied.jax.Agent):
       spaces['pstar'] = elements.Space(np.float32)
       spaces['mshift'] = elements.Space(np.float32, (2,))
       spaces['mfeat'] = elements.Space(np.float32, (mktlib.N_FEAT,))
+      spaces['mdraw'] = elements.Space(np.float32)   # 1 where a draw was made
     if self.config.replay_context:
       entries = dict(
           enc=self.enc.entry_space,
@@ -454,6 +455,10 @@ class Agent(embodied.jax.Agent):
       # their differences.
       carry['mhist'] = jnp.zeros(
           (batch_size, int(self._mk.k), mktlib.M.OBS_LEN), f32)
+      # The draw in force and the steps it still has to run (market.hold):
+      # 0 left means the next step draws afresh.
+      carry['mz'] = jnp.zeros((batch_size, 2), f32)
+      carry['mleft'] = jnp.zeros((batch_size,), i32)
     return carry
 
   def init_train(self, batch_size):
@@ -581,8 +586,12 @@ class Agent(embodied.jax.Agent):
   def _market_mean(self, x, bdims):
     """The market net's mean draw (..., 2) from Delta-env features (..., F).
     The change is symlog-squashed: some scalars move by tenths, others by whole
-    units."""
-    return f32(self.mkt(nn.cast(nn.symlog(f32(x))), bdims).pred())
+    units. The mean is soft-capped at +-mu_bound (identity near 0), so it stays
+    where the draw's noise still moves the price: past about 2 the shifts'
+    tanh is flat and every draw gives the same price."""
+    raw = f32(self.mkt(nn.cast(nn.symlog(f32(x))), bdims).pred())
+    cap = float(getattr(self._mk, 'mu_bound', 0.0))
+    return cap * jnp.tanh(raw / cap) if cap > 0 else raw
 
   def _market_price(self, z):
     """(..., 2) draws -> (log P*, log Q*, shifts)."""
@@ -598,6 +607,12 @@ class Agent(embodied.jax.Agent):
     the one k steps ago (a new episode has no past: it compares with itself,
     so the change is zero and the price sits at its baseline); the net's mean
     plus Gaussian noise is the draw; the draw sets the shifts and the price.
+
+    A draw is held for `hold` steps (a new episode always draws afresh), so
+    the price stays put long enough for its effect to show in the window the
+    loss credits it with. hold 1 draws every step. `mdraw` marks the steps
+    that drew; only they carry the REINFORCE loss, against the features they
+    drew from (stored as `mfeat` on that step).
     Returns the carry with the history pushed, and what replay stores."""
     vec = f32(obs['vector'])
     hist = f32(carry['mhist'])
@@ -607,39 +622,65 @@ class Agent(embodied.jax.Agent):
     z = mu
     if not self._greedy:
       z = mu + float(self._mk.sigma) * jax.random.normal(nj.seed(), mu.shape)
+    hold = int(getattr(self._mk, 'hold', 1))
+    draw = reset | (carry['mleft'] <= 0)
+    z = jnp.where(draw[:, None], z, f32(carry['mz']))
+    left = jnp.where(draw, hold - 1, carry['mleft'] - 1).astype(i32)
     logp, _, _ = self._market_price(z)
     pushed = jnp.concatenate([hist[:, 1:], vec[:, None]], 1)
     fresh = jnp.broadcast_to(vec[:, None], pushed.shape)
-    carry = {**carry, 'mhist': jnp.where(reset[:, None, None], fresh, pushed)}
-    return carry, {'pstar': jnp.exp(logp), 'mshift': z, 'mfeat': x}
+    carry = {**carry, 'mhist': jnp.where(reset[:, None, None], fresh, pushed),
+             'mz': z, 'mleft': left}
+    return carry, {'pstar': jnp.exp(logp), 'mshift': z, 'mfeat': x,
+                   'mdraw': f32(draw)}
 
   def _market_loss(self, obs, update):
-    """REINFORCE on the stored draws: -(R - b) log pi(z | x), R the
-    achievements in the next `window` steps (within the sequence and the
-    episode), b a running mean of R. The draw is the net's action, the
-    achievements are its return; steps without a full window carry no loss.
-    Also logs the price and the quantity the curves cross at. (B, T) loss."""
+    """Advantage-weighted regression on the stored draws:
+    w * 0.5 ||(z - mu(x)) / sigma||^2, w = min(exp((R - b) / awr_temp),
+    awr_wmax), R the achievements in the next `window` steps (within the
+    sequence and the episode), b a running mean of R. Every draw pulls the
+    mean toward itself, the better ones harder; steps without a full window
+    carry no loss. Also logs the price and the quantity the curves cross at.
+    (B, T) loss.
+
+    Why not REINFORCE, -(R - b) log pi(z | x): the draws come from replay,
+    made by older nets. A draw that did worse than b pushes mu away from it,
+    and the push grows as mu leaves it, with nothing on the other side to
+    stop it. market12_full's first run (2026-11-13) ran away this way: by
+    165k env steps log pi of the stored draws was -1e7 and both shifts sat
+    at the tanh bound, cancelling, so the price was frozen near price0.
+    Here no draw pushes, so mu stays among the draws."""
     mk = self._mk
     z, x = f32(obs['mshift']), f32(obs['mfeat'])
-    logpi = mktlib.gauss_logp(
-        z, self._market_mean(x, 2), float(mk.sigma), jnp)
+    mu = self._market_mean(x, 2)
+    sigma = float(mk.sigma)
+    logpi = mktlib.gauss_logp(z, mu, sigma, jnp)
     ach = f32(obs['ach']).sum(-1)
     # A report batch is shorter than a training one: clamp the window to it.
     window = min(int(mk.window), ach.shape[1] - 1)
     ret, ok = mktlib.window_returns(ach, obs['is_first'], window, jnp)
-    ok = f32(ok)
+    # Held steps repeat their draw; only the step that drew is scored.
+    ok = f32(ok) * f32(obs['mdraw'])
     base = self.mbase.stats()[0]
     n = ok.sum()
     mean = jnp.where(n > 0, (ret * ok).sum() / jnp.maximum(n, 1.0), base)
     if update:
       self.mbase.update(mean)
-    loss = -sg(ret - base) * logpi * ok
+    temp = float(getattr(mk, 'awr_temp', 1.0))
+    wmax = float(getattr(mk, 'awr_wmax', 20.0))
+    weight = sg(jnp.minimum(jnp.exp(jnp.clip(
+        (ret - base) / temp, -20.0, jnp.log(wmax))), wmax))
+    loss = weight * 0.5 * jnp.square((z - mu) / sigma).sum(-1) * ok
     logp, logq, sh = self._market_price(z)
-    mets = {'ret': mean, 'baseline': base, 'logpi': logpi.mean(),
+    mets = {'ret': mean, 'baseline': base,
+            'logpi': (logpi * ok).sum() / jnp.maximum(n, 1.0),
+            'weight': (weight * ok).sum() / jnp.maximum(n, 1.0),
+            'mu_abs': jnp.abs(mu).mean(),
             'logp': logp.mean(), 'logp_std': logp.std(), 'logq': logq.mean(),
             'shift_s': jnp.abs(sh[..., 0]).mean(),
             'shift_d': jnp.abs(sh[..., 1]).mean(),
-            'valid_frac': ok.mean()}
+            'valid_frac': ok.mean(),
+            'draw_frac': f32(obs['mdraw']).mean()}
     return loss, mets
 
   def _alive(self, con):
@@ -1399,7 +1440,7 @@ class Agent(embodied.jax.Agent):
     if self._use_mgr:
       keys += ['goal', 'gphase']      # what the agent pursued at each step
     if self._shift:
-      keys += ['pstar', 'mshift', 'mfeat']    # the market at each step
+      keys += ['pstar', 'mshift', 'mfeat', 'mdraw']   # the market at each step
     obs = {k: data[k] for k in keys}
     prepend = lambda x, y: jnp.concatenate([x[:, None], y[:, :-1]], 1)
     prevact = {k: prepend(prevact[k], data[k]) for k in self.act_space}

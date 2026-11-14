@@ -346,6 +346,42 @@ Open:
 - Nothing here targets sleep directly. If market12 still does not sleep, a
   SLEEP (energy) goal beside DRINK and EAT is the next step.
 
+### 7. market12_full: the moving price on market12, draws held (2026-11-13)
+
+- **Base.** The moving price (§3) goes on `market12`, not on
+  `market_fixed_q1` as `market_full_q1` would have done. `market_fixed_q1` is
+  the weakest honest run, and `market12` vs `market12_full` isolates the
+  moving price on the strongest base. Chosen with the user.
+- **Held draws** (`agent.market.hold 32`, chosen with the user). As built in
+  §3, the net drew afresh every step while each draw was credited with the
+  next 32 steps' achievements. 32 draws then shared one return, and the
+  effect of any one draw (one step's price) was buried under the other 31.
+  Now a draw is kept for `hold` steps, so the price stays put for the window
+  it is judged on, and only the drawing step carries the loss
+  (`obs['mdraw']`). A new episode draws afresh and restarts the count.
+  `window` stays 32 = `hold`, so each draw is credited with exactly the steps
+  it priced. This sits between per-step draws and the per-episode fallback
+  above: one sample per 32 steps instead of one per life.
+- **Cost.** About 1/32 of the steps train the net, roughly one scored draw
+  per 64-step training sequence. The net is 2 × 64 units, so that may be
+  enough; if `market/logp_std` stays near zero, the price is not learning.
+- **The first run diverged (2026-11-13/14).** §3's REINFORCE loss is only
+  balanced on fresh draws; on replayed ones, a draw below the baseline pushes
+  μ away, harder the further μ goes, with nothing on the other side. By 165k
+  env steps the stored draws' log-likelihood was −1e7, both shifts sat at the
+  tanh bound and, since only their difference sets P\*, cancelled: P\* froze
+  near `price0`. Two changes:
+  - *Advantage-weighted regression* replaces REINFORCE: loss
+    w · ½‖(z − μ)/σ‖², w = min(exp((R − b)/τ), w_max), τ = 1 achievement,
+    w_max = 20. Every draw pulls μ toward itself, the better ones harder, so μ
+    stays among the draws it has seen; this is the standard off-policy
+    choice.
+  - *A soft cap on μ* (±1.5): beyond about 2 the shifts' tanh is flat, every
+    draw gives the same price and nothing can be learned.
+  - Not changed: the two shifts. Only their difference moves P\*, so their
+    common part has no signal; under AWR it no longer drifts off, and the cap
+    bounds it.
+
 ## How it will be judged
 
 - **Headline.** Achievements on the 30 fixed test worlds

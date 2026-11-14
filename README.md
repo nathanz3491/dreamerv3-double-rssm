@@ -1,7 +1,8 @@
 # DreamerV3 on Craftax: the market agent (`family/market`)
 
-**Status: the quota × market grid is training; three of its six runs are
-scored (see Results).** Every part of the design is built: the survival goals
+**Status: `market12` (6.28 on 60 worlds) is the best honest run so far,
+level with v1.2; `market12_full`, the first moving-price run, is training
+(see Results).** Every part of the design is built: the survival goals
 (`env.craftax.goals_survival`), the slope quota (`env.craftax.quota.enabled`,
 v1 `mode window` or v2 `mode log`), the Q-heads at a fixed price
 (`agent.market.enabled`) and the moving price (`agent.market.shift`). So is
@@ -137,6 +138,53 @@ Against `market_fixed_q1` it differs in the shaping and in curiosity being off.
 With `survival none` the code trains exactly as before: no `shape` key, no
 `shp` head. Tests: `dreamerv3/test_shaping.py` (needs Craftax).
 
+### market12_full: the moving price on market12
+
+`market12_full` is `market12` plus the moving price, so against `market12` it
+isolates what the moving price adds. It replaces `market_full_q1` (decided
+2026-11-13): that run would have added the moving price to `market_fixed_q1`,
+the weakest honest base.
+
+The price net now holds each draw (`agent.market.hold`, default 1 = a new draw
+every step, as before). With `hold 1`, 32 different draws share one 32-step
+return, so the REINFORCE credit of any single draw is almost pure noise. With
+`hold 32` the net draws once (and at every new episode), the price stays put
+for 32 steps, and only the drawing step is scored, against exactly the
+achievements of the steps it priced.
+
+```bash
+python dreamerv3/main.py --logdir ~/logdir/market12_full \
+  <market12's flags> --agent.market.shift True --agent.market.hold 32
+```
+
+The market's metrics: `market/draw_frac` (the share of steps that drew, about
+1/32), `market/valid_frac` (the share scored), `market/logpi` (how likely the
+stored draws are under today's net; it must stay near 0) and `market/mu_abs`.
+
+**The first `market12_full` run diverged and was stopped at 165k env steps**
+(kept on the box as `market12_full_bug`). Its price net was trained by
+REINFORCE on replayed draws. A draw that did worse than average pushed the net's
+mean away from it, harder the further the mean went, and nothing pushed back:
+`market/logpi` fell from 0.3 to −3,600 by 13k steps and −10 million by 165k.
+Both curve shifts ended pinned at the tanh bound, cancelling, so the price sat
+at about `price0` and the run was market12 with a near-constant price. The net
+is now trained by advantage-weighted regression (every draw pulls the mean
+toward itself, the better ones harder; nothing pushes) and its mean is
+soft-capped at ±1.5 (`agent.market.mu_bound`). The queue's GPU smoke now also
+checks the price net's health before the full run launches.
+
+**A CPU stall, seed-specific.** At debug sizes on the CPU with seed 0, runs
+with the moving price (hold 1 or 32) stop at step 1,320, waiting inside a
+Craftax world reset; without the moving price the same run finishes. With
+seeds 1 and 2 the moving price (hold 32) finishes too. Each env's key advances
+every step, so which worlds a run generates depends on when its episodes end;
+the stall looks like one world-generation key that never finishes, which only
+the seed-0 moving-price runs reach. The moving price has still never trained
+on the GPU, so the queue first runs a 6000-step GPU smoke of `market12_full`,
+launches the full run only if that finishes, and otherwise runs
+`market12_noq`. Every launch has a watchdog that kills a run whose step has
+not moved for 30 minutes.
+
 ## Results
 
 | run | quota | achievements ± SE | 60 worlds | status |
@@ -146,8 +194,10 @@ With `survival none` the code trains exactly as before: no `shape` key, no
 | `market_quota2` | v2 | 5.30 ± 0.21 | 5.38 ± 0.16 | run 2026-11-10 18:38 – 2026-11-11 12:13 CST |
 | `market_fixed` | v2 | 5.10 ± 0.30 | 5.37 ± 0.19 | run 2026-11-11 12:13 – 2026-11-12 07:05 CST |
 | `market_fixed_q1` | v1 | 5.27 ± 0.23 | 4.95 ± 0.19 | run 2026-11-12 07:05 – 2026-11-13 04:13 CST (NaN crash at 100k, resumed from 90k) |
-| `market12` | v1 | | | training since 2026-11-13 04:13 CST (`~/run_market5.sh`): v1.2's potential, fixed price |
-| `market_full_q1` | v1 | | | queued after `market12` |
+| `market12` | v1 | 6.43 ± 0.25 | 6.28 ± 0.19 | run 2026-11-13 04:13 – 22:04 CST: v1.2's potential, fixed price; the best honest run so far |
+| `market12_full` | v1 | | | relaunched 2026-11-14 (`~/run_market7.sh`) after a 15k-step GPU smoke with a price-net health check: market12 + the moving price, draws held 32 steps, AWR price net. The first launch (2026-11-13 22:11) diverged; see above |
+| `market12_noq` | v1 | | | the fallback if that smoke fails: market12 without the Q-heads (potential + quota v1) |
+| `market_full_q1` | v1 | | | dropped 2026-11-13 for `market12_full` |
 | `market_full` | v2 | | | dropped 2026-11-12: quota v2 stopped the agent sleeping |
 
 The quota alone is level with the base agent. Paired world by world on 60
@@ -175,6 +225,19 @@ lowest honest run so far: paired on 60 worlds it is −1.10 ± 0.27 against
 `next_nomask`, with lives of about the same length (274 steps). It almost never
 sleeps (WAKE_UP in 4% of test lives, 1% in training from 1M env steps), and
 without WAKE_UP it is still 0.38 below `market_quota`.
+
+`market12` is the best honest score so far, but level with v1.2: paired on 60
+worlds it is +0.15 ± 0.27 against `v12_nomask` (6.13), +0.47 ± 0.26 against
+`next_nomask` and +0.23 ± 0.24 against `market_quota`. Against
+`market_fixed_q1`, the same quota and Q-heads with curiosity and no
+potential, it is +1.33 ± 0.22, so the potential (or dropping curiosity) is what
+rescued the Q-heads. It makes the wood pickaxe in 50% of test lives, reaches
+stone in 18% and a furnace in some, and sleeps again: WAKE_UP 0.28 against
+0.04 for `market_fixed_q1`. Lives are 272 steps; deaths are mostly hunger.
+It uses less game knowledge than `v12_nomask` (no map labels or map target).
+It is scored with `~/score_run.sh market12 ~/vm12 potential`: its observation
+carries `shape`, so the scorer keeps the potential on (the score itself reads
+the achievements).
 
 `market_fixed_q1` died at 99,990 env steps on a NaN in a sampled observation;
 the replay saved on disk was finite, so the source is unknown. The env now

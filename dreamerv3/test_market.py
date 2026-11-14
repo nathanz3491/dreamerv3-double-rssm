@@ -196,7 +196,8 @@ def _market(mu=(0.0, 0.0), base=0.0, **kw):
 
 
 def _carry(k=8, B=1):
-  return {'mhist': jnp.zeros((B, k, M.OBS_LEN), f32)}
+  return {'mhist': jnp.zeros((B, k, M.OBS_LEN), f32),
+          'mz': jnp.zeros((B, 2), f32), 'mleft': jnp.zeros((B,), jnp.int32)}
 
 
 def test_market_compares_with_the_observation_k_steps_ago():
@@ -249,15 +250,66 @@ def test_market_history_is_f32_and_keeps_its_shape():
   assert float(carry['mhist'][:, -1].min()) == 1.0
 
 
-def _loss_batch(T=8, ach_at=(), firsts=(0,), z=(0.4, -0.2)):
+def _run_market(hold, firsts, T=10, seed=2):
+  """Act T steps with a greedy net whose mean is the first two change
+  features, so every step would draw something different. -> (z, mdraw)."""
+  a = _market(hold=hold)
+  a.mkt = lambda x, bdims: types.SimpleNamespace(pred=lambda: x[..., :2])
+  vecs = np.random.default_rng(seed).random((T, 1, M.OBS_LEN)).astype(
+      np.float32)
+  carry, zs, draws = _carry(), [], []
+  for t in range(T):
+    carry, out = agentlib.Agent._market_act(
+        a, carry, {'vector': jnp.asarray(vecs[t])}, jnp.array([t in firsts]))
+    zs.append(np.asarray(out['mshift'])[0])
+    draws.append(float(out['mdraw'][0]))
+  return np.array(zs), np.array(draws)
+
+
+def test_hold_one_draws_every_step():
+  zs, draws = _run_market(hold=1, firsts=(0,))
+  assert (draws == 1).all()
+  assert (np.abs(np.diff(zs, axis=0)).sum(-1) > 0).all()
+
+
+def test_a_draw_is_held_and_a_new_episode_draws_afresh():
+  zs, draws = _run_market(hold=3, firsts=(0, 5))
+  # Draws at 0 and 3; the episode starting at 5 draws (cutting the hold
+  # short) and restarts the count, so the next draw is at 8.
+  np.testing.assert_array_equal(draws, [1, 0, 0, 1, 0, 1, 0, 0, 1, 0])
+  for start, end in ((0, 3), (3, 5), (5, 8), (8, 10)):
+    np.testing.assert_allclose(zs[start:end], zs[start:start + 1].repeat(
+        end - start, 0))
+  assert np.abs(zs[3] - zs[0]).sum() > 0
+
+
+def test_market_loss_scores_only_the_drawing_steps():
+  a = _market(window=3)
+  obs = _loss_batch(ach_at=(2,), draws=(0, 3))
+  loss, mets = agentlib.Agent._market_loss(a, obs, False)
+  loss = np.asarray(loss)[0]
+  # Both drawing steps have a full window, so both pull; held steps do not.
+  assert (loss[[0, 3]] != 0).all() and (np.delete(loss, [0, 3]) == 0).all()
+  # t=0's window holds the achievement (weight e), t=3's does not (weight 1).
+  assert loss[0] / loss[3] == pytest.approx(np.e, rel=1e-4)
+  assert float(mets['draw_frac']) == pytest.approx(2 / 8)
+  assert float(mets['valid_frac']) == pytest.approx(2 / 8)
+
+
+def _loss_batch(T=8, ach_at=(), firsts=(0,), z=(0.4, -0.2), draws=None):
   ach = np.zeros((1, T, 22), np.float32)
   for t in ach_at:
     ach[0, t, 0] = 1.0
   first = np.zeros((1, T), bool)
   first[0, list(firsts)] = True
+  mdraw = np.ones((1, T), np.float32)
+  if draws is not None:
+    mdraw[:] = 0.0
+    mdraw[0, list(draws)] = 1.0
   return {'mshift': jnp.broadcast_to(f32(z), (1, T, 2)),
           'mfeat': jnp.zeros((1, T, K.N_FEAT), f32),
-          'ach': jnp.asarray(ach), 'is_first': jnp.asarray(first)}
+          'ach': jnp.asarray(ach), 'is_first': jnp.asarray(first),
+          'mdraw': jnp.asarray(mdraw)}
 
 
 def test_market_loss_rewards_draws_followed_by_achievements():
@@ -268,22 +320,68 @@ def test_market_loss_rewards_draws_followed_by_achievements():
     return loss.sum(), loss
   (val, loss), grad = jax.value_and_grad(total, has_aux=True)(f32([0.0, 0.0]))
   loss = np.asarray(loss)[0]
-  # Only steps with a window that holds the achievement have a nonzero loss;
-  # the steps after t = 5 have no full window.
-  assert (loss[:3] != 0).all() and (loss[3:] == 0).all()
-  # The draw (0.4, -0.2) was followed by an achievement: descent moves the
-  # mean toward it, so d loss / d mu points away from the draw.
+  # Every step with a full window pulls; the steps after t = 5 have none.
+  assert (loss[:5] != 0).all() and (loss[5:] == 0).all()
+  # Windows holding the achievement (t = 0..2) weigh e, the others 1.
+  np.testing.assert_allclose(loss[:3] / loss[3], np.e, rtol=1e-4)
+  # Descent moves the mean toward the draw (0.4, -0.2), so d loss / d mu
+  # points away from it.
   g = np.asarray(grad)
   assert g[0] < 0 and g[1] > 0
 
 
-def test_market_loss_penalises_draws_when_the_baseline_was_higher():
+def test_market_loss_weighs_draws_below_the_baseline_less_but_never_pushes():
   obs = _loss_batch(ach_at=())            # nothing follows; baseline expects 1
   a = _market(base=1.0, window=3, sigma=0.5)
   loss, mets = agentlib.Agent._market_loss(a, obs, True)
-  assert (np.asarray(loss)[0, :5] != 0).all()
+  assert (np.asarray(loss)[0, :5] > 0).all()
+  assert float(mets['weight']) == pytest.approx(np.exp(-1.0), rel=1e-4)
   assert a.mbase.seen == [0.0]            # the baseline tracks the mean return
   assert float(mets['valid_frac']) == pytest.approx(5 / 8)
+  # Even a draw that did worse than expected pulls the mean toward itself.
+  def total(mu):
+    loss, _ = agentlib.Agent._market_loss(
+        _market(mu=mu, base=1.0, window=3, sigma=0.5), obs, False)
+    return loss.sum()
+  g = np.asarray(jax.grad(total)(f32([0.0, 0.0])))
+  assert g[0] < 0 and g[1] > 0
+
+
+def test_market_weights_are_capped():
+  obs = _loss_batch(ach_at=(1, 2, 3))     # 3 achievements in t=0's window
+  a = _market(window=3, sigma=0.5, awr_temp=0.1, awr_wmax=20.0)
+  _, mets = agentlib.Agent._market_loss(a, obs, False)
+  assert float(mets['weight']) <= 20.0 + 1e-4
+
+
+def test_market_mean_stays_among_stale_draws():
+  # The failure that ended market12_full's first run: replayed draws that did
+  # worse than the baseline. Gradient descent on them must keep the mean
+  # within the draws' range (REINFORCE pushed it off without bound).
+  rng = np.random.default_rng(0)
+  T = 16
+  zs = rng.normal(0.0, 0.3, (1, T, 2)).astype(np.float32)
+  obs = {**_loss_batch(T=T, ach_at=(5,)), 'mshift': jnp.asarray(zs)}
+  def total(mu):
+    loss, _ = agentlib.Agent._market_loss(
+        _market(mu=mu, base=2.0, window=3, sigma=0.1), obs, False)
+    return loss.sum()
+  grad = jax.jit(jax.grad(total))
+  mu = f32([1.0, -1.0])
+  for _ in range(300):
+    mu = mu - 1e-4 * grad(mu)
+  lo, hi = zs[0, :T - 3].min(0), zs[0, :T - 3].max(0)
+  assert np.isfinite(np.asarray(mu)).all()
+  assert (np.asarray(mu) >= lo - 1e-3).all() and (np.asarray(mu) <= hi + 1e-3).all()
+
+
+def test_market_mean_is_soft_capped():
+  a = _market(mu_bound=1.5)
+  for raw, want in ((0.01, 0.01), (100.0, 1.5), (-100.0, -1.5)):
+    a.mkt = lambda x, bdims, r=raw: types.SimpleNamespace(
+        pred=lambda: jnp.full((*x.shape[:-1], 2), r, f32))
+    mu = np.asarray(agentlib.Agent._market_mean(a, jnp.zeros((1, K.N_FEAT)), 1))
+    np.testing.assert_allclose(mu, want, rtol=1e-3, atol=1e-5)
 
 
 def test_market_loss_skips_windows_into_the_next_episode():

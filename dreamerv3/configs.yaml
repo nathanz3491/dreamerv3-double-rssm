@@ -182,10 +182,17 @@ defaults:
     # log P* = (log A_d - log A_s) / (eps_s + eps_d). a_s is the supply
     # baseline, a_d the demand baseline (0: derived so that the baseline price
     # is price0). The draw, P* and the net's input are stored in replay; the net
-    # is trained by REINFORCE: -(R - b) log pi, R the achievements in the next
-    # `window` steps inside the sequence, b a running mean (rate `brate`).
-    # window must be below batch_length - replay_context. Untuned constants.
-    market: {enabled: False, shift: False, price0: 0.01, k: 8, a_s: 1.0, a_d: 0.0, eps_s: 1.0, eps_d: 1.0, bound: 2.3, dead: 0.05, sigma: 0.1, window: 32, brate: 0.01, hidden: 64, layers: 2}
+    # is trained by advantage-weighted regression: w 0.5 ||(z - mu) / sigma||^2,
+    # w = min(exp((R - b) / awr_temp), awr_wmax), R the achievements in the
+    # next `window` steps inside the sequence, b a running mean (rate
+    # `brate`). (REINFORCE on these replayed draws ran away, 2026-11-13.) The
+    # mean is soft-capped at +-mu_bound, where the draw noise still moves P*.
+    # window must be below batch_length - replay_context. hold: steps a draw
+    # (and so the price) is kept before the net draws again (a new episode
+    # always draws); only drawing steps are scored. hold 1 draws every step, so
+    # `window` draws share one return; hold = window credits each draw with
+    # exactly the steps it priced. Untuned constants.
+    market: {enabled: False, shift: False, price0: 0.01, k: 8, a_s: 1.0, a_d: 0.0, eps_s: 1.0, eps_d: 1.0, bound: 2.3, dead: 0.05, sigma: 0.1, window: 32, hold: 1, mu_bound: 1.5, awr_temp: 1.0, awr_wmax: 20.0, brate: 0.01, hidden: 64, layers: 2}
     qhead: {layers: 2, units: 512, act: silu, norm: rms, outscale: 0.0, winit: trunc_normal_in}
     memhead: {layers: 2, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in}
     gphihead: {layers: 2, units: 1024, act: silu, norm: rms, output: mse, outscale: 1.0, winit: trunc_normal_in}

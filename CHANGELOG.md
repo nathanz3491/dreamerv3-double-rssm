@@ -12,6 +12,19 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **`market12`'s score**: 6.43 ± 0.25 on the 30 fixed worlds, 6.28 ± 0.19
+  on 60, the best honest run so far but level with v1.2 (+0.15 ± 0.27
+  against `v12_nomask`, +0.47 ± 0.26 against `next_nomask`). It is +1.33 ±
+  0.22 over `market_fixed_q1` (same quota and Q-heads, curiosity, no
+  potential), and it sleeps again (WAKE_UP 0.28 against 0.04). Added to
+  README results and `docs/eval_results.json`.
+- **Held price draws (`agent.market.hold`, default 1 = unchanged).** The
+  market net can keep each draw, and so the price, for `hold` steps (a new
+  episode always draws). Only the drawing step carries the REINFORCE loss,
+  marked by a new replay key, `mdraw`; the metric `market/draw_frac` logs the
+  share of drawing steps. Why: with a fresh draw every step, 32 draws shared
+  one 32-step return, so each draw's credit was nearly pure noise. Tests in
+  `dreamerv3/test_market.py`.
 - **`market_fixed_q1`'s score** (quota v1 + Q-heads at a fixed price): 5.27 ±
   0.23 on the 30 fixed worlds, 4.95 ± 0.19 on 60, the lowest honest run.
   Paired on 60 worlds: −1.10 ± 0.27 against `market_quota`, −0.87 ± 0.28
@@ -45,12 +58,36 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
   `next_nomask` and `market_quota`; its text was still `family/next`'s.
 
 ### Changed
+- **The moving price runs on `market12`'s base: `market12_full` replaces
+  `market_full_q1`.** `market_full_q1` would have added the moving price to
+  `market_fixed_q1`, the lowest honest run (4.95 on 60 worlds). `market12_full`
+  adds it, with draws held 32 steps, to `market12`, so the pair isolates the
+  moving price on the strongest base. The queue is now `market12` → a
+  6000-step GPU smoke of `market12_full` → `market12_full` if the smoke
+  finishes, else `market12_noq` (market12 without the Q-heads). Why the smoke:
+  on the CPU at debug sizes with seed 0, moving-price runs stall at step 1,320
+  in a Craftax world reset (seeds 1 and 2 finish, so it looks like one bad
+  world key), and the path has never trained on the GPU. The queue also
+  kills any run whose step stalls for 30 minutes.
 - **The grid drops `market_full` (quota v2 + moving price) and adds
   `market12`.** Quota v2 stopped the agent sleeping (WAKE_UP 0.00 in training
   from 200k env steps), so another v2 run was judged not worth 19 GPU hours.
   The queue is now `market_fixed_q1` → `market12` → `market_full_q1`.
 
 ### Fixed
+- **The price net no longer runs away.** It was trained by REINFORCE,
+  −(R − b) log π(z | x), on draws replayed from older nets. A draw below the
+  baseline pushed the mean away without bound: in `market12_full`'s first run
+  `market/logpi` reached −3,600 by 13k env steps and −1e7 by 165k, both curve
+  shifts sat at the tanh bound and cancelled, and the price froze near
+  `price0`. The run was stopped and kept as `market12_full_bug`. The net now
+  learns by advantage-weighted regression, w · ½‖(z − μ)/σ‖² with
+  w = min(exp((R − b)/`awr_temp`), `awr_wmax`) (defaults 1, 20), so every
+  draw pulls the mean toward itself. Its mean is soft-capped at
+  ±`mu_bound` (1.5), where the draw noise still moves the price. New metrics
+  `market/weight` and `market/mu_abs`; `market/logpi` now averages the scored
+  draws only. New tests include one where the old loss leaves the range of
+  its stale draws and the new one stays inside it.
 - **A NaN in one observation no longer kills a run.** `market_fixed_q1` died
   at 99,990 env steps on the trainer's NaN assert, with a NaN in a sampled
   `vector`, although every replay chunk saved to disk was finite. The Craftax
