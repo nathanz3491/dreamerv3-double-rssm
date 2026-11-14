@@ -170,8 +170,21 @@ Both curve shifts ended pinned at the tanh bound, cancelling, so the price sat
 at about `price0` and the run was market12 with a near-constant price. The net
 is now trained by advantage-weighted regression (every draw pulls the mean
 toward itself, the better ones harder; nothing pushes) and its mean is
-soft-capped at ±1.5 (`agent.market.mu_bound`). The queue's GPU smoke now also
-checks the price net's health before the full run launches.
+soft-capped at ±1.5 (`agent.market.mu_bound`).
+
+**A GPU fault, worked around.** With that code every launch on the box faulted
+the GPU at its first steps (kernel Xid 13, `CUDA_ERROR_LAUNCH_FAILED`), with or
+without the cap; the old code ran clean on the same GPU minutes apart. With
+`XLA_FLAGS=--xla_gpu_enable_triton_gemm=false` (cuBLAS instead of XLA's Triton
+matrix-multiply kernels) it trains, so `market12_full` runs with that flag;
+its matmuls differ slightly from earlier runs. Turning off autotuning did not
+help. The cause inside the compiled graph is not known.
+
+`market12_noq` (market12 without the Q-heads) ran by accident: queue v7's
+smoke hit that fault and fell back to it. It is the best honest run so far,
+6.47 ± 0.20 on 60 worlds: +0.18 ± 0.27 over `market12` (so the Q-heads add
+nothing), +0.33 ± 0.28 over `v12_nomask`, +0.65 ± 0.26 over `next_nomask`. It
+sleeps in 60% of test lives against 28% for `market12`.
 
 **A CPU stall, seed-specific.** At debug sizes on the CPU with seed 0, runs
 with the moving price (hold 1 or 32) stop at step 1,320, waiting inside a
@@ -195,8 +208,8 @@ not moved for 30 minutes.
 | `market_fixed` | v2 | 5.10 ± 0.30 | 5.37 ± 0.19 | run 2026-11-11 12:13 – 2026-11-12 07:05 CST |
 | `market_fixed_q1` | v1 | 5.27 ± 0.23 | 4.95 ± 0.19 | run 2026-11-12 07:05 – 2026-11-13 04:13 CST (NaN crash at 100k, resumed from 90k) |
 | `market12` | v1 | 6.43 ± 0.25 | 6.28 ± 0.19 | run 2026-11-13 04:13 – 22:04 CST: v1.2's potential, fixed price; the best honest run so far |
-| `market12_full` | v1 | | | relaunched 2026-11-14 (`~/run_market7.sh`) after a 15k-step GPU smoke with a price-net health check: market12 + the moving price, draws held 32 steps, AWR price net. The first launch (2026-11-13 22:11) diverged; see above |
-| `market12_noq` | v1 | | | the fallback if that smoke fails: market12 without the Q-heads (potential + quota v1) |
+| `market12_full` | v1 | | | training since 2026-11-14 22:09 CST (`~/run_market9.sh`): market12 + the moving price, draws held 32 steps, AWR price net, Triton GEMM off. The first launch (2026-11-13 22:11) diverged; see above |
+| `market12_noq` | v1 | 6.27 ± 0.25 | 6.47 ± 0.20 | run 2026-11-14 01:15 – 17:42 CST: market12 without the Q-heads; the best honest run so far |
 | `market_full_q1` | v1 | | | dropped 2026-11-13 for `market12_full` |
 | `market_full` | v2 | | | dropped 2026-11-12: quota v2 stopped the agent sleeping |
 

@@ -12,6 +12,15 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **`market12_noq`'s score** (market12 without the Q-heads): 6.27 ± 0.25 on
+  the 30 fixed worlds, 6.47 ± 0.20 on 60, the best honest run so far.
+  Paired on 60 worlds: +0.18 ± 0.27 against `market12` (the Q-heads add
+  nothing) and +0.33 ± 0.28 against `v12_nomask`. It sleeps more (WAKE_UP 0.60
+  against 0.28).
+- **`market12_full` runs with Triton GEMM off**
+  (`XLA_FLAGS=--xla_gpu_enable_triton_gemm=false`). With the AWR price net,
+  every launch faulted the box's GPU (Xid 13) in its first steps; the old code
+  and this flag both train clean. Cause unknown.
 - **`market12`'s score**: 6.43 ± 0.25 on the 30 fixed worlds, 6.28 ± 0.19
   on 60, the best honest run so far but level with v1.2 (+0.15 ± 0.27
   against `v12_nomask`, +0.47 ± 0.26 against `next_nomask`). It is +1.33 ±
