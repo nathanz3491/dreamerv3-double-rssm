@@ -138,6 +138,29 @@ Against `market_fixed_q1` it differs in the shaping and in curiosity being off.
 With `survival none` the code trains exactly as before: no `shape` key, no
 `shp` head. Tests: `dreamerv3/test_shaping.py` (needs Craftax).
 
+### market12_lphi: the tech-tree potential, learned (a patch)
+
+`market12_lphi` is `market12_noq` with v1.2's hand-written tech-tree potential
+replaced by a learned one (`--agent.lphi.enabled True`, `env.craftax.survival
+none`). It is a patch of the existing agents, not a new method.
+
+- **Head `rdy`** reads the world-model feature (stop-gradient, like `rew`) and
+  predicts, for each of the 67 achievements, whether it unlocks within the next
+  `horizon` = 32 steps. The labels come from replay in hindsight (`obs['ach']`
+  over the window, same episode only). No game rules are involved.
+- **Φ(s) = 0.25 × Σ_k p_k(s)**, shaping γΦ(s′) − Φ(s) with Φ handed back at a
+  death, added for the critic and the manager in imagination and in the replay
+  value. An achievement unlocks once per episode, so its probability falls to
+  0 as its reward is paid: the run-up fills a quarter of an achievement and the
+  unlock pays the rest, the same ramp as the hand-written potential's
+  `PREREQ_CEIL`.
+- **A prior** (`lphi.bias0` = −4.6) starts every probability at 1%. Without it
+  an untrained head's 50% put Φ near 8 and the early shaping at −4 per step.
+
+Compared with `market12_noq` (hand-written Φ, 6.47) and `market_quota` (no Φ,
+curiosity, 6.05). Tests: `dreamerv3/test_lphi.py`. Queued after
+`market12_full` (`~/run_market10.sh`, code `~/vmlphi`).
+
 ### market12_full: the moving price on market12
 
 `market12_full` is `market12` plus the moving price, so against `market12` it
@@ -180,6 +203,15 @@ matrix-multiply kernels) it trains, so `market12_full` runs with that flag;
 its matmuls differ slightly from earlier runs. Turning off autotuning did not
 help. The cause inside the compiled graph is not known.
 
+`market12_full` scored 5.27 ± 0.19 on 60 worlds: paired, −1.02 ± 0.27 against
+`market12` and −1.20 ± 0.25 against `market12_noq`. Its lives are shorter
+(255 steps), it barely sleeps (WAKE_UP 0.05) and makes the wood pickaxe in 27%
+of lives (market12: 50%). The price net never learned: P\* stayed within about
+±16% of 0.0107 all run, the size of its own draw noise, so the price acted as
+noise on the actor's and critic's input. One run, and a −1.0 gap is at the
+edge of what single runs can show (seeds of one agent differ by up to 1.8),
+but there is no sign the moving price helps.
+
 `market12_noq` (market12 without the Q-heads) ran by accident: queue v7's
 smoke hit that fault and fell back to it. It is the best honest run so far,
 6.47 ± 0.20 on 60 worlds: +0.18 ± 0.27 over `market12` (so the Q-heads add
@@ -208,8 +240,8 @@ not moved for 30 minutes.
 | `market_fixed` | v2 | 5.10 ± 0.30 | 5.37 ± 0.19 | run 2026-11-11 12:13 – 2026-11-12 07:05 CST |
 | `market_fixed_q1` | v1 | 5.27 ± 0.23 | 4.95 ± 0.19 | run 2026-11-12 07:05 – 2026-11-13 04:13 CST (NaN crash at 100k, resumed from 90k) |
 | `market12` | v1 | 6.43 ± 0.25 | 6.28 ± 0.19 | run 2026-11-13 04:13 – 22:04 CST: v1.2's potential, fixed price; the best honest run so far |
-| `market12_full` | v1 | | | training since 2026-11-14 22:09 CST (`~/run_market9.sh`): market12 + the moving price, draws held 32 steps, AWR price net, Triton GEMM off. The first launch (2026-11-13 22:11) diverged; see above |
-| `market12_noq` | v1 | 6.27 ± 0.25 | 6.47 ± 0.20 | run 2026-11-14 01:15 – 17:42 CST: market12 without the Q-heads; the best honest run so far |
+| `market12_full` | v1 | 5.33 ± 0.27 | 5.27 ± 0.19 | run 2026-11-14 22:09 – 2026-11-15 16:21 CST: market12 + the moving price, draws held 32 steps, AWR price net, Triton GEMM off. The first launch (2026-11-13 22:11) diverged; see above |
+| `market12_noq` | v1 | 6.27 ± 0.27 | 6.47 ± 0.20 | run 2026-11-14 01:15 – 17:42 CST: market12 without the Q-heads; the best honest run so far |
 | `market_full_q1` | v1 | | | dropped 2026-11-13 for `market12_full` |
 | `market_full` | v2 | | | dropped 2026-11-12: quota v2 stopped the agent sleeping |
 

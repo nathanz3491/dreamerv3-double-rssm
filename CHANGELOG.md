@@ -12,6 +12,20 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **`market12_full`'s score** (market12 + the moving price): 5.33 ± 0.27 on
+  the 30 fixed worlds, 5.27 ± 0.19 on 60. Paired on 60 worlds: −1.02 ± 0.27
+  against `market12`, −1.20 ± 0.25 against `market12_noq`. The price net
+  never learned (P\* within ±16% of 0.0107, its draw noise). Added to README
+  results and `docs/eval_results.json` with `market12_noq`.
+- **A learned potential (`agent.lphi`, off by default).** Replaces v1.2's
+  hand-written tech-tree potential with one learned from the agent's own
+  unlocks: a head `rdy` predicts, per achievement, an unlock within the next
+  32 steps (hindsight labels from replay); Φ = 0.25 × the summed
+  probabilities; shaping γΦ′ − Φ, handed back at a death, for the critic and
+  manager in imagination and the replay value. A logit prior (`bias0` −4.6)
+  keeps an untrained head from starting Φ near 8. Needs `survival none`. New
+  config `lphi`, `lphihead`, loss scale `rdy`; tests `dreamerv3/test_lphi.py`.
+  Run: `market12_lphi`. A patch of the existing agents, not a new family.
 - **`market12_noq`'s score** (market12 without the Q-heads): 6.27 ± 0.25 on
   the 30 fixed worlds, 6.47 ± 0.20 on 60, the best honest run so far.
   Paired on 60 worlds: +0.18 ± 0.27 against `market12` (the Q-heads add

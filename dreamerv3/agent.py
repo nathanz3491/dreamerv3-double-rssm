@@ -245,6 +245,19 @@ class Agent(embodied.jax.Agent):
     self._shape = 'shape' in obs_space
     if self._shape:
       self.shp = embodied.jax.MLPHead(scalar, **config.rewhead, name='shp')
+    # The learned potential (agent.lphi): the hand-written tech-tree potential
+    # replaced by one learned from the agent's own unlocks. A head reads the
+    # world-model feature and predicts, per achievement, whether it unlocks
+    # within the next `horizon` steps; Phi(s) = ceil * the sum of those
+    # probabilities. The shaping gamma*Phi(s') - Phi(s) is added like the
+    # env's ('shape'), with Phi handed back at a death.
+    self._lphi = bool(config.lphi.enabled)
+    if self._lphi:
+      assert not self._shape, (
+          'the learned potential replaces the env one: survival none')
+      n_ach = obs_space['ach'].shape[-1]
+      self.rdy = embodied.jax.MLPHead(
+          elements.Space(bool, (n_ach,), 0, 2), **config.lphihead, name='rdy')
 
     d1, d2 = config.policy_dist_disc, config.policy_dist_cont
     outs = {k: d1 if v.discrete else d2 for k, v in act_space.items()}
@@ -324,6 +337,8 @@ class Agent(embodied.jax.Agent):
       self.modules.append(self.qhead)
     if self._shape:
       self.modules.append(self.shp)
+    if self._lphi:
+      self.modules.append(self.rdy)
     if self._shift:
       self.modules.append(self.mkt)
     if self._valid_mask:
@@ -352,6 +367,8 @@ class Agent(embodied.jax.Agent):
       scales.pop('qhead', None)
     if not self._shape:
       scales.pop('shp', None)
+    if not self._lphi:
+      scales.pop('rdy', None)
     if not self._shift:
       scales.pop('mkt', None)
     if not self._use_mgr:
@@ -682,6 +699,21 @@ class Agent(embodied.jax.Agent):
             'valid_frac': ok.mean(),
             'draw_frac': f32(obs['mdraw']).mean()}
     return loss, mets
+
+  def _phi(self, inp, bdims):
+    """The learned potential at world-model features: ceil x the summed
+    probabilities that each achievement unlocks within `horizon` steps.
+    Stop-gradient: shaping must not train the head. (...) from (..., D)."""
+    logit = self._rdy_logit(inp, bdims)
+    return sg(float(self.config.lphi.ceil) * jax.nn.sigmoid(logit).sum(-1))
+
+  def _rdy_logit(self, inp, bdims):
+    """The readiness head's logits plus a fixed prior offset (lphi.bias0):
+    unlocks are rare, and at an untrained head's 50% the potential of 67
+    achievements would start near 8, swamping the reward. At -4.6 every
+    achievement starts at 1%."""
+    return f32(self.rdy(inp, bdims).output.logit) + float(
+        self.config.lphi.bias0)
 
   def _alive(self, con):
     """The survival reward at imagined states: 1 while alive, cut by the
@@ -1080,6 +1112,13 @@ class Agent(embodied.jax.Agent):
     losses['rew'] = self.rew(inp, 2).loss(obs['reward'])
     if self._shape:
       losses['shp'] = self.shp(inp, 2).loss(obs['shape'])
+    if self._lphi:
+      y, ok = readiness_labels(
+          obs['ach'], reset, int(self.config.lphi.horizon))
+      logit = self._rdy_logit(inp, 2)
+      losses['rdy'] = optax.sigmoid_binary_cross_entropy(logit, y).sum(-1) * ok
+      metrics['lphi/label_rate'] = (y.sum(-1) * ok).sum() / jnp.maximum(
+          ok.sum(), 1.0)
     if self._use_mgr:
       # Goal progress from the latent, so the actor's goal reward exists inside
       # imagination. Trained like 'rew': from the world-model feature, never
@@ -1231,6 +1270,14 @@ class Agent(embodied.jax.Agent):
     rew_score = rew                  # the score: game reward plus the quota
     if self._shape:
       rew = rew + self.shp(inp, 2).pred()
+    if self._lphi:
+      # Paid on arrival like the reward; a predicted death hands Phi back.
+      phi = self._phi(inp, 2)
+      shaping = potential_shaping(
+          phi, self._alive(con), float(self.config.lphi.gamma))
+      rew = rew + shaping
+      metrics['lphi/phi'] = phi.mean()
+      metrics['lphi/shaping'] = shaping.mean()
     if self._market:
       # Valued at P*: the reward the actor-critic and the manager see is the
       # score (plus the shaping) plus P* per step alive, at the rollout's held
@@ -1311,6 +1358,11 @@ class Agent(embodied.jax.Agent):
       boot = imgloss_out['ret'][:, 0].reshape(B, K)
       if self._shape:
         rew = rew + obs['shape']     # what the critic learns in imagination
+      if self._lphi:
+        # The same shaping on real steps; none across an episode start.
+        rew = rew + potential_shaping(
+            self._phi(self.feat2tensor(feat), 2), 1.0 - f32(term),
+            float(self.config.lphi.gamma), first=reset)
       feat, last, term, rew, boot = jax.tree.map(
           lambda x: x[:, -K:], (feat, last, term, rew, boot))
       if self._market:
@@ -1506,6 +1558,42 @@ class Agent(embodied.jax.Agent):
       sched = optax.join_schedules([ramp, sched], [warmup])
     chain.append(optax.scale_by_learning_rate(sched))
     return optax.chain(*chain)
+
+
+def readiness_labels(ach, first, horizon):
+  """What the learned potential's head predicts, from replay in hindsight.
+
+  ach (B, T, A) the achievements unlocked at each step, first (B, T) episode
+  starts. Returns y (B, T, A): whether achievement k unlocks at one of steps
+  t+1 .. t+horizon of the same episode, and ok (B, T): whether that whole
+  window lies inside the sequence (an episode that ends inside it is complete,
+  so it counts). Since an achievement unlocks once per episode, a done one
+  labels 0: the potential of a finished achievement falls to 0 as its reward
+  is paid, which is the hand-written potential's ramp (prerequisites up to
+  ceil, the unlock the rest).
+  """
+  B, T, A = ach.shape
+  horizon = int(min(horizon, T - 1))
+  ep = jnp.cumsum(f32(first), 1)
+  hit = jnp.zeros((B, T, A), bool)
+  for j in range(1, horizon + 1):
+    nxt = jnp.pad(ach[:, j:] > 0, ((0, 0), (0, j), (0, 0)))
+    later = jnp.pad(ep[:, j:], ((0, 0), (0, j)), constant_values=-1.0)
+    hit = hit | (nxt & (later == ep)[..., None])
+  ok = jnp.broadcast_to(jnp.arange(T) < T - horizon, (B, T))
+  return f32(hit), f32(ok)
+
+
+def potential_shaping(phi, live, gamma, first=None):
+  """F_t = gamma * live_t * phi_t - phi_{t-1}, paid on arrival at step t
+  (index 0 gets 0). live_t is 0 at a death, so Phi is handed back. Where
+  `first` marks an episode start, F_t = 0: the previous state belongs to the
+  last episode. phi, live, first (B, T) -> (B, T)."""
+  live = jnp.broadcast_to(f32(live), phi.shape)
+  shaping = gamma * live[:, 1:] * phi[:, 1:] - phi[:, :-1]
+  if first is not None:
+    shaping = shaping * (1.0 - f32(first[:, 1:]))
+  return jnp.concatenate([jnp.zeros_like(shaping[:, :1]), shaping], 1)
 
 
 def imag_loss(

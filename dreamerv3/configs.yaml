@@ -113,7 +113,7 @@ defaults:
     coordinator_address: ''
 
   agent:
-    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, feas: 1.0, gphi: 1.0, mpolicy: 1.0, memfut: 1.0, memrec: 1.0, curio: 1.0, qhead: 1.0, mkt: 1.0, shp: 1.0}
+    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, feas: 1.0, gphi: 1.0, mpolicy: 1.0, memfut: 1.0, memrec: 1.0, curio: 1.0, qhead: 1.0, mkt: 1.0, shp: 1.0, rdy: 1.0}
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
@@ -192,6 +192,18 @@ defaults:
     # always draws); only drawing steps are scored. hold 1 draws every step, so
     # `window` draws share one return; hold = window credits each draw with
     # exactly the steps it priced. Untuned constants.
+    # --- the learned potential (replaces env.craftax.survival potential, so it
+    # needs survival none). Head `rdy` (lphihead) reads the world-model
+    # feature and predicts, per achievement, whether it unlocks within the
+    # next `horizon` steps (labels from replay in hindsight). Phi(s) = ceil x
+    # the summed probabilities; the critic and manager see gamma*Phi(s') -
+    # Phi(s) on top of the reward, Phi handed back at a death. ceil 0.25 is the
+    # hand-written potential's PREREQ_CEIL: the run-up fills a quarter of an
+    # achievement, the unlock pays the rest. bias0 is a fixed prior added to
+    # the head's logits (-4.6: every achievement starts at 1%, Phi near 0.17,
+    # not the 8 an untrained head's 50% would give).
+    lphi: {enabled: False, horizon: 32, ceil: 0.25, gamma: 0.997, bias0: -4.6}
+    lphihead: {layers: 2, units: 512, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
     market: {enabled: False, shift: False, price0: 0.01, k: 8, a_s: 1.0, a_d: 0.0, eps_s: 1.0, eps_d: 1.0, bound: 2.3, dead: 0.05, sigma: 0.1, window: 32, hold: 1, mu_bound: 1.5, awr_temp: 1.0, awr_wmax: 20.0, brate: 0.01, hidden: 64, layers: 2}
     qhead: {layers: 2, units: 512, act: silu, norm: rms, outscale: 0.0, winit: trunc_normal_in}
     memhead: {layers: 2, units: 1024, act: silu, norm: rms, outscale: 1.0, winit: trunc_normal_in}
