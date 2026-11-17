@@ -157,9 +157,19 @@ none`). It is a patch of the existing agents, not a new method.
 - **A prior** (`lphi.bias0` = −4.6) starts every probability at 1%. Without it
   an untrained head's 50% put Φ near 8 and the early shaping at −4 per step.
 
-Compared with `market12_noq` (hand-written Φ, 6.47) and `market_quota` (no Φ,
-curiosity, 6.05). Tests: `dreamerv3/test_lphi.py`. Queued after
-`market12_full` (`~/run_market10.sh`, code `~/vmlphi`).
+Tests: `dreamerv3/test_lphi.py`. Run 2026-11-15 16:21 – 2026-11-16 08:46 CST
+(`~/run_market10.sh`, code `~/vmlphi`).
+
+**Result: the learned Φ does not replace the hand-written one.**
+`market12_lphi` scored 5.77 ± 0.20 on the 30 fixed worlds, 5.90 ± 0.13 on 60.
+Paired on 60 worlds it is −0.57 ± 0.23 against `market12_noq` (hand-written
+Φ) and level with `market_quota` (no Φ, −0.15 ± 0.23) and `next_nomask`
+(+0.08 ± 0.23). It trained level with or above `market12_noq` but did not
+test that way. It sleeps in 93% of test lives and lives longest (288 steps),
+but reaches stone in 7% of lives against 32% with the hand-written Φ. A
+plausible reading: the head can only ramp toward unlocks it has seen often, so
+it pays for frequent, easy achievements (sleep) and not for the deeper ones
+the hand-written Φ walks the agent toward.
 
 ### market12_full: the moving price on market12
 
@@ -241,6 +251,7 @@ not moved for 30 minutes.
 | `market_fixed_q1` | v1 | 5.27 ± 0.23 | 4.95 ± 0.19 | run 2026-11-12 07:05 – 2026-11-13 04:13 CST (NaN crash at 100k, resumed from 90k) |
 | `market12` | v1 | 6.43 ± 0.25 | 6.28 ± 0.19 | run 2026-11-13 04:13 – 22:04 CST: v1.2's potential, fixed price; the best honest run so far |
 | `market12_full` | v1 | 5.33 ± 0.27 | 5.27 ± 0.19 | run 2026-11-14 22:09 – 2026-11-15 16:21 CST: market12 + the moving price, draws held 32 steps, AWR price net, Triton GEMM off. The first launch (2026-11-13 22:11) diverged; see above |
+| `market12_lphi` | v1 | 5.77 ± 0.20 | 5.90 ± 0.13 | run 2026-11-15 16:21 – 2026-11-16 08:46 CST: market12_noq with a learned potential; −0.57 ± 0.23 against it |
 | `market12_noq` | v1 | 6.27 ± 0.27 | 6.47 ± 0.20 | run 2026-11-14 01:15 – 17:42 CST: market12 without the Q-heads; the best honest run so far |
 | `market_full_q1` | v1 | | | dropped 2026-11-13 for `market12_full` |
 | `market_full` | v2 | | | dropped 2026-11-12: quota v2 stopped the agent sleeping |

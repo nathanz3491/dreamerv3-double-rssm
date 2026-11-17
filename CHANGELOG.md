@@ -12,6 +12,11 @@ The history of every family up to the split is in `CHANGELOG.md` at tag
 ## [Unreleased]
 
 ### Added
+- **`market12_lphi`'s score** (the learned potential): 5.77 ± 0.20 on the 30
+  fixed worlds, 5.90 ± 0.13 on 60. Paired on 60 worlds: −0.57 ± 0.23 against
+  `market12_noq` (hand-written Φ), −0.15 ± 0.23 against `market_quota` (no
+  Φ). It sleeps in 93% of test lives but reaches stone in 7% (hand-written Φ:
+  32%). The learned Φ does not replace the hand-written one.
 - **`market12_full`'s score** (market12 + the moving price): 5.33 ± 0.27 on
   the 30 fixed worlds, 5.27 ± 0.19 on 60. Paired on 60 worlds: −1.02 ± 0.27
   against `market12`, −1.20 ± 0.25 against `market12_noq`. The price net
