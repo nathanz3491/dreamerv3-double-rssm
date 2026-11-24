@@ -182,13 +182,14 @@ def test_attach_adds_rows_with_the_batch_dtypes():
   assert out['fr/valid'].sum() == 0 and out['fr/obs/vector'].shape[1] == 5
 
 
-def test_save_and_load_round_trip(tmp_path):
-  arc = _archive(8, 3, directory=str(tmp_path), pmax=1.0)
+def test_save_and_load_round_trip():
+  arc = _archive(8, 3, pmax=1.0)
   for e in range(3):
     _episode(arc, 20, unlocks=(5, 10), start=100 * e)
-  arc.save()
-  new = _archive(8, 3, directory=str(tmp_path), pmax=1.0)
-  new.load()
+  data = arc.save()
+  assert isinstance(data, bytes)
+  new = _archive(8, 3, pmax=1.0)
+  new.load(data)
   assert new.best == arc.best and list(new.episodes) == list(arc.episodes)
   assert new.size == arc.size
   for L in arc.levels:
@@ -204,6 +205,7 @@ def test_frontier_is_off_by_default():
   cfg = yaml.safe_load(path.read_text(encoding='utf-8'))['defaults']['agent']
   assert cfg['frontier']['enabled'] is False
   assert cfg['frontier']['obs_keys'] == ['vector']
+  assert cfg['frontier']['wm_weight'] == 0.0
 
 
 # --- loss weighting (JAX) ----------------------------------------------------
@@ -221,3 +223,46 @@ def test_weighting_gives_every_real_start_the_same_weight():
   # Without real frontier starts it is the normal losses unchanged.
   out = agentlib.frontier_weighted(per, jnp.zeros(F), B, K)
   np.testing.assert_allclose(out, per[:B * K].reshape(B, K))
+
+
+def test_fractional_weights_count_as_that_fraction():
+  jnp = pytest.importorskip('jax.numpy')
+  from dreamerv3 import agent as agentlib
+  B, K = 2, 2
+  per = jnp.array([1.0, 1.0, 1.0, 1.0, 9.0, 9.0])
+  out = agentlib.frontier_weighted(per, jnp.array([0.5, 0.5]), B, K)
+  # (4 * 1 + 0.5 * 9 + 0.5 * 9) / (4 + 0.5 + 0.5)
+  assert float(out.mean()) == pytest.approx(13 / 5)
+
+
+def test_frontier_ends_mark_the_episode_end_and_the_padding():
+  jnp = pytest.importorskip('jax.numpy')
+  from dreamerv3 import agent as agentlib
+  valid = jnp.array([[1.0, 1.0, 1.0, 0.0, 0.0], [0.0, 1.0, 1.0, 1.0, 1.0]])
+  term = jnp.array([[False, False, True, False, True]] + [[False] * 5])
+  last, term = agentlib.frontier_ends(valid, term)
+  np.testing.assert_array_equal(last, [[0, 0, 1, 1, 1], [1, 0, 0, 0, 0]])
+  # A terminal flag on padding is dropped.
+  np.testing.assert_array_equal(term, [[0, 0, 1, 0, 0], [0] * 5])
+
+
+def test_masked_normalize_ignores_masked_rows():
+  jax = pytest.importorskip('jax')
+  nj = pytest.importorskip('ninjax')
+  jnp = jax.numpy
+  from dreamerv3 import agent as agentlib
+  kw = dict(impl='perc', rate=1.0, limit=1e-8, perclo=0.0, perchi=100.0,
+            debias=False)
+  x = jnp.array([[1.0, 2.0], [3.0, 4.0], [100.0, -100.0]])
+
+  def run(x, mask):
+    norm = agentlib.MaskedNormalize(**kw, name='norm')
+    return norm(x, True, mask=mask)
+
+  state = nj.init(run)({}, x, jnp.ones(3), seed=0)
+  _, (lo, scale) = nj.pure(run)(state, x, jnp.array([1.0, 1.0, 0.0]))
+  assert float(lo) == pytest.approx(1.0)
+  assert float(scale) == pytest.approx(3.0)
+  # No real row: the statistics stay where they were (zero at init).
+  _, (lo, scale) = nj.pure(run)(state, x, jnp.zeros(3))
+  assert float(lo) == 0.0 and float(scale) == pytest.approx(1e-8)

@@ -18,7 +18,7 @@ how it got there. Position 0 is always marked ``is_first``.
 """
 
 import collections
-import os
+import io
 import threading
 
 import numpy as np
@@ -28,7 +28,7 @@ class FrontierArchive:
 
   def __init__(
       self, length, starts, obs_keys, act_keys, window=200, pmax=0.25,
-      cap=256, per_level=32, rmin=0.5, directory=None, seed=0):
+      cap=256, per_level=32, rmin=0.5, seed=0):
     assert 0 < starts <= length, (starts, length)
     self.W = int(length)
     self.S = int(starts)
@@ -38,7 +38,6 @@ class FrontierArchive:
     self.cap = int(cap)
     self.per_level = int(per_level)
     self.rmin = float(rmin)
-    self.directory = directory
     self.rng = np.random.default_rng(seed)
     self.lock = threading.Lock()
 
@@ -185,9 +184,11 @@ class FrontierArchive:
   # --- checkpointing (elements.Checkpoint protocol) ----------------------
 
   def save(self):
-    """Writes ``frontier.npz`` next to the checkpoint; returns None."""
-    if not self.directory:
-      return None
+    """The archive as compressed npz bytes, for elements.Checkpoint.
+
+    It is stored inside the checkpoint folder (`frontier.pkl`), so it is
+    written, kept and cleaned up together with the rest of the checkpoint.
+    """
     with self.lock:
       arrays = {
           'episodes': np.asarray(self.episodes, np.int32),
@@ -198,20 +199,12 @@ class FrontierArchive:
         for i, win in enumerate(ws):
           for k, v in win.items():
             arrays[f'w/{L}/{i}/{k}'] = v
-    path = os.path.join(str(self.directory), 'frontier.npz')
-    tmp = path + '.tmp.npz'
-    os.makedirs(str(self.directory), exist_ok=True)
-    np.savez_compressed(tmp, **arrays)
-    os.replace(tmp, path)
-    return None
+    buffer = io.BytesIO()
+    np.savez_compressed(buffer, **arrays)
+    return buffer.getvalue()
 
-  def load(self, data=None):
-    if not self.directory:
-      return
-    path = os.path.join(str(self.directory), 'frontier.npz')
-    if not os.path.exists(path):
-      return
-    with self.lock, np.load(path) as f:
+  def load(self, data):
+    with self.lock, np.load(io.BytesIO(data)) as f:
       self.episodes.clear()
       self.episodes.extend(int(x) for x in f['episodes'])
       self.best = int(f['best'])

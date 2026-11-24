@@ -82,8 +82,11 @@ above `pmax` and it stops being sampled. The frontier moves with the agent.
   2.2 MB (`vector` is 8268 float32), so the cap of 256 windows (at most 32 per
   level, FIFO within a level) is about 0.55 GB of host RAM. Training peaks at
   about 30 GB and `train_guard.sh` requires 54 GB free, so this fits.
-- **Persistence:** saved next to the checkpoint as `frontier.npz` and reloaded
-  on resume, because launches on this box do get restarted.
+- **Persistence:** saved inside each checkpoint folder (`frontier.pkl`, the
+  archive as compressed npz bytes) and reloaded on resume, because launches on
+  this box do get restarted. Not as a side file in `ckpt/`: the checkpoint
+  cleanup keeps only the newest entry there by name, and a side file sorting
+  after the timestamp folders made it delete the real checkpoint.
 - **Fed by** a `driver.on_step` hook. It keeps a 64-step ring buffer per worker
   and finalises an event 31 steps later or at the episode's end.
 
@@ -113,9 +116,21 @@ uses latents cached at the time the window was recorded.
 - Both sets are imagined together for `H = 15` steps with the same policy,
   reward, continue and value heads. Each start carries the same weight in the
   policy and value losses.
-- Frontier rows give no world-model loss, no replay-value loss and no
-  `replay_context` update. The world model's training data is exactly
-  vanilla's.
+- **Own return normalizer** (`own_retnorm`, on). Frontier returns run higher
+  than normal ones; one shared 5-95% percentile range would shrink the normal
+  starts' advantages. The frontier starts get a normalizer of their own
+  (`fretnorm`), whose update skips the padding rows and holds still while no
+  real row exists. The normal starts' normalizer sees only normal starts, as
+  in vanilla.
+- **Real value targets** (`repval`, on). The windows hold the rewards that
+  really followed the rare moment. The replay-value loss that vanilla applies
+  to normal rows is applied to the 16 start positions of each window too
+  (bootstrapped from the frontier imagination returns), so the critic at rare
+  states is anchored to real outcomes, not only to imagination. Episode ends
+  come from the padding mask (`frontier_ends`).
+- By default frontier rows give no world-model loss and no `replay_context`
+  update, so the world model's training data is exactly vanilla's. The
+  `frontier_replay` arm (`wm_weight > 0`, §6.1) changes that.
 
 ### 4.7 Config
 
@@ -130,26 +145,34 @@ agent:
     cap: 256         # windows kept
     per_level: 32
     rmin: 0.5        # reward event threshold for a level step
+    own_retnorm: True  # frontier starts get their own return normalizer
+    repval: True     # replay-value loss on the windows' start positions
+    wm_weight: 0.0   # >0: world-model loss on the windows (frontier_replay)
     obs_keys: [vector]  # the encoder inputs stored in a window
+    act_keys: [action]  # the agent's action keys
 ```
 
 ### 4.8 Implementation notes
 
 - **Plumbing.** `make_replay` attaches the archive to the train replay
   (`replay.frontier`). The train loop feeds it every env step, checkpoints it
-  (`ckpt/frontier.npz`, compressed) and logs `frontier/*` stats. `make_stream`
+  (inside the checkpoint folder) and logs `frontier/*` stats. `make_stream`
   adds the rows to every batch as `fr/obs/*`, `fr/act/*`, `fr/reward`,
   `fr/is_first`, `fr/is_terminal`, `fr/valid` (extra spaces of the agent).
   Report batches (another length) get zero rows, and `report()` skips the
   frontier path.
 - **Padding rows.** A row with no real frontier window (an empty archive, or
   positions after an episode's end) imagines from a copy of a normal start
-  instead of from all-zero inputs. Its losses are masked out, but its rollouts
-  do enter the return normalizers. So an enabled run with an empty archive is
-  close to vanilla, not bit-identical; the RNG draws also differ.
+  instead of from all-zero inputs. Its losses are masked out and, with
+  `own_retnorm`, its returns stay out of every normalizer (`valnorm` and
+  `advnorm` must be `none`, which the agent asserts). An enabled run with an
+  empty archive is still not bit-identical to vanilla: the RNG draws differ.
 - **Weighting.** `frontier_weighted` folds the frontier starts' losses into
   the (B, K) loss arrays so that the mean equals the per-start average over
-  all real starts.
+  all real starts. It also takes fractional weights: under `wm_weight = w`
+  each real window position counts as `w` of a normal replay position in the
+  world-model losses (`w = 0.25` makes the windows about 20% of the world
+  model's data, the same share as the starts).
 
 ## 5. Diagnostics (logged every report)
 
@@ -169,12 +192,20 @@ agent:
 
 ### 6.1 Runs (1.1M env steps, `size50m`, one at a time, through `train_guard.sh`)
 
-| order | run | base | what it answers |
-|---|---|---|---|
-| 1 | `frontier_plain` | plain | Does frontier dreaming beat plain DreamerV3? |
-| 1b | `frontier_ctl` | plain | Only if run 1 wins: the same extra rows drawn uniformly from all archive windows, frontier or not. Is the gain from *where* the dreams start, or just from 25% more imagination? |
-| 2 | `frontier_noq` | market12_noq | Does it stack on our best honest run? |
-| 3 | `loopact_plain` | plain | The looped-actor side run (§8). |
+Every arm runs on the plain base and keeps `own_retnorm` and `repval` on
+unless it says otherwise. Two training seeds per arm: a single run cannot
+resolve the ±0.55 world-set noise.
+
+| order | run | flags (beyond `--agent.frontier.enabled True`) | what it answers | built |
+|---|---|---|---|---|
+| 1 | `frontier_plain` | none | Does frontier dreaming beat plain DreamerV3? | yes |
+| 2 | `frontier_feat` | `signal feature` | Frontier from what the agent *sees*, not what it scores: a window around the first time in an episode that an observation feature turns on which at most 25% of the last 200 episodes ever turned on (stone, iron, a ladder coming into view). Seeing stone comes long before collecting it, so this aims at the step plain is stuck on. It uses only the encoder's own input, so it is not privileged. | no |
+| 3 | `frontier_reset` | `reset 0.2` | **Upper bound, reported separately (privileged, like the mask).** 20% of real episodes restart from archived env snapshots (`save_state()` / `reset_to()` in the adapter): rekursiv's recipe. How much of the real-reset gain do the dreams recover? | no |
+| 4 | `frontier_replay` | `wm_weight 0.25` | The windows also train the world model (prioritized replay of rare moments, ~20% of its data). Better fit where the model is weakest, but it changes the model's data, so it stays apart from run 1: if both changes shared one run, a win could not be credited to dream practice. | yes |
+| 1b | `frontier_ctl` | `sample uniform` | Only if run 1 wins: the extra rows drawn uniformly from all archive windows. Is the gain from *where* the dreams start, or from more imagination? | no |
+| 1c | `frontier_pre` | `offset 16` | Only if something wins: start the 16 steps *before* the event instead of at and after it. Practising getting there vs practising what comes next. | no |
+| 5 | `frontier_noq` | on market12_noq | Does it stack on our best honest run? | no |
+| 6 | `loopact_plain` | `--agent.policy.loops 3` (`patch/looped-actor`) | The looped-actor side run (§8). | yes |
 
 Score each run on the 60 fixed worlds with `~/score_run.sh` and compare world
 by world against its base. A gap under ~1.1 between two single runs is not
@@ -184,6 +215,16 @@ evidence on 30 worlds. On 60 worlds, use the paired SE.
 worlds, and run 1b falls short of run 1. Beyond the score, the reach rate of
 at least one level above wood (stone pickaxe and up) should rise. Today no
 plain run places stone at all.
+
+**Leading diagnostic: time to consolidate.** For each level L, the env steps
+from the first episode that reaches L until L+1 is reached by >= 25% of
+episodes, frontier arm vs plain (from replay). Dream practice should shorten
+it, and it shows before the final score does.
+
+**Model optimism gap.** Imagined return from frontier starts
+(`frontier/ret_start`) against the real return that followed the same states
+(the windows' rewards). A large gap means the actor is learning model errors
+at the frontier; that is the case for `frontier_replay`.
 
 ### 6.2 Tests (CPU, through `safe_job.sh` on the box)
 
@@ -195,10 +236,13 @@ plain run places stone at all.
   save/load round trip.
 - Sampling: uniform over levels, then over windows; `valid = 0` before any
   window exists.
-- Agent: `frontier.enabled: False` gives losses identical to `main`. The
-  frontier rows get no world-model gradient (check gradient norms with frontier
-  rows zeroed vs not). Start count is 1280 and the policy loss weights each
-  start equally.
+- Agent: `frontier.enabled: False` gives losses identical to `main`. At
+  `wm_weight 0` the frontier rows get no world-model gradient (check gradient
+  norms with frontier rows zeroed vs not). Start count is 1280 and the policy
+  loss weights each start equally; fractional weights count as that fraction
+  (`test_fractional_weights_count_as_that_fraction`).
+- `MaskedNormalize` ignores masked rows and holds still with none;
+  `frontier_ends` marks episode ends and padding as `last`.
 - Short CPU smoke run, then a GPU smoke run. If XLA faults the GPU (Xid 13),
   first try `XLA_FLAGS=--xla_gpu_enable_triton_gemm=false`.
 

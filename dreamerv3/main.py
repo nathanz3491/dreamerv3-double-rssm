@@ -215,11 +215,9 @@ def make_replay(config, folder, mode='train'):
     # stats; make_stream draws the frontier rows from it.
     replay.frontier = frontier.FrontierArchive(
         length=config.batch_length + config.replay_context,
-        starts=fr.starts, obs_keys=fr.obs_keys, act_keys=('action',),
+        starts=fr.starts, obs_keys=fr.obs_keys, act_keys=tuple(fr.act_keys),
         window=fr.window, pmax=fr.pmax, cap=fr.cap,
-        per_level=fr.per_level, rmin=fr.rmin,
-        directory=str(elements.Path(config.logdir) / 'ckpt'),
-        seed=config.seed)
+        per_level=fr.per_level, rmin=fr.rmin, seed=config.seed)
   return replay
 
 
@@ -288,7 +286,8 @@ def make_stream(config, replay, mode):
     from . import frontier
     archive = getattr(replay, 'frontier', None) if mode == 'train' else None
     stream = embodied.streams.Map(
-        stream, frontier.attach, archive, tuple(fr.obs_keys), ('action',))
+        stream, frontier.attach, archive, tuple(fr.obs_keys),
+        tuple(fr.act_keys))
   return stream
 
 

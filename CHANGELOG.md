@@ -23,6 +23,27 @@ its own changelog on its own branch.
   under stop-gradient and adds 256 imagination starts to the normal 1024),
   `frontier_weighted` (every real start weighs the same), diagnostics under
   `frontier/*`, and `dreamerv3/test_frontier.py`.
+- Frontier fixes, on by default when frontier is enabled: frontier starts
+  get their own return normalizer (`frontier.own_retnorm`, `MaskedNormalize`
+  skips the padding rows), so higher frontier returns no longer shrink the
+  normal starts' advantages; and the replay-value loss also runs on the
+  windows' start positions (`frontier.repval`), anchoring the critic at rare
+  states to the rewards that really followed.
+- `frontier.act_keys` (default `[action]`), checked against the agent's
+  action space, so the frontier path also runs on other envs (the dummy-env
+  smoke).
+- `frontier.wm_weight` (default 0): world-model loss on the frontier windows,
+  each position weighted as that fraction of a normal one; the
+  `frontier_replay` arm.
+- Design: the arms `frontier_feat`, `frontier_reset` (privileged upper
+  bound), `frontier_replay`, `frontier_pre`, two seeds per arm, and the
+  time-to-consolidate and model-optimism diagnostics.
+
+### Fixed
+- The frontier archive saved itself as `ckpt/frontier.npz`; the checkpoint
+  cleanup keeps the newest entry of `ckpt/` by name, so it kept that file and
+  deleted the agent checkpoint (caught by a CPU smoke before any run). The
+  archive now goes into the checkpoint folder through `save()`/`load(data)`.
 
 ### Changed
 - Family index: `next_nomask` scored (5.63 ± 0.27; 5.82 ± 0.17 on 60 worlds);

@@ -131,7 +131,7 @@ defaults:
     # row: a window of batch_length + replay_context steps whose last `starts`
     # positions start imagined rollouts (16 x 16 = 256 extra starts next to
     # 16 x 64 = 1024, so 20%). The rows are re-encoded by the current world
-    # model under stop-gradient and give no world-model loss.
+    # model; by default they give no world-model loss (wm_weight 0).
     frontier:
       enabled: False
       starts: 16       # start positions per window: the event and after
@@ -140,7 +140,11 @@ defaults:
       cap: 256         # windows kept (~2.2 MB each for Craftax-Symbolic)
       per_level: 32
       rmin: 0.5        # a reward this large is one level step
+      own_retnorm: True  # frontier starts get their own return normalizer
+      repval: True     # critic also learns real returns on the windows
+      wm_weight: 0.0   # >0: world-model loss on the windows (frontier_replay)
       obs_keys: [vector]
+      act_keys: [action]  # the agent's action keys
 
 size1m: &size1m
   .*\.rssm: {deter: 512, hidden: 64, classes: 4}
