@@ -10,6 +10,20 @@ its own changelog on its own branch.
 
 ## [Unreleased]
 
+### Added
+- `family/frontier` branched from `main`, with the design for frontier
+  dreaming in `docs/design-frontier.md`: about 20% of imagined rollouts start
+  from an archive of rarely reached progress moments, re-encoded by the current
+  world model. Also designed: the looped-actor side run (a patch, kept off this
+  family).
+- Frontier dreaming, built (`agent.frontier.enabled`, off by default):
+  `dreamerv3/frontier.py` (the archive: progress levels from reward events,
+  rarity over the last 200 episodes, 65-step windows, sampling, checkpoint),
+  `Agent._frontier_starts` (re-encodes the windows with the current world model
+  under stop-gradient and adds 256 imagination starts to the normal 1024),
+  `frontier_weighted` (every real start weighs the same), diagnostics under
+  `frontier/*`, and `dreamerv3/test_frontier.py`.
+
 ### Changed
 - Family index: `next_nomask` scored (5.63 ± 0.27; 5.82 ± 0.17 on 60 worlds);
   `family/market` is built and its runs are training.

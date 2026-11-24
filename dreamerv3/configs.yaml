@@ -127,6 +127,20 @@ defaults:
     repval_grad: True
     report: True
     report_gradnorms: False
+    # Frontier dreaming (docs/design-frontier.md). One frontier row per batch
+    # row: a window of batch_length + replay_context steps whose last `starts`
+    # positions start imagined rollouts (16 x 16 = 256 extra starts next to
+    # 16 x 64 = 1024, so 20%). The rows are re-encoded by the current world
+    # model under stop-gradient and give no world-model loss.
+    frontier:
+      enabled: False
+      starts: 16       # start positions per window: the event and after
+      window: 200      # finished episodes in the rarity estimate
+      pmax: 0.25       # a level is frontier while reached by <= 25% of them
+      cap: 256         # windows kept (~2.2 MB each for Craftax-Symbolic)
+      per_level: 32
+      rmin: 0.5        # a reward this large is one level step
+      obs_keys: [vector]
 
 size1m: &size1m
   .*\.rssm: {deter: 512, hidden: 64, classes: 4}

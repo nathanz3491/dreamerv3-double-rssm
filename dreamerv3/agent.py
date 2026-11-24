@@ -85,6 +85,15 @@ class Agent(embodied.jax.Agent):
     scales.update({k: rec for k in dec_space})
     self.scales = scales
 
+    # Frontier dreaming (frontier.py, docs/design-frontier.md).
+    self._frontier = bool(config.frontier.enabled)
+    if self._frontier:
+      assert set(config.frontier.obs_keys) == set(enc_space), (
+          'frontier.obs_keys must list the encoder inputs',
+          config.frontier.obs_keys, sorted(enc_space))
+      assert config.frontier.starts <= (
+          config.batch_length + config.replay_context)
+
   @property
   def policy_keys(self):
     return '^(enc|dyn|dec|pol)/'
@@ -99,6 +108,14 @@ class Agent(embodied.jax.Agent):
           enc=self.enc.entry_space,
           dyn=self.dyn.entry_space,
           dec=self.dec.entry_space)))
+    if self._frontier:
+      for k in self.config.frontier.obs_keys:
+        spaces[f'fr/obs/{k}'] = self.obs_space[k]
+      for k, v in self.act_space.items():
+        spaces[f'fr/act/{k}'] = v
+      for k in ('reward', 'is_first', 'is_terminal'):
+        spaces[f'fr/{k}'] = self.obs_space[k]
+      spaces['fr/valid'] = elements.Space(np.float32)
     return spaces
 
   def init_policy(self, batch_size):
@@ -152,9 +169,12 @@ class Agent(embodied.jax.Agent):
     return dist.sample(nj.seed())
 
   def train(self, carry, data):
+    fr = None
+    if self._frontier:
+      fr = {k: v for k, v in data.items() if k.startswith('fr/')}
     carry, obs, prevact, stepid = self._apply_replay_context(carry, data)
     metrics, (carry, entries, outs, mets) = self.opt(
-        self.loss, carry, obs, prevact, training=True, has_aux=True)
+        self.loss, carry, obs, prevact, training=True, fr=fr, has_aux=True)
     metrics.update(mets)
     self.slowval.update()
     outs = {}
@@ -170,7 +190,7 @@ class Agent(embodied.jax.Agent):
     carry = (*carry, {k: data[k][:, -1] for k in self.act_space})
     return carry, outs, metrics
 
-  def loss(self, carry, obs, prevact, training):
+  def loss(self, carry, obs, prevact, training, fr=None):
     enc_carry, dyn_carry, dec_carry = carry
     reset = obs['is_first']
     B, T = reset.shape
@@ -205,17 +225,37 @@ class Agent(embodied.jax.Agent):
     # Imagination
     K = min(self.config.imag_last or T, T)
     H = self.config.imag_length
+    N = B * K
     starts = self.dyn.starts(dyn_entries, dyn_carry, K)
     policyfn = lambda feat: sample(self.pol(self.feat2tensor(feat), 1))
-    _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
     first = jax.tree.map(
-        lambda x: x[:, -K:].reshape((B * K, 1, *x.shape[2:])), repfeat)
-    imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(imgfeat)], 1)
+        lambda x: x[:, -K:].reshape((N, 1, *x.shape[2:])), repfeat)
+    first = sg(first, skip=self.config.ac_grads)
+    if fr is not None:
+      # Frontier starts go after the N normal ones; fmask marks the real ones.
+      fstarts, ffirst, fmask, mets = self._frontier_starts(
+          fr, losses, training)
+      # Padding rows (no frontier window yet, or past an episode's end)
+      # imagine from copies of normal starts instead, so the return
+      # normalizers see no rollouts from all-zero inputs. Their losses are
+      # masked out below.
+      F = len(fmask)
+      assert F <= N, (F, N)
+      keep = lambda f, n: jnp.where(
+          fmask.reshape((F,) + (1,) * (f.ndim - 1)) > 0, f, n[:F])
+      fstarts = jax.tree.map(keep, fstarts, starts)
+      ffirst = jax.tree.map(keep, ffirst, first)
+      starts = concat([starts, fstarts], 0)
+      first = concat([first, ffirst], 0)
+      metrics.update(mets)
+    M = len(jax.tree.leaves(starts)[0])
+    _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
+    imgfeat = concat([first, sg(imgfeat)], 1)
     lastact = policyfn(jax.tree.map(lambda x: x[:, -1], imgfeat))
     lastact = jax.tree.map(lambda x: x[:, None], lastact)
     imgact = concat([imgprevact, lastact], 1)
-    assert all(x.shape[:2] == (B * K, H + 1) for x in jax.tree.leaves(imgfeat))
-    assert all(x.shape[:2] == (B * K, H + 1) for x in jax.tree.leaves(imgact))
+    assert all(x.shape[:2] == (M, H + 1) for x in jax.tree.leaves(imgfeat))
+    assert all(x.shape[:2] == (M, H + 1) for x in jax.tree.leaves(imgact))
     inp = self.feat2tensor(imgfeat)
     los, imgloss_out, mets = imag_loss(
         imgact,
@@ -229,7 +269,16 @@ class Agent(embodied.jax.Agent):
         contdisc=self.config.contdisc,
         horizon=self.config.horizon,
         **self.config.imag_loss)
-    losses.update({k: v.mean(1).reshape((B, K)) for k, v in los.items()})
+    if fr is None:
+      losses.update({k: v.mean(1).reshape((B, K)) for k, v in los.items()})
+    else:
+      for k, v in los.items():
+        losses[k] = frontier_weighted(v.mean(1), fmask, B, K)
+      ret0 = imgloss_out['ret'][:, 0]
+      cnt = jnp.maximum(fmask.sum(), 1.0)
+      metrics['frontier/ret_start'] = (ret0[N:] * fmask).sum() / cnt
+      metrics['frontier/ret_start_normal'] = ret0[:N].mean()
+      imgloss_out = {k: v[:N] for k, v in imgloss_out.items()}
     metrics.update(mets)
 
     # Replay
@@ -326,6 +375,54 @@ class Agent(embodied.jax.Agent):
     carry = (*new_carry, {k: data[k][:, -1] for k in self.act_space})
     return carry, metrics
 
+  def _frontier_starts(self, fr, losses, training):
+    """Re-encode the frontier windows with the current world model.
+
+    Returns the posterior states at the last `starts` positions of each
+    window (imagination starts and their first feats), the mask of real
+    starts, and diagnostics comparing the world model's fit on these rows
+    with its fit on the same positions of the normal rows. Nothing here sends
+    gradient into the world model.
+    """
+    S = self.config.frontier.starts
+    reset = fr['fr/is_first']
+    Bf, W = reset.shape
+    fobs = {k: fr[f'fr/obs/{k}'] for k in self.config.frontier.obs_keys}
+    act = {k: fr[f'fr/act/{k}'] for k in self.act_space}
+    prev = {k: jnp.concatenate([jnp.zeros_like(v[:, :1]), v[:, :-1]], 1)
+            for k, v in act.items()}
+    _, _, tokens = self.enc(self.enc.initial(Bf), fobs, reset, training=False)
+    _, entries, feat = self.dyn.observe(
+        self.dyn.initial(Bf), tokens, prev, reset, training=False)
+    entries, feat = sg((entries, feat))
+    fstarts = jax.tree.map(
+        lambda x: x[:, -S:].reshape((Bf * S, *x.shape[2:])), entries)
+    ffirst = jax.tree.map(
+        lambda x: x[:, -S:].reshape((Bf * S, 1, *x.shape[2:])), feat)
+    valid = f32(fr['fr/valid'][:, -S:])
+    fmask = valid.reshape(-1)
+
+    # World-model fit at the frontier (metrics only).
+    mets = {}
+    cnt = jnp.maximum(valid.sum(), 1.0)
+    masked = lambda x: (x[:, -S:] * valid).sum() / cnt
+    inp = self.feat2tensor(feat)
+    mets['frontier/valid_frac'] = fmask.mean()
+    mets['frontier/rew_loss'] = masked(self.rew(inp, 2).loss(fr['fr/reward']))
+    con = f32(~fr['fr/is_terminal'])
+    if self.config.contdisc:
+      con *= 1 - 1 / self.config.horizon
+    mets['frontier/con_loss'] = masked(self.con(inp, 2).loss(con))
+    _, _, recons = self.dec(self.dec.initial(Bf), feat, reset, training=False)
+    for key, recon in recons.items():
+      space, value = self.obs_space[key], fobs[key]
+      target = f32(value) / 255 if isimage(space) else value
+      mets[f'frontier/rec_loss/{key}'] = masked(recon.loss(target))
+      mets[f'frontier/rec_loss_normal/{key}'] = losses[key][:, -S:].mean()
+    mets['frontier/rew_loss_normal'] = losses['rew'][:, -S:].mean()
+    mets['frontier/con_loss_normal'] = losses['con'][:, -S:].mean()
+    return fstarts, ffirst, fmask, mets
+
   def _apply_replay_context(self, carry, data):
     (enc_carry, dyn_carry, dec_carry, prevact) = carry
     carry = (enc_carry, dyn_carry, dec_carry)
@@ -394,6 +491,22 @@ class Agent(embodied.jax.Agent):
       sched = optax.join_schedules([ramp, sched], [warmup])
     chain.append(optax.scale_by_learning_rate(sched))
     return optax.chain(*chain)
+
+
+def frontier_weighted(per_start, fmask, B, K):
+  """Fold frontier-start losses into a (B, K) array of normal-start losses.
+
+  ``per_start`` holds one loss per imagination start: the B * K normal starts
+  first, then the frontier starts, of which ``fmask`` marks the real ones.
+  Every real start weighs the same: the mean of the result equals (sum over
+  normal starts + sum over real frontier starts) / (their number). With no
+  real frontier start, the result is the normal starts' losses unchanged.
+  """
+  N = B * K
+  w = jnp.concatenate([jnp.ones((N,), f32), f32(fmask)])
+  total = sg(w.sum())
+  per = per_start * w
+  return per[:N].reshape((B, K)) * (N / total) + per[N:].sum() / total
 
 
 def imag_loss(

@@ -5,6 +5,15 @@ fixes this project found along the way. This branch is the baseline and holds
 no experiment code: every agent built on top of it lives on a family branch of
 its own (see [Family branches](#family-branches)).
 
+> **This is `family/frontier`.** Frontier dreaming: about 20% of the imagined
+> rollouts start from an archive of rarely reached progress moments, so the
+> actor practises where it is stuck. It is frontier practice without a
+> resettable simulator. Status: built, not yet trained; turn it on with
+> `--agent.frontier.enabled True`. Design and implementation notes:
+> [`docs/design-frontier.md`](docs/design-frontier.md); tests:
+> `python -m pytest dreamerv3/test_frontier.py`. Below this note the README is
+> `main`'s.
+
 The original DreamerV3 README is kept at
 [`README-dreamerv3.md`](README-dreamerv3.md); installation and the general run
 interface are unchanged.

@@ -60,6 +60,10 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
   driver.on_step(lambda tran, _: policy_fps.step())
   driver.on_step(replay.add)
   driver.on_step(logfn)
+  # Frontier dreaming (dreamerv3/frontier.py): the archive watches every step.
+  archive = getattr(replay, 'frontier', None)
+  if archive is not None:
+    driver.on_step(archive.observe)
 
   stream_train = iter(agent.stream(make_stream(replay, 'train')))
   stream_report = iter(agent.stream(make_stream(replay, 'report')))
@@ -84,6 +88,8 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
   cp.step = step
   cp.agent = agent
   cp.replay = replay
+  if archive is not None:
+    cp.frontier = archive
   if args.from_checkpoint:
     elements.checkpoint.load(args.from_checkpoint, dict(
         agent=bind(agent.load, regex=args.from_checkpoint_regex)))
@@ -107,6 +113,8 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
       logger.add(train_agg.result())
       logger.add(epstats.result(), prefix='epstats')
       logger.add(replay.stats(), prefix='replay')
+      if archive is not None:
+        logger.add(archive.stats(), prefix='frontier')
       logger.add(usage.stats(), prefix='usage')
       logger.add({'fps/policy': policy_fps.result()})
       logger.add({'fps/train': train_fps.result()})

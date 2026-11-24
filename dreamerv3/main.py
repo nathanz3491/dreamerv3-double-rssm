@@ -207,7 +207,20 @@ def make_replay(config, folder, mode='train'):
         recency=selectors.Recency(recency),
     ), config.replay.fracs)
 
-  return embodied.replay.Replay(**kwargs)
+  replay = embodied.replay.Replay(**kwargs)
+  fr = config.agent.frontier
+  if fr.enabled and mode == 'train':
+    from . import frontier
+    # The train loop feeds it (driver.on_step), checkpoints it and logs its
+    # stats; make_stream draws the frontier rows from it.
+    replay.frontier = frontier.FrontierArchive(
+        length=config.batch_length + config.replay_context,
+        starts=fr.starts, obs_keys=fr.obs_keys, act_keys=('action',),
+        window=fr.window, pmax=fr.pmax, cap=fr.cap,
+        per_level=fr.per_level, rmin=fr.rmin,
+        directory=str(elements.Path(config.logdir) / 'ckpt'),
+        seed=config.seed)
+  return replay
 
 
 def make_env(config, index, **overrides):
@@ -270,7 +283,12 @@ def make_stream(config, replay, mode):
       prefix=config.replay_context,
       strict=(mode == 'train'),
       contiguous=True)
-
+  fr = config.agent.frontier
+  if fr.enabled:
+    from . import frontier
+    archive = getattr(replay, 'frontier', None) if mode == 'train' else None
+    stream = embodied.streams.Map(
+        stream, frontier.attach, archive, tuple(fr.obs_keys), ('action',))
   return stream
 
 
