@@ -17,6 +17,7 @@ class MLPHead(nj.Module):
 
   units: int = 1024
   layers: int = 5
+  loops: int = 1
   act: str = 'silu'
   norm: str = 'rms'
   bias: bool = True
@@ -27,7 +28,8 @@ class MLPHead(nj.Module):
     shared = dict(bias=self.bias, winit=self.winit, binit=self.binit)
     mkw = dict(**shared, act=self.act, norm=self.norm)
     hkw = dict(**shared, **hkw)
-    self.mlp = nets.MLP(self.layers, self.units, **mkw, name='mlp')
+    self.mlp = nets.MLP(
+        self.layers, self.units, self.loops, **mkw, name='mlp')
     if isinstance(space, dict):
       self.head = DictHead(space, output, **hkw, name='head')
     else:

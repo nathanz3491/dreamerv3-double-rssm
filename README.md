@@ -5,6 +5,12 @@ fixes this project found along the way. This branch is the baseline and holds
 no experiment code: every agent built on top of it lives on a family branch of
 its own (see [Family branches](#family-branches)).
 
+> **This is `patch/looped-actor`**, a one-run side test, not a family: the
+> actor's middle layer runs 3 times with shared weights behind a gate that
+> starts closed (`--agent.policy.loops 3`). See `docs/design-frontier.md` §8
+> on `family/frontier`; tests: `python -m pytest
+> dreamerv3/test_looped_actor.py`. Below this note the README is `main`'s.
+
 The original DreamerV3 README is kept at
 [`README-dreamerv3.md`](README-dreamerv3.md); installation and the general run
 interface are unchanged.

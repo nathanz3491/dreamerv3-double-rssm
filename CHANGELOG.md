@@ -10,6 +10,15 @@ its own changelog on its own branch.
 
 ## [Unreleased]
 
+### Added
+- `patch/looped-actor` (a patch, not a family): `nets.MLP(loops=n)` runs the
+  middle layer n times with shared weights; each pass reads the layer's input
+  plus a gated copy of the previous pass's output. The gate starts at zero, so
+  the looped network starts out exactly as the plain one (Inkling 2 Mini's
+  trick). Turned on for the actor with `--agent.policy.loops 3`; default 1.
+  Tests in `dreamerv3/test_looped_actor.py`. Design: `docs/design-frontier.md`
+  §8 on `family/frontier`.
+
 ### Changed
 - Family index: `next_nomask` scored (5.63 ± 0.27; 5.82 ± 0.17 on 60 worlds);
   `family/market` is built and its runs are training.

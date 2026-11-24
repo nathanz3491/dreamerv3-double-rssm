@@ -570,20 +570,43 @@ class MLP(nj.Module):
   winit: str | Callable = Initializer('trunc_normal')
   binit: str | Callable = Initializer('zeros')
 
-  def __init__(self, layers=5, units=1024):
+  def __init__(self, layers=5, units=1024, loops=1):
     self.layers = layers
     self.units = units
+    self.loops = loops
     self.kw = dict(bias=self.bias, winit=self.winit, binit=self.binit)
+    assert loops == 1 or layers >= 3, (
+        'looping needs a middle layer between the first and the last', layers)
 
   def __call__(self, x):
     shape = x.shape[:-1]
     x = x.astype(COMPUTE_DTYPE)
     x = x.reshape([-1, x.shape[-1]])
+    mid = self.layers // 2
     for i in range(self.layers):
-      x = self.sub(f'linear{i}', Linear, self.units, **self.kw)(x)
-      x = self.sub(f'norm{i}', Norm, self.norm)(x)
-      x = act(self.act)(x)
+      if i == mid and self.loops > 1:
+        x = self._looped(i, x)
+      else:
+        x = self._layer(i, x)
     x = x.reshape((*shape, x.shape[-1]))
+    return x
+
+  def _layer(self, i, x):
+    x = self.sub(f'linear{i}', Linear, self.units, **self.kw)(x)
+    x = self.sub(f'norm{i}', Norm, self.norm)(x)
+    return act(self.act)(x)
+
+  def _looped(self, i, x):
+    # Looped middle layer (patch/looped-actor), in the style of Inkling 2
+    # Mini: the same layer runs `loops` times. Every pass reads the layer's
+    # input plus a gated message (the previous pass's output). The gate starts
+    # at zero, so every pass computes the same thing and the network starts
+    # out exactly as the unlooped one; the only new parameters are the gate.
+    gate = self.value('loopgate', jnp.zeros, (self.units,), jnp.float32)
+    h0, msg = x, jnp.zeros_like(x)
+    for _ in range(self.loops):
+      x = self._layer(i, h0 + gate.astype(x.dtype) * msg)
+      msg = x
     return x
 
 
